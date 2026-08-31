@@ -8,6 +8,8 @@ import tailwindcss from '@tailwindcss/vite';
 
 const config = defineConfig({
   resolve: { tsconfigPaths: true },
+  optimizeDeps: { exclude: ['@huggingface/transformers', 'onnxruntime-web'] },
+  worker: { format: 'es' },
   plugins: [
     tanstackStart({
       prerender: { enabled: true, crawlLinks: true },

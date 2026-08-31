@@ -11,12 +11,17 @@
     "build": "vite build",
     "preview": "vite preview",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@huggingface/transformers": "^4.2.0",
+    "@litert-lm/core": "^0.14.0",
+    "@mintplex-labs/piper-tts-web": "^1.0.4",
     "@tanstack/react-router": "latest",
     "@tanstack/react-start": "latest",
     "clsx": "^2.1.1",
+    "onnxruntime-web": "1.23.2",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "tailwind-merge": "^3.6.0"

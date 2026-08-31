@@ -1,3 +1,9 @@
 allowBuilds:
   esbuild: true
   lightningcss: true
+  # Node-only optional deps of @huggingface/transformers / onnxruntime-web —
+  # this app only runs these libraries in the browser, so their native
+  # builds are unused.
+  onnxruntime-node: false
+  protobufjs: false
+  sharp: false
