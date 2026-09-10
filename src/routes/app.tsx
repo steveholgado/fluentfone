@@ -39,8 +39,6 @@ function App() {
           onToggle={toggle}
         />
       )}
-
-      <Link to="/">Go to Home</Link>
     </main>
   );
 }
