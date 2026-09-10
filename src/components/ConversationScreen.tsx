@@ -11,7 +11,12 @@ export function ConversationScreen({
 }: ConversationScreenProps) {
   return (
     <>
-      <button onClick={onToggle}>{isRecording ? 'Stop' : 'Start'}</button>
+      <button
+        onClick={onToggle}
+        className="rounded-lg bg-gray-200 px-4 py-2 hover:bg-gray-300"
+      >
+        {isRecording ? 'Stop' : 'Start'}
+      </button>
       <div className="status">{status}</div>
     </>
   );
