@@ -1,4 +1,4 @@
-import { TtsSession } from '@mintplex-labs/piper-tts-web';
+import { TtsSession, stored } from '@mintplex-labs/piper-tts-web';
 import type { WorkerRequest } from './messages';
 
 // See the "why a fresh worker per call" comment in index.ts for why this
@@ -14,6 +14,17 @@ ctx.onmessage = async (event: MessageEvent<WorkerRequest>) => {
   const request = event.data;
 
   try {
+    // Answer before touching TtsSession — creating one would download the
+    // voice, which is exactly what this request is asking about.
+    if (request.mode === 'check') {
+      const voices = await stored();
+      ctx.postMessage({
+        type: 'done',
+        stored: voices.includes(request.voiceId),
+      });
+      return;
+    }
+
     const session = await TtsSession.create({
       voiceId: request.voiceId,
       progress: (progress) => {

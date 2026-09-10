@@ -11,7 +11,7 @@ import type {
   EngineSettings,
   ConversationConfig,
 } from '@litert-lm/core';
-import { fetchModelAsBlob } from './model-cache';
+import { fetchModelAsBlob, hasCachedModel } from './model-cache';
 import type { ProgressCallback } from '../progress';
 
 /** A single turn of prior conversation history to seed context with. */
@@ -81,12 +81,16 @@ export const MODELS = {
 // reuse it across calls to generateMessage() within the current page load.
 const enginePromises = new Map<string, Promise<Engine>>();
 
+function engineKey(modelUrl: string, maxNumTokens: number): string {
+  return `${modelUrl}::${maxNumTokens}`;
+}
+
 function getEngine(
   modelUrl: string,
   maxNumTokens: number,
   onProgress?: ProgressCallback,
 ): Promise<Engine> {
-  const key = `${modelUrl}::${maxNumTokens}`;
+  const key = engineKey(modelUrl, maxNumTokens);
   let promise = enginePromises.get(key);
   if (!promise) {
     promise = (async () => {
@@ -207,6 +211,18 @@ export function preload(
   maxNumTokens = 8192,
 ): Promise<Engine> {
   return getEngine(modelUrl, maxNumTokens, onProgress);
+}
+
+/**
+ * Whether the model is ready to use without a download — either an engine is
+ * already live in this page session, or the model file is in the Cache Storage.
+ */
+export async function isCached(
+  modelUrl: string = MODELS.e4b,
+  maxNumTokens = 8192,
+): Promise<boolean> {
+  if (enginePromises.has(engineKey(modelUrl, maxNumTokens))) return true;
+  return hasCachedModel(modelUrl);
 }
 
 /**

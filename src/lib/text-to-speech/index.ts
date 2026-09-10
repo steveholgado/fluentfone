@@ -83,3 +83,12 @@ export async function preload(
 ): Promise<void> {
   await runInWorker({ mode: 'preload', voiceId }, onProgress);
 }
+
+/**
+ * Whether the voice model is already stored in OPFS, i.e. usable without a
+ * download. Only reads storage; never fetches.
+ */
+export async function isCached(voiceId: string): Promise<boolean> {
+  const result = await runInWorker({ mode: 'check', voiceId });
+  return result.stored === true;
+}

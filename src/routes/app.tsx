@@ -1,20 +1,45 @@
 import { createFileRoute, Link } from '@tanstack/react-router';
 
+import { PreloadScreen } from '#/components/PreloadScreen';
+import { ConversationScreen } from '#/components/ConversationScreen';
 import { useConversation } from '#/hooks/useConversation';
+import { usePreload } from '#/hooks/usePreload';
 
 export const Route = createFileRoute('/app')({ ssr: false, component: App });
 
 function App() {
-  const { isRecording, status, toggle, preload, isPreloading } =
-    useConversation();
+  const {
+    phase,
+    cached,
+    status: preloadStatus,
+    isPreloading,
+    preload,
+    start,
+  } = usePreload();
+  const { isRecording, status, toggle } = useConversation();
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center gap-4 p-8">
-      <button onClick={preload} disabled={isPreloading}>
-        Preload models
-      </button>
-      <button onClick={toggle}>{isRecording ? 'Stop' : 'Start'}</button>
-      <div className="status">{status}</div>
+      {phase === 'checking' && <div>Checking for downloaded models…</div>}
+
+      {phase === 'needed' && (
+        <PreloadScreen
+          cached={cached}
+          isPreloading={isPreloading}
+          status={preloadStatus}
+          onPreload={() => void preload()}
+          onStart={start}
+        />
+      )}
+
+      {phase === 'ready' && (
+        <ConversationScreen
+          isRecording={isRecording}
+          status={status}
+          onToggle={toggle}
+        />
+      )}
+
       <Link to="/">Go to Home</Link>
     </main>
   );

@@ -53,6 +53,14 @@ export async function fetchModelAsBlob(
   return blob;
 }
 
+/** Whether the model file at modelUrl is already in the Cache Storage. */
+export async function hasCachedModel(modelUrl: string): Promise<boolean> {
+  if (typeof caches === 'undefined') return false;
+
+  const cache = await caches.open(MODEL_CACHE_NAME);
+  return (await cache.match(modelUrl)) !== undefined;
+}
+
 /** Reads a Response body via its stream, reporting byte progress as it goes. */
 async function readWithProgress(
   response: Response,

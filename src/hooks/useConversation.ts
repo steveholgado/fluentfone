@@ -5,14 +5,12 @@ import { play } from '#/lib/audio/player';
 import { transcribe } from '#/lib/speech-to-text';
 import { generateMessage, type ChatMessage } from '#/lib/chat';
 import { speak } from '#/lib/text-to-speech';
-import { preloadAll } from '#/lib/preload';
 import { formatProgress } from '#/lib/progress';
 import { LANGUAGE, SYSTEM_INSTRUCTION, VOICE_ID } from '#/config';
 
 export function useConversation() {
   const [isRecording, setIsRecording] = useState(false);
   const [status, setStatus] = useState('');
-  const [isPreloading, setIsPreloading] = useState(false);
 
   const hasGreetedRef = useRef(false);
   const busyRef = useRef(false);
@@ -102,20 +100,5 @@ export function useConversation() {
     }
   }, [isRecording, greet, startRecording, stopRecordingAndRespond]);
 
-  const preload = useCallback(async () => {
-    setIsPreloading(true);
-    try {
-      await preloadAll(VOICE_ID, (label, p) =>
-        setStatus(`Preloading ${label}… ${formatProgress(p)}`),
-      );
-      setStatus('Models ready.');
-    } catch (err) {
-      console.error(err);
-      setStatus('Preload failed — see console.');
-    } finally {
-      setIsPreloading(false);
-    }
-  }, []);
-
-  return { isRecording, status, toggle, preload, isPreloading };
+  return { isRecording, status, toggle };
 }

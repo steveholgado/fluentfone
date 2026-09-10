@@ -11,6 +11,14 @@ import type { ProgressCallback } from '../progress';
 const MODEL = 'onnx-community/whisper-base';
 const SAMPLE_RATE = 16000;
 
+// Transformers.js caches every file it downloads in the Cache Storage under
+// `env.cacheKey`, keyed by the full remote URL it fetched them from.
+const TRANSFORMERS_CACHE_NAME = 'transformers-cache';
+// Whisper needs an encoder and a (merged) decoder, so a ready model means at
+// least two weight files. Matching on the model prefix rather than exact
+// filenames keeps this working if the dtype or file layout changes.
+const MIN_CACHED_WEIGHTS = 2;
+
 export interface TranscribeOptions {
   /**
    * Source language. Pass 'english' or 'spanish' to force that language
@@ -76,4 +84,24 @@ export async function transcribe(
 /** Warms up the Whisper model cache so the first real `transcribe()` call is instant. */
 export async function preload(onProgress?: ProgressCallback): Promise<void> {
   await getTranscriber(onProgress);
+}
+
+/**
+ * Whether the model is ready to use without a download — either the pipeline
+ * is already live in this page session, or its weights are in the Cache
+ * Storage. Only reads the cache; never fetches.
+ */
+export async function isCached(): Promise<boolean> {
+  if (pipelinePromise) return true;
+  if (typeof caches === 'undefined') return false;
+
+  const cache = await caches.open(TRANSFORMERS_CACHE_NAME);
+  const requests = await cache.keys();
+
+  // The ONNX runtime's WASM binaries live in this cache too, hence the
+  // model-prefix filter.
+  const weights = requests.filter(
+    (req) => req.url.includes(`/${MODEL}/`) && req.url.endsWith('.onnx'),
+  );
+  return weights.length >= MIN_CACHED_WEIGHTS;
 }
