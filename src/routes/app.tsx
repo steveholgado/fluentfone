@@ -16,7 +16,8 @@ function App() {
     preload,
     start,
   } = usePreload();
-  const { isRecording, status, toggle } = useConversation();
+  const { isRecording, hasGreeted, status, greet, toggleRecording } =
+    useConversation();
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center gap-4 p-8">
@@ -35,8 +36,10 @@ function App() {
       {phase === 'ready' && (
         <ConversationScreen
           isRecording={isRecording}
+          hasGreeted={hasGreeted}
           status={status}
-          onToggle={toggle}
+          onAnswer={greet}
+          onToggleRecording={toggleRecording}
         />
       )}
     </main>

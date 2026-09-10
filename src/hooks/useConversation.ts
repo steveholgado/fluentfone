@@ -10,9 +10,9 @@ import { LANGUAGE, SYSTEM_INSTRUCTION, VOICE_ID } from '#/config';
 
 export function useConversation() {
   const [isRecording, setIsRecording] = useState(false);
+  const [hasGreeted, setHasGreeted] = useState(false);
   const [status, setStatus] = useState('');
 
-  const hasGreetedRef = useRef(false);
   const busyRef = useRef(false);
   const recorderRef = useRef<AudioRecorder | null>(null);
   const historyRef = useRef<ChatMessage[]>([]);
@@ -27,6 +27,7 @@ export function useConversation() {
   }, []);
 
   const greet = useCallback(async () => {
+    if (busyRef.current) return;
     busyRef.current = true;
     try {
       setStatus('Generating…');
@@ -34,7 +35,7 @@ export function useConversation() {
         systemInstruction: SYSTEM_INSTRUCTION,
       });
       historyRef.current.push({ role: 'model', content: opening });
-      hasGreetedRef.current = true;
+      setHasGreeted(true);
       await speakReply(opening);
     } catch (err) {
       console.error(err);
@@ -89,16 +90,14 @@ export function useConversation() {
     }
   }, [speakReply]);
 
-  const toggle = useCallback(() => {
+  const toggleRecording = useCallback(() => {
     if (busyRef.current) return;
-    if (!hasGreetedRef.current) {
-      void greet();
-    } else if (!isRecording) {
+    if (!isRecording) {
       void startRecording();
     } else {
       void stopRecordingAndRespond();
     }
-  }, [isRecording, greet, startRecording, stopRecordingAndRespond]);
+  }, [isRecording, startRecording, stopRecordingAndRespond]);
 
-  return { isRecording, status, toggle };
+  return { isRecording, hasGreeted, status, greet, toggleRecording };
 }
