@@ -11,11 +11,14 @@ import { LANGUAGE, SYSTEM_INSTRUCTION, VOICE_ID } from '#/config';
 export function useConversation() {
   const [isRecording, setIsRecording] = useState(false);
   const [hasGreeted, setHasGreeted] = useState(false);
+  const [isGreetingReady, setIsGreetingReady] = useState(false);
   const [status, setStatus] = useState('');
 
   const busyRef = useRef(false);
   const recorderRef = useRef<AudioRecorder | null>(null);
   const historyRef = useRef<ChatMessage[]>([]);
+  const preparingGreetingRef = useRef(false);
+  const greetingRef = useRef<{ text: string; audio: Blob } | null>(null);
 
   const speakReply = useCallback(async (text: string) => {
     setStatus('Speaking…');
@@ -26,24 +29,46 @@ export function useConversation() {
     setStatus('');
   }, []);
 
-  const greet = useCallback(async () => {
-    if (busyRef.current) return;
-    busyRef.current = true;
+  const prepareGreeting = useCallback(async () => {
+    if (preparingGreetingRef.current || greetingRef.current) return;
+    preparingGreetingRef.current = true;
     try {
       setStatus('Generating…');
       const opening = await generateMessage({
         systemInstruction: SYSTEM_INSTRUCTION,
       });
-      historyRef.current.push({ role: 'model', content: opening });
+      const audio = await speak(VOICE_ID, opening, (p) =>
+        setStatus(`Downloading voice model… ${formatProgress(p)}`),
+      );
+      greetingRef.current = { text: opening, audio };
+      setStatus('');
+      setIsGreetingReady(true);
+    } catch (err) {
+      console.error(err);
+      setStatus('Something went wrong — see console.');
+    } finally {
+      preparingGreetingRef.current = false;
+    }
+  }, []);
+
+  const greet = useCallback(async () => {
+    if (busyRef.current) return;
+    const greeting = greetingRef.current;
+    if (!greeting) return;
+    busyRef.current = true;
+    try {
+      historyRef.current.push({ role: 'model', content: greeting.text });
       setHasGreeted(true);
-      await speakReply(opening);
+      setStatus('Speaking…');
+      await play(greeting.audio);
+      setStatus('');
     } catch (err) {
       console.error(err);
       setStatus('Something went wrong — see console.');
     } finally {
       busyRef.current = false;
     }
-  }, [speakReply]);
+  }, []);
 
   const startRecording = useCallback(async () => {
     busyRef.current = true;
@@ -99,5 +124,13 @@ export function useConversation() {
     }
   }, [isRecording, startRecording, stopRecordingAndRespond]);
 
-  return { isRecording, hasGreeted, status, greet, toggleRecording };
+  return {
+    isRecording,
+    hasGreeted,
+    isGreetingReady,
+    status,
+    greet,
+    prepareGreeting,
+    toggleRecording,
+  };
 }

@@ -1,4 +1,5 @@
-import { createFileRoute, Link } from '@tanstack/react-router';
+import { useEffect } from 'react';
+import { createFileRoute } from '@tanstack/react-router';
 
 import { PreloadScreen } from '#/components/PreloadScreen';
 import { ConversationScreen } from '#/components/ConversationScreen';
@@ -16,8 +17,19 @@ function App() {
     preload,
     start,
   } = usePreload();
-  const { isRecording, hasGreeted, status, greet, toggleRecording } =
-    useConversation();
+  const {
+    isRecording,
+    hasGreeted,
+    isGreetingReady,
+    status,
+    greet,
+    prepareGreeting,
+    toggleRecording,
+  } = useConversation();
+
+  useEffect(() => {
+    if (phase === 'ready') void prepareGreeting();
+  }, [phase, prepareGreeting]);
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center gap-4 p-8">
@@ -37,6 +49,7 @@ function App() {
         <ConversationScreen
           isRecording={isRecording}
           hasGreeted={hasGreeted}
+          isGreetingReady={isGreetingReady}
           status={status}
           onAnswer={greet}
           onToggleRecording={toggleRecording}
