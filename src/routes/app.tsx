@@ -32,29 +32,31 @@ function App() {
   }, [phase, prepareGreeting]);
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-4 p-8">
-      {phase === 'checking' && <div>Checking for downloaded models…</div>}
+    <main className="min-h-screen sm:flex sm:items-center sm:justify-center sm:p-8">
+      <div className="flex h-full min-h-screen w-full flex-col items-center justify-center gap-4 bg-neutral-900 p-8 text-white sm:aspect-9/18 sm:h-auto sm:min-h-0 sm:w-100 sm:rounded-2xl">
+        {phase === 'checking' && <div>Checking for downloaded models…</div>}
 
-      {phase === 'needed' && (
-        <PreloadScreen
-          cached={cached}
-          isPreloading={isPreloading}
-          status={preloadStatus}
-          onPreload={() => void preload()}
-          onStart={start}
-        />
-      )}
+        {phase === 'needed' && (
+          <PreloadScreen
+            cached={cached}
+            isPreloading={isPreloading}
+            status={preloadStatus}
+            onPreload={() => void preload()}
+            onStart={start}
+          />
+        )}
 
-      {phase === 'ready' && (
-        <ConversationScreen
-          isRecording={isRecording}
-          hasGreeted={hasGreeted}
-          isGreetingReady={isGreetingReady}
-          status={status}
-          onAnswer={greet}
-          onToggleRecording={toggleRecording}
-        />
-      )}
+        {phase === 'ready' && (
+          <ConversationScreen
+            isRecording={isRecording}
+            hasGreeted={hasGreeted}
+            isGreetingReady={isGreetingReady}
+            status={status}
+            onAnswer={greet}
+            onToggleRecording={toggleRecording}
+          />
+        )}
+      </div>
     </main>
   );
 }

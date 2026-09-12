@@ -49,7 +49,7 @@ export function PreloadScreen({
       {ready ? (
         <button
           onClick={onStart}
-          className="rounded-lg bg-gray-200 px-4 py-2 hover:bg-gray-300"
+          className="rounded-lg bg-gray-200 px-4 py-2 text-black hover:bg-gray-300"
         >
           Start
         </button>
@@ -57,7 +57,7 @@ export function PreloadScreen({
         <button
           onClick={onPreload}
           disabled={isPreloading}
-          className="rounded-lg bg-gray-200 px-4 py-2 hover:bg-gray-300 disabled:opacity-50"
+          className="rounded-lg bg-gray-200 px-4 py-2 text-black hover:bg-gray-300 disabled:opacity-50"
         >
           {isPreloading ? 'Downloading…' : 'Download models'}
         </button>
