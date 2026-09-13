@@ -63,14 +63,13 @@ export function usePreload() {
 
   const preload = useCallback(async () => {
     setIsPreloading(true);
+
     try {
       await preloadAll(VOICE_ID, (label, p) =>
         setStatus(`Preloading ${label}… ${formatProgress(p)}`),
       );
       setCached(ALL_CACHED);
       setStatus('');
-      // Stay on the preload screen — the user confirms with the Start button
-      // once everything is downloaded, rather than jumping ahead automatically.
     } catch (err) {
       console.error(err);
       setStatus('Preload failed — see console.');
