@@ -1,14 +1,12 @@
 /**
- * Browser-based speech-to-text using Whisper via Transformers.js. Runs
- * entirely client-side (WebGPU if available, falling back to WASM) — no
- * server or API key required.
+ * Browser-based speech-to-text using Whisper via Transformers.js. Runs in a
+ * dedicated Web Worker (WebGPU if available, falling back to WASM).
  */
 
-import type { AutomaticSpeechRecognitionPipeline } from '@huggingface/transformers';
 import { toMonoPcm } from '../audio/decode';
-import type { ProgressCallback } from '../progress';
+import type { LoadProgress, ProgressCallback } from '../progress';
+import type { WorkerRequest, WorkerResponse } from './messages';
 
-const MODEL = 'onnx-community/whisper-base';
 const SAMPLE_RATE = 16000;
 
 // Transformers.js caches every file it downloads in the Cache Storage under
@@ -17,6 +15,7 @@ const TRANSFORMERS_CACHE_NAME = 'transformers-cache';
 // Whisper needs an encoder and a (merged) decoder, so a ready model means at
 // least two weight files. Matching on the model prefix rather than exact
 // filenames keeps this working if the dtype or file layout changes.
+const MODEL = 'onnx-community/whisper-base';
 const MIN_CACHED_WEIGHTS = 2;
 
 export interface TranscribeOptions {
@@ -30,32 +29,67 @@ export interface TranscribeOptions {
   task?: 'transcribe' | 'translate';
 }
 
-// Cached so the (large) model is only loaded once per session.
-let pipelinePromise: Promise<AutomaticSpeechRecognitionPipeline> | null = null;
+interface PendingRequest {
+  resolve: (text: string) => void;
+  reject: (err: Error) => void;
+  onProgress?: ProgressCallback;
+}
 
-function getTranscriber(
-  onProgress?: ProgressCallback,
-): Promise<AutomaticSpeechRecognitionPipeline> {
-  if (!pipelinePromise) {
-    pipelinePromise = (async () => {
-      const { pipeline } = await import('@huggingface/transformers');
-      return pipeline('automatic-speech-recognition', MODEL, {
-        dtype: 'q8',
-        device:
-          typeof navigator !== 'undefined' && navigator.gpu ? 'webgpu' : 'wasm',
-        progress_callback: (data) => {
-          if (onProgress && data.status === 'progress') {
-            onProgress({
-              loaded: data.loaded,
-              total: data.total,
-              progress: data.progress / 100,
-            });
-          }
-        },
-      }) as Promise<AutomaticSpeechRecognitionPipeline>;
-    })();
+// One long-lived worker for the session, so the compiled pipeline it holds
+// is only built once. Created lazily (not at module scope) since this module
+// is also evaluated during prerendering, where `Worker` doesn't exist.
+let worker: Worker | null = null;
+let nextRequestId = 0;
+const pending = new Map<number, PendingRequest>();
+
+// Set once a 'done' response has come back at least once, so `isCached()`
+// can short-circuit without asking the worker.
+let pipelineReady = false;
+
+function getWorker(): Worker {
+  if (!worker) {
+    worker = new Worker(new URL('./worker.ts', import.meta.url), {
+      type: 'module',
+    });
+
+    worker.addEventListener(
+      'message',
+      (event: MessageEvent<WorkerResponse>) => {
+        const message = event.data;
+        const request = pending.get(message.id);
+        if (!request) return;
+
+        if (message.type === 'progress') {
+          request.onProgress?.(message.progress as LoadProgress);
+        } else if (message.type === 'done') {
+          pipelineReady = true;
+          pending.delete(message.id);
+          request.resolve(message.text ?? '');
+        } else if (message.type === 'error') {
+          pending.delete(message.id);
+          request.reject(new Error(message.message));
+        }
+      },
+    );
+
+    worker.addEventListener('error', (err) => {
+      for (const [id, request] of pending) {
+        request.reject(err instanceof Error ? err : new Error(String(err)));
+        pending.delete(id);
+      }
+    });
   }
-  return pipelinePromise;
+  return worker;
+}
+
+function send(
+  request: WorkerRequest,
+  onProgress?: ProgressCallback,
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    pending.set(request.id, { resolve, reject, onProgress });
+    getWorker().postMessage(request);
+  });
 }
 
 /** Transcribes an audio file/blob/buffer to text using Whisper, entirely in-browser. */
@@ -65,34 +99,31 @@ export async function transcribe(
 ): Promise<string> {
   const { language, task = 'transcribe' } = options;
 
-  const [audioData, transcriber] = await Promise.all([
-    toMonoPcm(audio, SAMPLE_RATE),
-    getTranscriber(),
-  ]);
+  // Audio decoding relies on AudioContext/OfflineAudioContext, which are
+  // Window-only APIs (not exposed in workers), so it has to happen here.
+  const audioData = await toMonoPcm(audio, SAMPLE_RATE);
 
-  const result = await transcriber(audioData, {
+  return send({
+    id: nextRequestId++,
+    mode: 'transcribe',
+    audio: audioData,
     language,
     task,
-    chunk_length_s: 30,
-    stride_length_s: 5,
   });
-
-  const output = Array.isArray(result) ? result[0] : result;
-  return (output as { text?: string })?.text?.trim() ?? '';
 }
 
 /** Warms up the Whisper model cache so the first real `transcribe()` call is instant. */
 export async function preload(onProgress?: ProgressCallback): Promise<void> {
-  await getTranscriber(onProgress);
+  await send({ id: nextRequestId++, mode: 'preload' }, onProgress);
 }
 
 /**
  * Whether the model is ready to use without a download — either the pipeline
- * is already live in this page session, or its weights are in the Cache
+ * is already live in this session's worker, or its weights are in the Cache
  * Storage. Only reads the cache; never fetches.
  */
 export async function isCached(): Promise<boolean> {
-  if (pipelinePromise) return true;
+  if (pipelineReady) return true;
   if (typeof caches === 'undefined') return false;
 
   const cache = await caches.open(TRANSFORMERS_CACHE_NAME);
@@ -103,5 +134,6 @@ export async function isCached(): Promise<boolean> {
   const weights = requests.filter(
     (req) => req.url.includes(`/${MODEL}/`) && req.url.endsWith('.onnx'),
   );
+
   return weights.length >= MIN_CACHED_WEIGHTS;
 }
