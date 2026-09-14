@@ -17,6 +17,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@diffusionstudio/piper-wasm": "1.0.0",
     "@huggingface/transformers": "^4.2.0",
     "@litert-lm/core": "^0.14.0",
     "@mintplex-labs/piper-tts-web": "^1.0.4",

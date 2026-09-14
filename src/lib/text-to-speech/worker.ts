@@ -3,8 +3,12 @@ import type { WorkerRequest } from './messages';
 
 // See the "why a fresh worker per call" comment in index.ts for why this
 // worker gets terminated after every message it handles.
-const ONNX_WASM_BASE =
-  'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.23.2/dist/';
+//
+// Self-hosted wasm/data files, vendored from node_modules at dev/build time
+// by vite-plugin-vendor-wasm-assets.ts, instead of piper-tts-web's default
+// of fetching them from jsDelivr/cdnjs at runtime.
+const ONNX_WASM_BASE = '/vendor/onnx/1.23.2/';
+const PIPER_WASM_BASE = '/vendor/piper-wasm/1.0.0/';
 
 // DOM lib doesn't type worker-global `self`; the shape matches Worker's
 // instance side closely enough for postMessage's transfer-list overload.
@@ -33,6 +37,8 @@ ctx.onmessage = async (event: MessageEvent<WorkerRequest>) => {
       wasmPaths: {
         ...TtsSession.WASM_LOCATIONS,
         onnxWasm: ONNX_WASM_BASE,
+        piperWasm: `${PIPER_WASM_BASE}piper_phonemize.wasm`,
+        piperData: `${PIPER_WASM_BASE}piper_phonemize.data`,
       },
     });
 
