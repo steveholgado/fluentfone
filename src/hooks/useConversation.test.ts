@@ -108,7 +108,7 @@ describe('useConversation', () => {
       });
 
       expect(result.current.isGreetingReady).toBe(false);
-      expect(result.current.status).toBe('Something went wrong — see console.');
+      expect(result.current.status).toBe('Something went wrong');
       expect(errorSpy).toHaveBeenCalled();
 
       errorSpy.mockRestore();
@@ -160,7 +160,7 @@ describe('useConversation', () => {
         await result.current.greet();
       });
 
-      expect(result.current.status).toBe('Something went wrong — see console.');
+      expect(result.current.status).toBe('Something went wrong');
       expect(errorSpy).toHaveBeenCalled();
 
       errorSpy.mockRestore();
@@ -193,9 +193,7 @@ describe('useConversation', () => {
       });
 
       expect(result.current.isRecording).toBe(false);
-      expect(result.current.status).toBe(
-        'Could not access microphone — see console.',
-      );
+      expect(result.current.status).toBe('Could not access microphone');
       expect(errorSpy).toHaveBeenCalled();
 
       errorSpy.mockRestore();
@@ -290,7 +288,7 @@ describe('useConversation', () => {
         result.current.toggleRecording();
       });
 
-      expect(result.current.status).toBe('Something went wrong — see console.');
+      expect(result.current.status).toBe('Something went wrong');
       expect(errorSpy).toHaveBeenCalled();
 
       errorSpy.mockRestore();

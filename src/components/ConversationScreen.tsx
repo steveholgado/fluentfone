@@ -16,32 +16,37 @@ export function ConversationScreen({
   onToggleRecording,
 }: ConversationScreenProps) {
   return (
-    <>
-      <div className="mb-4 h-32 w-32 rounded-full bg-gray-300" />
+    <div className="flex h-full w-full flex-col items-center justify-between px-8 py-16 sm:py-32">
+      <div className="flex flex-col items-center gap-4">
+        <div className="mb-4 h-40 w-40 rounded-full bg-gray-300" />
+        <div className="text-2xl">Example Name</div>
+      </div>
       {!hasGreeted ? (
         <>
-          {!isGreetingReady ? (
-            <div className="status animate-pulse">Incoming call</div>
-          ) : (
-            <button
-              onClick={onAnswer}
-              className="rounded-lg bg-gray-200 px-4 py-2 text-black hover:bg-gray-300"
-            >
-              Answer
-            </button>
+          {!isGreetingReady && (
+            <div className="animate-pulse text-center text-2xl">
+              Incoming call
+            </div>
           )}
+          <button
+            onClick={onAnswer}
+            className="min-w-48 cursor-pointer rounded-lg bg-gray-200 px-8 py-3 text-xl text-black hover:bg-gray-300 disabled:bg-gray-500"
+            disabled={!isGreetingReady}
+          >
+            Answer
+          </button>
         </>
       ) : (
         <>
+          <div className="text-center text-2xl">{status}</div>
           <button
             onClick={onToggleRecording}
-            className="rounded-lg bg-gray-200 px-4 py-2 text-black hover:bg-gray-300"
+            className="min-w-48 cursor-pointer rounded-lg bg-gray-200 px-8 py-3 text-xl text-black hover:bg-gray-300"
           >
             {isRecording ? 'Stop' : 'Start'}
           </button>
-          <div className="status">{status}</div>
         </>
       )}
-    </>
+    </div>
   );
 }

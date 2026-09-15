@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 
+import { CheckScreen } from '#/components/CheckScreen';
 import { PreloadScreen } from '#/components/PreloadScreen';
 import { ConversationScreen } from '#/components/ConversationScreen';
 import { useConversation } from '#/hooks/useConversation';
@@ -33,20 +34,10 @@ function App() {
 
   return (
     <main className="min-h-screen sm:flex sm:items-center sm:justify-center sm:p-8">
-      <div className="flex h-full min-h-screen w-full flex-col items-center justify-center gap-4 bg-neutral-900 p-8 text-white sm:aspect-9/18 sm:h-auto sm:min-h-0 sm:w-100 sm:rounded-2xl">
-        {phase === 'checking' && <div>Checking for downloaded models…</div>}
+      <div className="relative h-screen w-full overflow-hidden bg-neutral-800 text-white sm:aspect-9/18 sm:h-auto sm:w-100 sm:rounded-[48px]">
+        {phase === 'checking' && <CheckScreen />}
 
-        {phase === 'needed' && (
-          <PreloadScreen
-            cached={cached}
-            isPreloading={isPreloading}
-            status={preloadStatus}
-            onPreload={() => void preload()}
-            onStart={start}
-          />
-        )}
-
-        {phase === 'ready' && (
+        {(phase === 'ready' || phase === 'needed') && (
           <ConversationScreen
             isRecording={isRecording}
             hasGreeted={hasGreeted}
@@ -56,6 +47,15 @@ function App() {
             onToggleRecording={toggleRecording}
           />
         )}
+
+        <PreloadScreen
+          cached={cached}
+          isPreloading={isPreloading}
+          status={preloadStatus}
+          visible={phase === 'needed'}
+          onPreload={() => void preload()}
+          onStart={start}
+        />
       </div>
     </main>
   );

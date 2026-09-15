@@ -23,7 +23,7 @@ export function useConversation() {
   const speakReply = useCallback(async (text: string) => {
     setStatus('Speaking…');
     const audio = await speak(VOICE_ID, text, (p) =>
-      setStatus(`Downloading voice model… ${formatProgress(p)}`),
+      setStatus(`Downloading voice model... ${formatProgress(p)}`),
     );
     await play(audio);
     setStatus('');
@@ -45,7 +45,7 @@ export function useConversation() {
       setIsGreetingReady(true);
     } catch (err) {
       console.error(err);
-      setStatus('Something went wrong — see console.');
+      setStatus('Something went wrong');
     } finally {
       preparingGreetingRef.current = false;
     }
@@ -64,7 +64,7 @@ export function useConversation() {
       setStatus('');
     } catch (err) {
       console.error(err);
-      setStatus('Something went wrong — see console.');
+      setStatus('Something went wrong');
     } finally {
       busyRef.current = false;
     }
@@ -79,7 +79,7 @@ export function useConversation() {
       setIsRecording(true);
     } catch (err) {
       console.error(err);
-      setStatus('Could not access microphone — see console.');
+      setStatus('Could not access microphone');
     } finally {
       busyRef.current = false;
     }
@@ -94,11 +94,11 @@ export function useConversation() {
     try {
       const audioBlob = await recorder.stop();
 
-      setStatus('Transcribing…');
+      setStatus('Transcribing...');
       const text = await transcribe(audioBlob, { language: LANGUAGE });
       historyRef.current.push({ role: 'user', content: text });
 
-      setStatus('Generating…');
+      setStatus('Generating...');
       const reply = await generateMessage({
         prompt: text,
         systemInstruction: SYSTEM_INSTRUCTION,
@@ -109,7 +109,7 @@ export function useConversation() {
       await speakReply(reply);
     } catch (err) {
       console.error(err);
-      setStatus('Something went wrong — see console.');
+      setStatus('Something went wrong');
     } finally {
       busyRef.current = false;
     }
