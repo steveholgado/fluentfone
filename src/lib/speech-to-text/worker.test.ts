@@ -102,10 +102,11 @@ describe('worker onmessage', () => {
   it('forwards progress updates with the request id', async () => {
     pipelineFactory.mockImplementation(async (_task, _model, options) => {
       options.progress_callback({
-        status: 'progress',
+        status: 'progress_total',
         loaded: 10,
         total: 100,
         progress: 10,
+        files: {},
       });
       return transcriberFn;
     });

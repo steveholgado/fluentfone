@@ -5,7 +5,9 @@ import {
   type PreloadLabel,
   type PreloadStatus,
 } from '#/lib/preload';
+import type { PreloadProgress } from '#/hooks/usePreload';
 import { cn } from '#/utils/cn';
+import { DownloadProgressBar } from '#/components/DownloadProgressBar';
 
 const LABELS: Record<PreloadLabel, string> = {
   'speech-to-text': 'Speech-to-text',
@@ -19,6 +21,7 @@ interface PreloadScreenProps {
   cached: PreloadStatus;
   isPreloading: boolean;
   status: string;
+  progress: PreloadProgress | null;
   visible: boolean;
   onPreload: () => void;
   onStart: () => void;
@@ -28,6 +31,7 @@ export function PreloadScreen({
   cached,
   isPreloading,
   status,
+  progress,
   visible,
   onPreload,
   onStart,
@@ -81,13 +85,19 @@ export function PreloadScreen({
           >
             Start
           </button>
+        ) : isPreloading && progress ? (
+          <DownloadProgressBar
+            current={progress.index}
+            total={progress.total}
+            percent={progress.percent}
+          />
         ) : (
           <button
             onClick={onPreload}
             disabled={isPreloading}
             className="w-full cursor-pointer rounded-lg bg-gray-200 px-4 py-2 text-black hover:bg-gray-300 disabled:opacity-50"
           >
-            {isPreloading ? 'Downloading...' : 'Download'}
+            Download
           </button>
         )}
       </div>

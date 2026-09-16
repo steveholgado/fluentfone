@@ -14,6 +14,7 @@ function App() {
     phase,
     cached,
     status: preloadStatus,
+    progress: preloadProgress,
     isPreloading,
     preload,
     start,
@@ -52,6 +53,7 @@ function App() {
           cached={cached}
           isPreloading={isPreloading}
           status={preloadStatus}
+          progress={preloadProgress}
           visible={phase === 'needed'}
           onPreload={() => void preload()}
           onStart={start}

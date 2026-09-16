@@ -28,6 +28,18 @@ beforeEach(async () => {
       onmessage = handler;
     },
   });
+  // The worker warms the browser's HTTP cache for the wasm runtime files
+  // before every preload request — give it something to fetch.
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(
+      async () =>
+        new Response(new Uint8Array([1, 2, 3]), {
+          status: 200,
+          headers: { 'Content-Length': '3' },
+        }),
+    ),
+  );
 
   await import('#/lib/text-to-speech/worker');
 });
@@ -64,7 +76,23 @@ describe('worker onmessage', () => {
     expect(sessionCreate).toHaveBeenCalledWith(
       expect.objectContaining({ voiceId: 'voice-a' }),
     );
-    expect(postedMessages).toEqual([{ type: 'done' }]);
+    expect(postedMessages.at(-1)).toEqual({ type: 'done' });
+  });
+
+  it('warms the wasm runtime cache before creating a session, reporting progress', async () => {
+    sessionCreate.mockResolvedValue({ predict: vi.fn() });
+
+    await post({ mode: 'preload', voiceId: 'voice-a' });
+
+    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(postedMessages).toContainEqual({
+      type: 'progress',
+      progress: {
+        url: expect.stringContaining('piper_phonemize.wasm'),
+        loaded: 3,
+        total: 3,
+      },
+    });
   });
 
   it('forwards session progress callbacks to postMessage', async () => {

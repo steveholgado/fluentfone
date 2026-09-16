@@ -36,7 +36,11 @@ ctx.onmessage = async (event: MessageEvent<WorkerRequest>) => {
               ? 'webgpu'
               : 'wasm',
           progress_callback: (data) => {
-            if (data.status === 'progress') {
+            // 'progress_total' is Transformers.js' own byte total summed
+            // across every file it's downloading for this model — using it
+            // instead of the per-file 'progress' event avoids the progress
+            // bar jumping backward each time a new file starts.
+            if (data.status === 'progress_total') {
               ctx.postMessage({
                 id,
                 type: 'progress',

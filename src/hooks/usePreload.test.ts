@@ -9,6 +9,7 @@ vi.mock('#/lib/preload', () => ({
   checkPreloaded: vi.fn(),
   isFullyPreloaded: vi.fn(),
   preloadAll: vi.fn(),
+  DOWNLOAD_ORDER: ['text-to-speech', 'speech-to-text', 'chat'],
 }));
 
 beforeEach(() => {
@@ -135,6 +136,50 @@ describe('usePreload', () => {
       expect(result.current.phase).toBe('needed');
     });
 
+    it('only counts models that still need downloading in progress totals', async () => {
+      vi.mocked(checkPreloaded).mockResolvedValue({
+        'speech-to-text': true,
+        chat: false,
+        'text-to-speech': true,
+      });
+      vi.mocked(isFullyPreloaded).mockReturnValue(false);
+
+      const { result } = renderHook(() => usePreload());
+      await waitFor(() => expect(result.current.phase).toBe('needed'));
+
+      let resolvePreloadAll: () => void = () => {};
+      vi.mocked(preloadAll).mockImplementation(async (_voice, onProgress) => {
+        // preloadAll still reports the already-cached models internally...
+        onProgress?.('text-to-speech', { loaded: 1, total: 1, progress: 1 });
+        onProgress?.('speech-to-text', { loaded: 1, total: 1, progress: 1 });
+        // ...but only the one model that needed downloading should surface.
+        onProgress?.('chat', {
+          loaded: 500_000,
+          total: 1_000_000,
+          progress: 0.5,
+        });
+        return new Promise((resolve) => {
+          resolvePreloadAll = () => resolve(undefined);
+        });
+      });
+
+      act(() => {
+        void result.current.preload();
+      });
+
+      await waitFor(() =>
+        expect(result.current.progress).toEqual({
+          index: 1,
+          total: 1,
+          percent: 50,
+        }),
+      );
+
+      await act(async () => {
+        resolvePreloadAll();
+      });
+    });
+
     it('sets an error status and stops preloading on failure', async () => {
       vi.mocked(checkPreloaded).mockResolvedValue({
         'speech-to-text': false,
@@ -153,7 +198,7 @@ describe('usePreload', () => {
       });
 
       expect(result.current.isPreloading).toBe(false);
-      expect(result.current.status).toBe('Preload failed — see console.');
+      expect(result.current.status).toBe('Preload failed');
       expect(errorSpy).toHaveBeenCalled();
 
       errorSpy.mockRestore();

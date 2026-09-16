@@ -33,15 +33,30 @@ function runInWorker(
       type: 'module',
     });
 
+    // A voice load downloads several files (model, config, wasm) in
+    // parallel, each reporting its own loaded/total. Summing across every
+    // file seen so far gives one figure that only moves forward, instead
+    // of the progress bar jumping between each file's individual percentage.
+    const filesLoading = new Map<string, { loaded: number; total: number }>();
+
     worker.onmessage = (event: MessageEvent<WorkerResponse>) => {
       const message = event.data;
 
       if (message.type === 'progress') {
-        const { loaded, total } = message.progress;
+        const { url, loaded, total } = message.progress;
+        filesLoading.set(url, { loaded, total });
+
+        let loadedSum = 0;
+        let totalSum = 0;
+        for (const file of filesLoading.values()) {
+          loadedSum += file.loaded;
+          totalSum += file.total;
+        }
+
         const progress: LoadProgress = {
-          loaded,
-          total,
-          progress: total ? loaded / total : undefined,
+          loaded: loadedSum,
+          total: totalSum,
+          progress: totalSum ? loadedSum / totalSum : undefined,
         };
         onProgress?.(progress);
       } else if (message.type === 'done') {

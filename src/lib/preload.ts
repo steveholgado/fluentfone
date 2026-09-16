@@ -8,20 +8,34 @@ export type PreloadLabel = 'speech-to-text' | 'chat' | 'text-to-speech';
 /** Which models are already downloaded, keyed by label. */
 export type PreloadStatus = Record<PreloadLabel, boolean>;
 
+/** The order preloadAll downloads models in — smallest first. */
+export const DOWNLOAD_ORDER: PreloadLabel[] = [
+  'text-to-speech',
+  'speech-to-text',
+  'chat',
+];
+
 /**
- * Warms up all three models (Whisper, Gemma, Piper) so the first real
+ * Warms up all three models (Piper, Whisper, Gemma) so the first real
  * conversation turn doesn't pay any download/compile cost. Runs
  * sequentially — they compete for bandwidth and GPU memory — smallest first,
  * so the progress indicator shows real movement quickly instead of stalling
  * on the (much larger) chat model first.
  */
+const DONE: LoadProgress = { loaded: 1, total: 1, progress: 1 };
+
 export async function preloadAll(
   voiceId: string,
   onProgress?: (label: PreloadLabel, p: LoadProgress) => void,
 ): Promise<void> {
   await textToSpeech.preload(voiceId, (p) => onProgress?.('text-to-speech', p));
+  onProgress?.('text-to-speech', DONE);
+
   await speechToText.preload((p) => onProgress?.('speech-to-text', p));
+  onProgress?.('speech-to-text', DONE);
+
   await chat.preload((p) => onProgress?.('chat', p));
+  onProgress?.('chat', DONE);
 }
 
 /**

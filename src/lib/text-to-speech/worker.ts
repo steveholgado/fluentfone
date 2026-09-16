@@ -10,9 +10,43 @@ import type { WorkerRequest } from './messages';
 const ONNX_WASM_BASE = '/vendor/onnx/1.23.2/';
 const PIPER_WASM_BASE = '/vendor/piper-wasm/1.0.0/';
 
+// The wasm runtimes TtsSession.create() fetches internally, in the same
+// versioned locations it's pointed at below. piper-tts-web never reports
+// progress for these (only for the voice model itself), so on a genuinely
+// first-ever load — several MB, comparable to the voice model — the
+// progress bar would sit frozen through this whole phase. Fetching them
+// ourselves first, with progress, warms the browser's HTTP cache (they're
+// served `immutable`, see public/_headers) so TtsSession.create()'s own
+// fetch of the same URLs resolves from disk instead of the network.
+const WASM_FILES = [
+  `${ONNX_WASM_BASE}ort-wasm-simd-threaded.wasm`,
+  `${PIPER_WASM_BASE}piper_phonemize.wasm`,
+  `${PIPER_WASM_BASE}piper_phonemize.data`,
+];
+
 // DOM lib doesn't type worker-global `self`; the shape matches Worker's
 // instance side closely enough for postMessage's transfer-list overload.
 const ctx = self as unknown as Worker;
+
+/** Fetches a URL, reporting byte progress, so its response lands in the HTTP cache. */
+async function fetchWithProgress(
+  url: string,
+  onProgress: (loaded: number, total: number) => void,
+): Promise<void> {
+  const response = await fetch(url);
+  if (!response.ok || !response.body) return;
+
+  const total = Number(response.headers.get('Content-Length')) || 0;
+  const reader = response.body.getReader();
+  let loaded = 0;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) return;
+    loaded += value.byteLength;
+    onProgress(loaded, total || loaded);
+  }
+}
 
 ctx.onmessage = async (event: MessageEvent<WorkerRequest>) => {
   const request = event.data;
@@ -27,6 +61,19 @@ ctx.onmessage = async (event: MessageEvent<WorkerRequest>) => {
         stored: voices.includes(request.voiceId),
       });
       return;
+    }
+
+    if (request.mode === 'preload') {
+      await Promise.all(
+        WASM_FILES.map((url) =>
+          fetchWithProgress(url, (loaded, total) => {
+            ctx.postMessage({
+              type: 'progress',
+              progress: { url, loaded, total },
+            });
+          }),
+        ),
+      );
     }
 
     const session = await TtsSession.create({
