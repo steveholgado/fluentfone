@@ -11,15 +11,17 @@ export type PreloadStatus = Record<PreloadLabel, boolean>;
 /**
  * Warms up all three models (Whisper, Gemma, Piper) so the first real
  * conversation turn doesn't pay any download/compile cost. Runs
- * sequentially — they compete for bandwidth and GPU memory.
+ * sequentially — they compete for bandwidth and GPU memory — smallest first,
+ * so the progress indicator shows real movement quickly instead of stalling
+ * on the (much larger) chat model first.
  */
 export async function preloadAll(
   voiceId: string,
   onProgress?: (label: PreloadLabel, p: LoadProgress) => void,
 ): Promise<void> {
+  await textToSpeech.preload(voiceId, (p) => onProgress?.('text-to-speech', p));
   await speechToText.preload((p) => onProgress?.('speech-to-text', p));
   await chat.preload((p) => onProgress?.('chat', p));
-  await textToSpeech.preload(voiceId, (p) => onProgress?.('text-to-speech', p));
 }
 
 /**

@@ -23,7 +23,7 @@ beforeEach(() => {
 });
 
 describe('preloadAll', () => {
-  it('preloads speech-to-text, chat, then text-to-speech in order', async () => {
+  it('preloads text-to-speech, speech-to-text, then chat in order (smallest first)', async () => {
     const order: string[] = [];
 
     vi.mocked(speechToText.preload).mockImplementation(async () => {
@@ -39,7 +39,7 @@ describe('preloadAll', () => {
 
     await preloadAll('en_US-hfc_female-medium');
 
-    expect(order).toEqual(['speech-to-text', 'chat', 'text-to-speech']);
+    expect(order).toEqual(['text-to-speech', 'speech-to-text', 'chat']);
     expect(textToSpeech.preload).toHaveBeenCalledWith(
       'en_US-hfc_female-medium',
       expect.any(Function),
