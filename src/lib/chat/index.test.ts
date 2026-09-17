@@ -144,7 +144,7 @@ describe('generateMessage', () => {
 });
 
 describe('preload', () => {
-  it('warms up the engine and forwards download progress', async () => {
+  it('downloads the model file and forwards progress, without warming up the engine', async () => {
     const { preload } = await import('#/lib/chat/index');
     const onProgress = vi.fn();
 
@@ -154,11 +154,22 @@ describe('preload', () => {
       expect.stringContaining('litertlm'),
       onProgress,
     );
+    expect(engineCreate).not.toHaveBeenCalled();
+  });
+
+  it('lets a later generateMessage() reuse the already-downloaded blob', async () => {
+    const { preload, generateMessage } = await import('#/lib/chat/index');
+
+    await preload();
+    await generateMessage({ prompt: 'hi' });
+
+    expect(modelCache.fetchModelAsBlob).toHaveBeenCalledTimes(1);
+    expect(engineCreate).toHaveBeenCalledTimes(1);
   });
 });
 
 describe('isCached', () => {
-  it('is true immediately once an engine has been created in this session', async () => {
+  it('is true immediately once the model file has been downloaded in this session', async () => {
     const { preload, isCached } = await import('#/lib/chat/index');
 
     await preload();
@@ -167,7 +178,16 @@ describe('isCached', () => {
     expect(modelCache.hasCachedModel).not.toHaveBeenCalled();
   });
 
-  it('falls back to checking the model cache when no engine is live', async () => {
+  it('is true immediately once an engine has been created in this session', async () => {
+    const { generateMessage, isCached } = await import('#/lib/chat/index');
+
+    await generateMessage({ prompt: 'hi' });
+
+    await expect(isCached()).resolves.toBe(true);
+    expect(modelCache.hasCachedModel).not.toHaveBeenCalled();
+  });
+
+  it('falls back to checking the model cache when nothing is live', async () => {
     vi.mocked(modelCache.hasCachedModel).mockResolvedValue(true);
     const { isCached } = await import('#/lib/chat/index');
 
@@ -178,9 +198,10 @@ describe('isCached', () => {
 
 describe('dispose', () => {
   it('deletes every cached engine and clears the cache', async () => {
-    const { preload, dispose, isCached } = await import('#/lib/chat/index');
+    const { generateMessage, dispose, isCached } =
+      await import('#/lib/chat/index');
 
-    await preload();
+    await generateMessage({ prompt: 'hi' });
     await dispose();
 
     expect(engineDelete).toHaveBeenCalled();

@@ -16,11 +16,17 @@ export const DOWNLOAD_ORDER: PreloadLabel[] = [
 ];
 
 /**
- * Warms up all three models (Piper, Whisper, Gemma) so the first real
- * conversation turn doesn't pay any download/compile cost. Runs
- * sequentially — they compete for bandwidth and GPU memory — smallest first,
- * so the progress indicator shows real movement quickly instead of stalling
- * on the (much larger) chat model first.
+ * Downloads all three model files (Piper, Whisper, Gemma) so the first real
+ * conversation turn doesn't pay any download cost. Runs sequentially — they
+ * compete for bandwidth — smallest first, so the progress indicator shows
+ * real movement quickly instead of stalling on the (much larger) chat model
+ * first.
+ *
+ * Deliberately stops short of warming up (compiling/initializing) the chat
+ * engine — that's a separate, slower step left for generateMessage() to do
+ * on demand, e.g. while generating the greeting. When preload isn't needed
+ * at all (everything's already cached), that's the only place warm up ever
+ * happens.
  */
 const DONE: LoadProgress = { loaded: 1, total: 1, progress: 1 };
 

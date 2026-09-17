@@ -76,6 +76,24 @@ export const MODELS = {
   e4b: 'https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it-web.litertlm',
 };
 
+// The model blob download is cached per modelUrl, separately from the engine
+// itself, so preload() can pull the file down ahead of time without paying
+// the cost of compiling/initializing the engine (the "warm up") — that only
+// happens once generateMessage() is actually called.
+const modelBlobPromises = new Map<string, Promise<Blob>>();
+
+function getModelBlob(
+  modelUrl: string,
+  onProgress?: ProgressCallback,
+): Promise<Blob> {
+  let promise = modelBlobPromises.get(modelUrl);
+  if (!promise) {
+    promise = fetchModelAsBlob(modelUrl, onProgress);
+    modelBlobPromises.set(modelUrl, promise);
+  }
+  return promise;
+}
+
 // The engine (and its loaded model weights) is expensive to create, so we
 // cache one instance per distinct modelUrl/maxNumTokens combination and
 // reuse it across calls to generateMessage() within the current page load.
@@ -95,7 +113,7 @@ function getEngine(
   if (!promise) {
     promise = (async () => {
       const [modelBlob, { Engine: LiteRTEngine }] = await Promise.all([
-        fetchModelAsBlob(modelUrl, onProgress),
+        getModelBlob(modelUrl, onProgress),
         import('@litert-lm/core'),
       ]);
       const settings: EngineSettings = {
@@ -201,26 +219,29 @@ function extractText(message: unknown): string {
 }
 
 /**
- * Kicks off model download + engine initialization ahead of time, so the
- * first call to generateMessage() doesn't pay that cost. Safe to call
- * multiple times — getEngine() memoizes by modelUrl::maxNumTokens.
+ * Kicks off the model file download ahead of time, so the first call to
+ * generateMessage() doesn't pay that cost. Deliberately stops short of
+ * initializing the engine (the "warm up") — that's a separate, slower step
+ * left for generateMessage() to do on demand, e.g. while generating the
+ * greeting. Safe to call multiple times — memoized by modelUrl.
  */
 export function preload(
   onProgress?: ProgressCallback,
   modelUrl: string = MODELS.e4b,
-  maxNumTokens = 8192,
-): Promise<Engine> {
-  return getEngine(modelUrl, maxNumTokens, onProgress);
+): Promise<Blob> {
+  return getModelBlob(modelUrl, onProgress);
 }
 
 /**
- * Whether the model is ready to use without a download — either an engine is
- * already live in this page session, or the model file is in the Cache Storage.
+ * Whether the model is ready to use without a download — either the model
+ * file is already fetched into memory this page session, an engine is
+ * already live, or the file is in the Cache Storage.
  */
 export async function isCached(
   modelUrl: string = MODELS.e4b,
   maxNumTokens = 8192,
 ): Promise<boolean> {
+  if (modelBlobPromises.has(modelUrl)) return true;
   if (enginePromises.has(engineKey(modelUrl, maxNumTokens))) return true;
   return hasCachedModel(modelUrl);
 }
@@ -230,6 +251,7 @@ export async function isCached(
  * A fresh engine will be lazily created again on the next generateMessage() call.
  */
 export async function dispose(): Promise<void> {
+  modelBlobPromises.clear();
   const promises = Array.from(enginePromises.values());
   enginePromises.clear();
   for (const enginePromise of promises) {
