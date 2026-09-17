@@ -23,11 +23,9 @@ export function ConversationScreen({
       </div>
       {!hasGreeted ? (
         <>
-          {!isGreetingReady && (
-            <div className="animate-pulse text-center text-2xl">
-              Incoming call
-            </div>
-          )}
+          <div className="animate-pulse text-center text-2xl">
+            {isGreetingReady ? 'Incoming call' : 'Connecting'}
+          </div>
           <button
             onClick={onAnswer}
             className="min-w-48 cursor-pointer rounded-lg bg-gray-200 px-8 py-3 text-xl text-black hover:bg-gray-300 disabled:bg-gray-500"
