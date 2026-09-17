@@ -22,6 +22,13 @@ export interface PreloadProgress {
   index: number;
   total: number;
   percent: number;
+  /**
+   * True once this model's bytes have fully landed but its preload step
+   * hasn't resolved yet — e.g. compiling/initializing the engine, or writing
+   * the file to disk. That work isn't reflected in `percent`, so the bar
+   * would otherwise just sit at 100% with no explanation.
+   */
+  isFinishing: boolean;
 }
 
 const NOTHING_CACHED: PreloadStatus = {
@@ -104,6 +111,11 @@ export function usePreload() {
           index,
           total: needed.length,
           percent: maxPercentRef.current.percent,
+          // All of this model's bytes are in, but preloadAll() hasn't moved
+          // on to the next label yet — it's still inside this model's
+          // preload() call, past the download and into whatever unreported
+          // work comes after (compiling/initializing, writing to disk).
+          isFinishing: maxPercentRef.current.percent >= 100,
         });
       });
       setCached(ALL_CACHED);

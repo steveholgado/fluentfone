@@ -90,6 +90,7 @@ export function PreloadScreen({
             current={progress.index}
             total={progress.total}
             percent={progress.percent}
+            isFinishing={progress.isFinishing}
           />
         ) : (
           <button

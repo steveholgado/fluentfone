@@ -172,6 +172,44 @@ describe('usePreload', () => {
           index: 1,
           total: 1,
           percent: 50,
+          isFinishing: false,
+        }),
+      );
+
+      await act(async () => {
+        resolvePreloadAll();
+      });
+    });
+
+    it('marks progress as finishing once a model hits 100% but preloadAll has not moved past it', async () => {
+      vi.mocked(checkPreloaded).mockResolvedValue({
+        'speech-to-text': false,
+        chat: false,
+        'text-to-speech': false,
+      });
+      vi.mocked(isFullyPreloaded).mockReturnValue(false);
+
+      const { result } = renderHook(() => usePreload());
+      await waitFor(() => expect(result.current.phase).toBe('needed'));
+
+      let resolvePreloadAll: () => void = () => {};
+      vi.mocked(preloadAll).mockImplementation(async (_voice, onProgress) => {
+        onProgress?.('text-to-speech', { loaded: 1, total: 1, progress: 1 });
+        return new Promise((resolve) => {
+          resolvePreloadAll = () => resolve(undefined);
+        });
+      });
+
+      act(() => {
+        void result.current.preload();
+      });
+
+      await waitFor(() =>
+        expect(result.current.progress).toEqual({
+          index: 1,
+          total: 3,
+          percent: 100,
+          isFinishing: true,
         }),
       );
 
