@@ -51,7 +51,7 @@ export interface GenerateMessageOptions {
    * pass in here.
    */
   history?: ChatMessage[];
-  /** URL of the .litertlm model file. Defaults to MODELS.e4b. */
+  /** URL of the .litertlm model file. */
   modelUrl?: string;
   /** Max context window tokens for the engine. Defaults to 8192. */
   maxNumTokens?: number;
@@ -75,6 +75,8 @@ export const MODELS = {
   /** Default — better output quality, for devices that can handle it. */
   e4b: 'https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it-web.litertlm',
 };
+
+export const DEFAULT_MODEL = MODELS.e4b;
 
 // The model blob download is cached per modelUrl, separately from the engine
 // itself, so preload() can pull the file down ahead of time without paying
@@ -144,7 +146,7 @@ export async function generateMessage({
   prompt,
   systemInstruction,
   history = [],
-  modelUrl = MODELS.e4b,
+  modelUrl = DEFAULT_MODEL,
   maxNumTokens = 8192,
   samplerParams,
 }: GenerateMessageOptions = {}): Promise<string> {
@@ -227,7 +229,7 @@ function extractText(message: unknown): string {
  */
 export function preload(
   onProgress?: ProgressCallback,
-  modelUrl: string = MODELS.e4b,
+  modelUrl: string = DEFAULT_MODEL,
 ): Promise<Blob> {
   return getModelBlob(modelUrl, onProgress);
 }
@@ -238,7 +240,7 @@ export function preload(
  * already live, or the file is in the Cache Storage.
  */
 export async function isCached(
-  modelUrl: string = MODELS.e4b,
+  modelUrl: string = DEFAULT_MODEL,
   maxNumTokens = 8192,
 ): Promise<boolean> {
   if (modelBlobPromises.has(modelUrl)) return true;
