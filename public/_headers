@@ -1,5 +1,5 @@
 # Vendored wasm/data assets are versioned by path (see
-# scripts/vendor-wasm-assets.mjs), so a dependency bump changes the URL and
+# vite-plugin-vendor-wasm-assets.ts), so a dependency bump changes the URL and
 # it's always safe to cache these indefinitely.
 /vendor/*
   Cache-Control: public, max-age=31536000, immutable
