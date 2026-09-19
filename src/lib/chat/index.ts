@@ -12,6 +12,8 @@ import type {
   ConversationConfig,
 } from '@litert-lm/core';
 import { fetchModelAsBlob, hasCachedModel } from './model-cache';
+import { resolveRuntimeUrls, runtimeMarkerKey } from './runtime';
+import { hasWarmRuntime, warmRuntime } from '../runtime-cache';
 import type { ProgressCallback } from '../progress';
 
 /** A single turn of prior conversation history to seed context with. */
@@ -61,7 +63,17 @@ export interface GenerateMessageOptions {
    * decoding.
    */
   samplerParams?: SamplerParams;
+  /**
+   * Called as the call moves between phases. Preload normally gets the model
+   * and the wasm runtime onto disk ahead of time, leaving only 'compiling' and
+   * 'generating' to happen here — but 'downloading' can still appear if the
+   * browser evicted either since. Lets the UI say which, instead of showing
+   * one undifferentiated wait.
+   */
+  onStage?: (stage: GenerateStage) => void;
 }
+
+export type GenerateStage = 'downloading' | 'compiling' | 'generating';
 
 const DEFAULT_SAMPLER_PARAMS: Required<Omit<SamplerParams, 'randomSeed'>> = {
   temperature: 0.8,
@@ -109,11 +121,13 @@ function getEngine(
   modelUrl: string,
   maxNumTokens: number,
   onProgress?: ProgressCallback,
+  onStage?: (stage: GenerateStage) => void,
 ): Promise<Engine> {
   const key = engineKey(modelUrl, maxNumTokens);
   let promise = enginePromises.get(key);
   if (!promise) {
     promise = (async () => {
+      onStage?.('downloading');
       const [modelBlob, { Engine: LiteRTEngine }] = await Promise.all([
         getModelBlob(modelUrl, onProgress),
         import('@litert-lm/core'),
@@ -122,6 +136,10 @@ function getEngine(
         model: modelBlob,
         mainExecutorSettings: { maxNumTokens },
       };
+      // Engine.create() loads the wasm runtime (already on disk if preload
+      // ran), sets up the WebGPU device and compiles the model. Minutes of
+      // work on a cold start, none of it reported by the SDK.
+      onStage?.('compiling');
       return LiteRTEngine.create(settings);
     })();
     enginePromises.set(key, promise);
@@ -149,8 +167,9 @@ export async function generateMessage({
   modelUrl = DEFAULT_MODEL,
   maxNumTokens = 8192,
   samplerParams,
+  onStage,
 }: GenerateMessageOptions = {}): Promise<string> {
-  const engine = await getEngine(modelUrl, maxNumTokens);
+  const engine = await getEngine(modelUrl, maxNumTokens, undefined, onStage);
 
   const prefaceMessages: Array<{
     role: 'system' | 'user' | 'model';
@@ -176,6 +195,8 @@ export async function generateMessage({
   } as ConversationConfig;
 
   const conversation = await engine.createConversation(conversationConfig);
+
+  onStage?.('generating');
 
   try {
     // The SDK requires an outbound message to elicit a response — there's no
@@ -232,6 +253,51 @@ export function preload(
   modelUrl: string = DEFAULT_MODEL,
 ): Promise<Blob> {
   return getModelBlob(modelUrl, onProgress);
+}
+
+// Memoized separately from the model blob: the runtime is shared across every
+// model, and re-warming it on each call would re-download nothing but still
+// cost a round trip per URL.
+let runtimeWarmPromise: Promise<void> | null = null;
+
+/**
+ * Downloads the LiteRT-LM wasm runtime — tens of megabytes, from the CDN
+ * baked into the library — so that Engine.create() finds it on disk rather
+ * than fetching it silently mid-conversation.
+ *
+ * Stops short of compiling the model, which is the slow half of
+ * Engine.create() and stays where it was.
+ */
+export function preloadRuntime(onProgress?: ProgressCallback): Promise<void> {
+  runtimeWarmPromise ??= (async () => {
+    const { LiteRtLm, getOrLoadGlobalLiteRtLm } =
+      await import('@litert-lm/core');
+    const { js, wasm } = await resolveRuntimeUrls(LiteRtLm.DEFAULT_WASM_PATH);
+
+    await warmRuntime([js, wasm], await runtimeMarkerKey(), onProgress);
+
+    // Instantiate it now the bytes are local. Engine.create() calls this same
+    // memoizing getter with no path, which returns whatever is already
+    // loading rather than complaining about a mismatch.
+    await getOrLoadGlobalLiteRtLm();
+  })().catch((err) => {
+    // Don't cache a failure — a later attempt (or the engine itself) should
+    // be free to retry.
+    runtimeWarmPromise = null;
+    throw err;
+  });
+
+  return runtimeWarmPromise;
+}
+
+/**
+ * Whether the wasm runtime has already been downloaded. Answers from the
+ * receipt alone — importing @litert-lm/core to resolve its real URLs would
+ * defeat the point, since this runs during the check stage.
+ */
+export async function isRuntimeCached(): Promise<boolean> {
+  if (runtimeWarmPromise) return true;
+  return hasWarmRuntime(await runtimeMarkerKey());
 }
 
 /**

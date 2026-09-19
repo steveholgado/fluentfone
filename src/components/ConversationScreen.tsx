@@ -24,7 +24,11 @@ export function ConversationScreen({
       {!hasGreeted ? (
         <>
           <div className="animate-pulse text-center text-2xl">
-            {isGreetingReady ? 'Incoming call' : 'Connecting'}
+            {/* Before the call connects there's the engine to compile and the
+                greeting to generate, neither of which reports progress.
+                `status` says which of those is happening; 'Connecting' covers
+                the gap before the first stage is reported. */}
+            {isGreetingReady ? 'Incoming call' : status || 'Connecting'}
           </div>
           <button
             onClick={onAnswer}

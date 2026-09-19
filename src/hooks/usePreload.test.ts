@@ -3,14 +3,38 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { usePreload } from '#/hooks/usePreload';
 import { checkPreloaded, isFullyPreloaded, preloadAll } from '#/lib/preload';
+import type { PreloadStatus } from '#/lib/preload';
 import { VOICE_ID } from '#/config';
 
 vi.mock('#/lib/preload', () => ({
   checkPreloaded: vi.fn(),
   isFullyPreloaded: vi.fn(),
   preloadAll: vi.fn(),
-  DOWNLOAD_ORDER: ['text-to-speech', 'speech-to-text', 'chat'],
+  DOWNLOAD_ORDER: [
+    'text-to-speech-runtime',
+    'text-to-speech',
+    'speech-to-text-runtime',
+    'speech-to-text',
+    'chat-runtime',
+    'chat',
+  ],
 }));
+
+/** Every step at `value`, then whatever `overrides` says. */
+function status(
+  value: boolean,
+  overrides: Partial<PreloadStatus> = {},
+): PreloadStatus {
+  return {
+    'text-to-speech-runtime': value,
+    'text-to-speech': value,
+    'speech-to-text-runtime': value,
+    'speech-to-text': value,
+    'chat-runtime': value,
+    chat: value,
+    ...overrides,
+  };
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -27,11 +51,7 @@ describe('usePreload', () => {
   });
 
   it('moves to ready and warms up in the background when everything is cached', async () => {
-    const cached = {
-      'speech-to-text': true,
-      chat: true,
-      'text-to-speech': true,
-    };
+    const cached = status(true);
     vi.mocked(checkPreloaded).mockResolvedValue(cached);
     vi.mocked(isFullyPreloaded).mockReturnValue(true);
     vi.mocked(preloadAll).mockResolvedValue(undefined);
@@ -45,11 +65,7 @@ describe('usePreload', () => {
   });
 
   it('logs but does not throw when the background warm-up fails', async () => {
-    vi.mocked(checkPreloaded).mockResolvedValue({
-      'speech-to-text': true,
-      chat: true,
-      'text-to-speech': true,
-    });
+    vi.mocked(checkPreloaded).mockResolvedValue(status(true));
     vi.mocked(isFullyPreloaded).mockReturnValue(true);
     vi.mocked(preloadAll).mockRejectedValue(new Error('warm-up failed'));
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -68,11 +84,10 @@ describe('usePreload', () => {
   });
 
   it('moves to needed when some models are not cached, without warming up', async () => {
-    const cached = {
+    const cached = status(true, {
       'speech-to-text': false,
-      chat: true,
       'text-to-speech': false,
-    };
+    });
     vi.mocked(checkPreloaded).mockResolvedValue(cached);
     vi.mocked(isFullyPreloaded).mockReturnValue(false);
 
@@ -84,8 +99,22 @@ describe('usePreload', () => {
     expect(preloadAll).not.toHaveBeenCalled();
   });
 
+  it('moves to needed when only a wasm runtime is missing', async () => {
+    // The models are all on disk, but the runtime one of them executes on
+    // isn't — which used to slip past the check and surface as a silent
+    // multi-megabyte download mid-conversation.
+    const cached = status(true, { 'chat-runtime': false });
+    vi.mocked(checkPreloaded).mockResolvedValue(cached);
+    vi.mocked(isFullyPreloaded).mockReturnValue(false);
+
+    const { result } = renderHook(() => usePreload());
+
+    await waitFor(() => expect(result.current.phase).toBe('needed'));
+    expect(preloadAll).not.toHaveBeenCalled();
+  });
+
   it('does not update state after unmount', async () => {
-    let resolveCheck: (v: unknown) => void = () => {};
+    let resolveCheck: (v: PreloadStatus) => void = () => {};
     vi.mocked(checkPreloaded).mockReturnValue(
       new Promise((resolve) => {
         resolveCheck = resolve;
@@ -94,11 +123,7 @@ describe('usePreload', () => {
 
     const { result, unmount } = renderHook(() => usePreload());
     unmount();
-    resolveCheck({
-      'speech-to-text': true,
-      chat: true,
-      'text-to-speech': true,
-    });
+    resolveCheck(status(true));
 
     await Promise.resolve();
     await Promise.resolve();
@@ -108,11 +133,7 @@ describe('usePreload', () => {
 
   describe('preload', () => {
     it('reports progress and marks everything cached on success', async () => {
-      vi.mocked(checkPreloaded).mockResolvedValue({
-        'speech-to-text': false,
-        chat: false,
-        'text-to-speech': false,
-      });
+      vi.mocked(checkPreloaded).mockResolvedValue(status(false));
       vi.mocked(isFullyPreloaded).mockReturnValue(false);
       vi.mocked(preloadAll).mockImplementation(async (_voice, onProgress) => {
         onProgress?.('speech-to-text', { loaded: 500_000 });
@@ -128,20 +149,14 @@ describe('usePreload', () => {
 
       expect(result.current.isPreloading).toBe(false);
       expect(result.current.status).toBe('');
-      expect(result.current.cached).toEqual({
-        'speech-to-text': true,
-        chat: true,
-        'text-to-speech': true,
-      });
+      expect(result.current.cached).toEqual(status(true));
       expect(result.current.phase).toBe('needed');
     });
 
-    it('only counts models that still need downloading in progress totals', async () => {
-      vi.mocked(checkPreloaded).mockResolvedValue({
-        'speech-to-text': true,
-        chat: false,
-        'text-to-speech': true,
-      });
+    it('only counts steps that still need downloading in progress totals', async () => {
+      vi.mocked(checkPreloaded).mockResolvedValue(
+        status(true, { chat: false }),
+      );
       vi.mocked(isFullyPreloaded).mockReturnValue(false);
 
       const { result } = renderHook(() => usePreload());
@@ -149,10 +164,10 @@ describe('usePreload', () => {
 
       let resolvePreloadAll: () => void = () => {};
       vi.mocked(preloadAll).mockImplementation(async (_voice, onProgress) => {
-        // preloadAll still reports the already-cached models internally...
+        // preloadAll still reports the already-cached steps internally...
         onProgress?.('text-to-speech', { loaded: 1, total: 1, progress: 1 });
         onProgress?.('speech-to-text', { loaded: 1, total: 1, progress: 1 });
-        // ...but only the one model that needed downloading should surface.
+        // ...but only the one step that needed downloading should surface.
         onProgress?.('chat', {
           loaded: 500_000,
           total: 1_000_000,
@@ -181,12 +196,11 @@ describe('usePreload', () => {
       });
     });
 
-    it('marks progress as finishing once a model hits 100% but preloadAll has not moved past it', async () => {
-      vi.mocked(checkPreloaded).mockResolvedValue({
-        'speech-to-text': false,
-        chat: false,
-        'text-to-speech': false,
-      });
+    it('gives a runtime download its own step, so the bar does not stick', async () => {
+      // The runtime and the model it feeds are separate steps precisely so
+      // that each gets a full 0→100 sweep. Reported as one step, the second
+      // download would be clamped behind the first one's peak.
+      vi.mocked(checkPreloaded).mockResolvedValue(status(false));
       vi.mocked(isFullyPreloaded).mockReturnValue(false);
 
       const { result } = renderHook(() => usePreload());
@@ -194,7 +208,54 @@ describe('usePreload', () => {
 
       let resolvePreloadAll: () => void = () => {};
       vi.mocked(preloadAll).mockImplementation(async (_voice, onProgress) => {
-        onProgress?.('text-to-speech', { loaded: 1, total: 1, progress: 1 });
+        onProgress?.('text-to-speech-runtime', {
+          loaded: 1,
+          total: 1,
+          progress: 1,
+        });
+        onProgress?.('text-to-speech', {
+          loaded: 250_000,
+          total: 1_000_000,
+          progress: 0.25,
+        });
+        return new Promise((resolve) => {
+          resolvePreloadAll = () => resolve(undefined);
+        });
+      });
+
+      act(() => {
+        void result.current.preload();
+      });
+
+      // Step 2 of 6, back down at 25% — not pinned at the runtime's 100%.
+      await waitFor(() =>
+        expect(result.current.progress).toEqual({
+          index: 2,
+          total: 6,
+          percent: 25,
+          isFinishing: false,
+        }),
+      );
+
+      await act(async () => {
+        resolvePreloadAll();
+      });
+    });
+
+    it('marks progress as finishing once a step hits 100% but preloadAll has not moved past it', async () => {
+      vi.mocked(checkPreloaded).mockResolvedValue(status(false));
+      vi.mocked(isFullyPreloaded).mockReturnValue(false);
+
+      const { result } = renderHook(() => usePreload());
+      await waitFor(() => expect(result.current.phase).toBe('needed'));
+
+      let resolvePreloadAll: () => void = () => {};
+      vi.mocked(preloadAll).mockImplementation(async (_voice, onProgress) => {
+        onProgress?.('text-to-speech-runtime', {
+          loaded: 1,
+          total: 1,
+          progress: 1,
+        });
         return new Promise((resolve) => {
           resolvePreloadAll = () => resolve(undefined);
         });
@@ -207,7 +268,7 @@ describe('usePreload', () => {
       await waitFor(() =>
         expect(result.current.progress).toEqual({
           index: 1,
-          total: 3,
+          total: 6,
           percent: 100,
           isFinishing: true,
         }),
@@ -219,11 +280,7 @@ describe('usePreload', () => {
     });
 
     it('sets an error status and stops preloading on failure', async () => {
-      vi.mocked(checkPreloaded).mockResolvedValue({
-        'speech-to-text': false,
-        chat: false,
-        'text-to-speech': false,
-      });
+      vi.mocked(checkPreloaded).mockResolvedValue(status(false));
       vi.mocked(isFullyPreloaded).mockReturnValue(false);
       vi.mocked(preloadAll).mockRejectedValue(new Error('network error'));
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -245,11 +302,7 @@ describe('usePreload', () => {
 
   describe('start', () => {
     it('moves the phase to ready', async () => {
-      vi.mocked(checkPreloaded).mockResolvedValue({
-        'speech-to-text': false,
-        chat: false,
-        'text-to-speech': false,
-      });
+      vi.mocked(checkPreloaded).mockResolvedValue(status(false));
       vi.mocked(isFullyPreloaded).mockReturnValue(false);
 
       const { result } = renderHook(() => usePreload());

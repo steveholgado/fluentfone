@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 
 import {
   isFullyPreloaded,
+  isLabelPreloaded,
   type PreloadLabel,
   type PreloadStatus,
 } from '#/lib/preload';
@@ -65,15 +66,20 @@ export function PreloadScreen({
       >
         <div className="text-lg">Download</div>
         <ul>
-          {ORDER.map((label) => (
-            <li key={label}>
-              <span aria-hidden="true">{cached[label] ? '✓' : '✗'}</span>{' '}
-              {LABELS[label]}
-              <span className="sr-only">
-                {cached[label] ? ' downloaded' : ' not downloaded'}
-              </span>
-            </li>
-          ))}
+          {ORDER.map((label) => {
+            // A row only ticks once both of its steps — the wasm runtime and
+            // the model weights — are on disk.
+            const done = isLabelPreloaded(cached, label);
+            return (
+              <li key={label}>
+                <span aria-hidden="true">{done ? '✓' : '✗'}</span>{' '}
+                {LABELS[label]}
+                <span className="sr-only">
+                  {done ? ' downloaded' : ' not downloaded'}
+                </span>
+              </li>
+            );
+          })}
         </ul>
 
         {!!status && <div>{status}</div>}

@@ -152,6 +152,63 @@ describe('transcribe', () => {
   });
 });
 
+describe('preloadRuntime', () => {
+  it('sends a runtime request and forwards progress updates', async () => {
+    const { preloadRuntime } = await import('#/lib/speech-to-text/index');
+    const onProgress = vi.fn();
+
+    const promise = preloadRuntime(onProgress);
+    await flush();
+    const worker = FakeWorker.instances[0];
+
+    expect(worker.postedMessages[0]).toEqual({ id: 0, mode: 'runtime' });
+
+    worker.emit({
+      id: 0,
+      type: 'progress',
+      progress: { loaded: 5, total: 50, progress: 0.1 },
+    });
+    worker.emit({ id: 0, type: 'done' });
+
+    await expect(promise).resolves.toBeUndefined();
+    expect(onProgress).toHaveBeenCalledWith({
+      loaded: 5,
+      total: 50,
+      progress: 0.1,
+    });
+  });
+});
+
+describe('isRuntimeCached', () => {
+  it('is false when nothing has been warmed and there is no Cache Storage', async () => {
+    const { isRuntimeCached } = await import('#/lib/speech-to-text/index');
+
+    await expect(isRuntimeCached()).resolves.toBe(false);
+  });
+
+  it('is true when the runtime receipt is present', async () => {
+    vi.stubGlobal('caches', {
+      open: vi.fn().mockResolvedValue({
+        match: vi.fn().mockResolvedValue(new Response('1')),
+      }),
+    });
+
+    const { isRuntimeCached } = await import('#/lib/speech-to-text/index');
+
+    await expect(isRuntimeCached()).resolves.toBe(true);
+  });
+
+  it('does not spawn a worker', async () => {
+    // Runs during the check stage, so it must not pull in the 500 KB
+    // Transformers.js chunk the worker would load.
+    const { isRuntimeCached } = await import('#/lib/speech-to-text/index');
+
+    await isRuntimeCached();
+
+    expect(FakeWorker.instances).toHaveLength(0);
+  });
+});
+
 describe('preload', () => {
   it('sends a preload request and forwards progress updates', async () => {
     const { preload } = await import('#/lib/speech-to-text/index');

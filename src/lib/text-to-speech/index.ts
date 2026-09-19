@@ -15,8 +15,10 @@
 // rather than to a worker, so spinning up a new worker per call doesn't cost
 // a re-download after the first time a given voice is used.
 
+import { hasWarmRuntime } from '../runtime-cache';
 import type { LoadProgress, ProgressCallback } from '../progress';
 import type { WorkerRequest, WorkerResponse } from './messages';
+import { OPFS_VOICE_DIR, PIPER_RUNTIME_MARKER_KEY } from './runtime';
 
 // Piper voice IDs. Full list: await (await import('@mintplex-labs/piper-tts-web')).voices()
 export const VOICES = {
@@ -92,6 +94,16 @@ export async function speak(
   return new Blob([result.buffer], { type: result.mimeType });
 }
 
+/**
+ * Downloads the piper/ONNX wasm the voice runs on, ahead of the voice itself
+ * and reported separately. See ./runtime.ts for why it needs doing by hand.
+ */
+export async function preloadRuntime(
+  onProgress?: ProgressCallback,
+): Promise<void> {
+  await runInWorker({ mode: 'runtime' }, onProgress);
+}
+
 export async function preload(
   voiceId: string,
   onProgress?: ProgressCallback,
@@ -99,11 +111,28 @@ export async function preload(
   await runInWorker({ mode: 'preload', voiceId }, onProgress);
 }
 
+/** Whether the piper/ONNX wasm has already been downloaded. */
+export async function isRuntimeCached(): Promise<boolean> {
+  return hasWarmRuntime(PIPER_RUNTIME_MARKER_KEY);
+}
+
 /**
  * Whether the voice model is already stored in OPFS, i.e. usable without a
  * download. Only reads storage; never fetches.
+ *
+ * This is piper-tts-web's own `stored()` inlined — it is a plain OPFS
+ * directory listing, and going through the library would mean spawning a
+ * worker and loading its bundle during the check stage, before the user has
+ * agreed to download anything. The tradeoff is that the layout below has to
+ * track the library's; `stored()` in piper-tts-web.js is the reference.
  */
 export async function isCached(voiceId: string): Promise<boolean> {
-  const result = await runInWorker({ mode: 'check', voiceId });
-  return result.stored === true;
+  const root = await navigator.storage.getDirectory();
+  const dir = await root.getDirectoryHandle(OPFS_VOICE_DIR, { create: true });
+
+  for await (const name of dir.keys()) {
+    if (name.endsWith('.onnx') && name.split('.')[0] === voiceId) return true;
+  }
+
+  return false;
 }

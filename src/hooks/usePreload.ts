@@ -32,15 +32,21 @@ export interface PreloadProgress {
 }
 
 const NOTHING_CACHED: PreloadStatus = {
-  'speech-to-text': false,
-  chat: false,
+  'text-to-speech-runtime': false,
   'text-to-speech': false,
+  'speech-to-text-runtime': false,
+  'speech-to-text': false,
+  'chat-runtime': false,
+  chat: false,
 };
 
 const ALL_CACHED: PreloadStatus = {
-  'speech-to-text': true,
-  chat: true,
+  'text-to-speech-runtime': true,
   'text-to-speech': true,
+  'speech-to-text-runtime': true,
+  'speech-to-text': true,
+  'chat-runtime': true,
+  chat: true,
 };
 
 export function usePreload() {
@@ -86,12 +92,12 @@ export function usePreload() {
     setIsPreloading(true);
     maxPercentRef.current = { index: 0, percent: 0 };
 
-    // Only labels not already cached get a slot in the progress bar.
-    const needed = DOWNLOAD_ORDER.filter((label) => !cached[label]);
+    // Only steps not already cached get a slot in the progress bar.
+    const needed = DOWNLOAD_ORDER.filter((step) => !cached[step]);
 
     try {
-      await preloadAll(VOICE_ID, (label, p) => {
-        const position = needed.indexOf(label);
+      await preloadAll(VOICE_ID, (step, p) => {
+        const position = needed.indexOf(step);
         if (position === -1) return;
         const index = position + 1;
 
@@ -111,10 +117,10 @@ export function usePreload() {
           index,
           total: needed.length,
           percent: maxPercentRef.current.percent,
-          // All of this model's bytes are in, but preloadAll() hasn't moved
-          // on to the next label yet — it's still inside this model's
-          // preload() call, past the download and into whatever unreported
-          // work comes after (compiling/initializing, writing to disk).
+          // All of this step's bytes are in, but preloadAll() hasn't moved
+          // on to the next step yet — it's still inside this one's preload()
+          // call, past the download and into whatever unreported work comes
+          // after (compiling/initializing, writing to disk).
           isFinishing: maxPercentRef.current.percent >= 100,
         });
       });

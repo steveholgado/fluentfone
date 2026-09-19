@@ -10,6 +10,8 @@
 
 import type { AutomaticSpeechRecognitionPipeline } from '@huggingface/transformers';
 import type { WorkerRequest, WorkerResponse } from './messages';
+import { warmRuntime } from '../runtime-cache';
+import { ORT_RUNTIME_MARKER_KEY, resolveOrtRuntimeUrls } from './runtime';
 
 const MODEL = 'onnx-community/whisper-base';
 
@@ -25,6 +27,12 @@ ctx.onmessage = async (event: MessageEvent<WorkerRequest>) => {
   const { id } = request;
 
   try {
+    if (request.mode === 'runtime') {
+      await warmOrtRuntime(id);
+      ctx.postMessage({ id, type: 'done' } satisfies WorkerResponse);
+      return;
+    }
+
     if (!pipelinePromise) {
       pipelinePromise = (async () => {
         const { pipeline } = await import('@huggingface/transformers');
@@ -84,3 +92,34 @@ ctx.onmessage = async (event: MessageEvent<WorkerRequest>) => {
     } satisfies WorkerResponse);
   }
 };
+
+/**
+ * Downloads the ONNX Runtime wasm that pipeline() would otherwise fetch
+ * silently — around 22 MB, from the CDN Transformers.js defaults to.
+ *
+ * Importing Transformers.js is enough to make it resolve its own wasm paths,
+ * so this reads those back rather than reconstructing them. It stops short of
+ * building the pipeline: that's the 'preload' request's job, reported as its
+ * own step.
+ */
+async function warmOrtRuntime(id: number): Promise<void> {
+  const { env } = await import('@huggingface/transformers');
+
+  const urls = resolveOrtRuntimeUrls(
+    env.backends?.onnx?.wasm?.wasmPaths,
+    // Matches the branch Transformers.js takes when it sets wasmPaths itself.
+    /^((?!chrome|android).)*safari/i.test(navigator.userAgent),
+  );
+
+  // Nothing to warm if Transformers.js is loading ORT some other way (a
+  // bundled binary, say). Not an error — pipeline() will still work.
+  if (!urls) return;
+
+  await warmRuntime([urls.mjs, urls.wasm], ORT_RUNTIME_MARKER_KEY, (progress) =>
+    ctx.postMessage({
+      id,
+      type: 'progress',
+      progress,
+    } satisfies WorkerResponse),
+  );
+}

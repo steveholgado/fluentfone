@@ -19,9 +19,7 @@ export function DownloadProgressBar({
       />
       <div className="relative flex justify-between">
         <span className={isFinishing ? 'animate-pulse' : undefined}>
-          {isFinishing
-            ? 'Finishing up...'
-            : `Downloading ${current} of ${total}`}
+          {isFinishing ? 'Finishing up…' : `Downloading ${current} of ${total}`}
         </span>
         <span>{percent}%</span>
       </div>

@@ -2,11 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { WorkerRequest } from '#/lib/text-to-speech/messages';
 
-const stored = vi.fn();
 const sessionCreate = vi.fn();
 
 vi.mock('@mintplex-labs/piper-tts-web', () => ({
-  stored: (...args: unknown[]) => stored(...args),
   TtsSession: {
     WASM_LOCATIONS: { base: 'https://example.com/wasm/' },
     create: (...args: unknown[]) => sessionCreate(...args),
@@ -28,8 +26,8 @@ beforeEach(async () => {
       onmessage = handler;
     },
   });
-  // The worker warms the browser's HTTP cache for the wasm runtime files
-  // before every preload request — give it something to fetch.
+  // A 'runtime' request warms the browser's HTTP cache for the wasm files —
+  // give it something to fetch.
   vi.stubGlobal(
     'fetch',
     vi.fn(
@@ -40,6 +38,9 @@ beforeEach(async () => {
         }),
     ),
   );
+  // warmRuntime writes a receipt on success; the worker shouldn't care
+  // whether Cache Storage exists.
+  vi.stubGlobal('caches', undefined);
 
   await import('#/lib/text-to-speech/worker');
 });
@@ -51,21 +52,34 @@ afterEach(() => {
 });
 
 describe('worker onmessage', () => {
-  it('answers a check request from stored() without creating a session', async () => {
-    stored.mockResolvedValue(['voice-a', 'voice-b']);
+  it('downloads the wasm runtime files without creating a session', async () => {
+    await post({ mode: 'runtime' });
 
-    await post({ mode: 'check', voiceId: 'voice-a' });
-
-    expect(postedMessages).toEqual([{ type: 'done', stored: true }]);
+    expect(fetch).toHaveBeenCalledTimes(3);
     expect(sessionCreate).not.toHaveBeenCalled();
+    expect(postedMessages.at(-1)).toEqual({ type: 'done' });
   });
 
-  it('reports false for a voice not in the stored list', async () => {
-    stored.mockResolvedValue(['voice-b']);
+  it('reports one combined progress figure across the runtime files', async () => {
+    await post({ mode: 'runtime' });
 
-    await post({ mode: 'check', voiceId: 'voice-a' });
+    // Summed across all three files rather than reported per-file, so the
+    // bar moves forward once instead of restarting three times.
+    expect(postedMessages).toContainEqual({
+      type: 'progress',
+      progress: { url: 'piper-runtime', loaded: 9, total: 9 },
+    });
+  });
 
-    expect(postedMessages).toEqual([{ type: 'done', stored: false }]);
+  it('does not download the runtime again as part of a preload request', async () => {
+    // The two are separate steps so each gets its own progress sweep; folding
+    // the wasm back into 'preload' would make the voice download share a bar
+    // that had already reached 100%.
+    sessionCreate.mockResolvedValue({ predict: vi.fn() });
+
+    await post({ mode: 'preload', voiceId: 'voice-a' });
+
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it('creates a session and reports done for a preload request', async () => {
@@ -79,20 +93,20 @@ describe('worker onmessage', () => {
     expect(postedMessages.at(-1)).toEqual({ type: 'done' });
   });
 
-  it('warms the wasm runtime cache before creating a session, reporting progress', async () => {
+  it('points the session at the self-hosted wasm rather than the CDN', async () => {
     sessionCreate.mockResolvedValue({ predict: vi.fn() });
 
     await post({ mode: 'preload', voiceId: 'voice-a' });
 
-    expect(fetch).toHaveBeenCalledTimes(3);
-    expect(postedMessages).toContainEqual({
-      type: 'progress',
-      progress: {
-        url: expect.stringContaining('piper_phonemize.wasm'),
-        loaded: 3,
-        total: 3,
-      },
-    });
+    expect(sessionCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        wasmPaths: expect.objectContaining({
+          onnxWasm: expect.stringContaining('/vendor/onnx/'),
+          piperWasm: expect.stringContaining('/vendor/piper-wasm/'),
+          piperData: expect.stringContaining('/vendor/piper-wasm/'),
+        }),
+      }),
+    );
   });
 
   it('forwards session progress callbacks to postMessage', async () => {
@@ -137,9 +151,9 @@ describe('worker onmessage', () => {
   });
 
   it('stringifies non-Error throwables', async () => {
-    stored.mockRejectedValue('plain string failure');
+    sessionCreate.mockRejectedValue('plain string failure');
 
-    await post({ mode: 'check', voiceId: 'voice-a' });
+    await post({ mode: 'speak', voiceId: 'voice-a', text: 'hi' });
 
     expect(postedMessages).toEqual([
       { type: 'error', message: 'plain string failure' },

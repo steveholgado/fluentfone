@@ -4,8 +4,10 @@
  */
 
 import { toMonoPcm } from '../audio/decode';
+import { hasWarmRuntime } from '../runtime-cache';
 import type { LoadProgress, ProgressCallback } from '../progress';
 import type { WorkerRequest, WorkerResponse } from './messages';
+import { ORT_RUNTIME_MARKER_KEY } from './runtime';
 
 const SAMPLE_RATE = 16000;
 
@@ -112,9 +114,26 @@ export async function transcribe(
   });
 }
 
+/**
+ * Downloads the ONNX Runtime wasm that the pipeline runs on. Reported as its
+ * own preload step because it's tens of megabytes and, unlike the model
+ * weights, Transformers.js fetches it without reporting any progress.
+ */
+export async function preloadRuntime(
+  onProgress?: ProgressCallback,
+): Promise<void> {
+  await send({ id: nextRequestId++, mode: 'runtime' }, onProgress);
+}
+
 /** Warms up the Whisper model cache so the first real `transcribe()` call is instant. */
 export async function preload(onProgress?: ProgressCallback): Promise<void> {
   await send({ id: nextRequestId++, mode: 'preload' }, onProgress);
+}
+
+/** Whether the ONNX Runtime wasm has already been downloaded. */
+export async function isRuntimeCached(): Promise<boolean> {
+  if (pipelineReady) return true;
+  return hasWarmRuntime(ORT_RUNTIME_MARKER_KEY);
 }
 
 /**

@@ -72,6 +72,7 @@ describe('useConversation', () => {
 
       expect(generateMessage).toHaveBeenCalledWith({
         systemInstruction: SYSTEM_INSTRUCTION,
+        onStage: expect.any(Function),
       });
       expect(speak).toHaveBeenCalledWith(
         VOICE_ID,
@@ -224,6 +225,7 @@ describe('useConversation', () => {
         prompt: 'Hola, ¿cómo estás?',
         systemInstruction: SYSTEM_INSTRUCTION,
         history: [],
+        onStage: expect.any(Function),
       });
       expect(speak).toHaveBeenCalledWith(
         VOICE_ID,
@@ -269,6 +271,7 @@ describe('useConversation', () => {
           { role: 'user', content: 'Hola' },
           { role: 'model', content: '¡Hola!' },
         ],
+        onStage: expect.any(Function),
       });
     });
 

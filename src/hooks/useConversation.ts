@@ -3,10 +3,24 @@ import { useCallback, useRef, useState } from 'react';
 import { AudioRecorder } from '#/lib/audio/recorder';
 import { play } from '#/lib/audio/player';
 import { transcribe } from '#/lib/speech-to-text';
-import { generateMessage, type ChatMessage } from '#/lib/chat';
+import {
+  generateMessage,
+  type ChatMessage,
+  type GenerateStage,
+} from '#/lib/chat';
 import { speak } from '#/lib/text-to-speech';
 import { formatProgress } from '#/lib/progress';
 import { LANGUAGE, SYSTEM_INSTRUCTION, VOICE_ID } from '#/config';
+
+// Preload normally leaves only 'compiling' and 'generating' to happen here.
+// 'downloading' shows up when the browser has evicted the model or the wasm
+// runtime since — rare, but it re-fetches gigabytes, so it says so rather
+// than looking stuck.
+const STAGE_STATUS: Record<GenerateStage, string> = {
+  downloading: 'Downloading…',
+  compiling: 'Warming up…',
+  generating: 'Generating…',
+};
 
 export function useConversation() {
   const [isRecording, setIsRecording] = useState(false);
@@ -33,9 +47,10 @@ export function useConversation() {
     if (preparingGreetingRef.current || greetingRef.current) return;
     preparingGreetingRef.current = true;
     try {
-      setStatus('Generating…');
+      setStatus(STAGE_STATUS.compiling);
       const opening = await generateMessage({
         systemInstruction: SYSTEM_INSTRUCTION,
+        onStage: (stage) => setStatus(STAGE_STATUS[stage]),
       });
       const audio = await speak(VOICE_ID, opening, (p) =>
         setStatus(`Downloading voice model… ${formatProgress(p)}`),
@@ -94,15 +109,16 @@ export function useConversation() {
     try {
       const audioBlob = await recorder.stop();
 
-      setStatus('Transcribing...');
+      setStatus('Transcribing…');
       const text = await transcribe(audioBlob, { language: LANGUAGE });
       historyRef.current.push({ role: 'user', content: text });
 
-      setStatus('Generating...');
+      setStatus(STAGE_STATUS.generating);
       const reply = await generateMessage({
         prompt: text,
         systemInstruction: SYSTEM_INSTRUCTION,
         history: historyRef.current.slice(0, -1),
+        onStage: (stage) => setStatus(STAGE_STATUS[stage]),
       });
       historyRef.current.push({ role: 'model', content: reply });
 

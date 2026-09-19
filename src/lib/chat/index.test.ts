@@ -13,8 +13,12 @@ const createConversation = vi.fn();
 const engineCreate = vi.fn();
 const engineDelete = vi.fn();
 
+const getOrLoadGlobalLiteRtLm = vi.fn();
+
 vi.mock('@litert-lm/core', () => ({
   Engine: { create: (...args: unknown[]) => engineCreate(...args) },
+  LiteRtLm: { DEFAULT_WASM_PATH: 'https://cdn.example/@litert-lm/core/wasm' },
+  getOrLoadGlobalLiteRtLm: () => getOrLoadGlobalLiteRtLm(),
 }));
 
 beforeEach(() => {
@@ -143,6 +147,31 @@ describe('generateMessage', () => {
   });
 });
 
+describe('onStage', () => {
+  it('reports downloading, then compiling, then generating', async () => {
+    const { generateMessage } = await import('#/lib/chat/index');
+    const stages: string[] = [];
+
+    await generateMessage({ prompt: 'hi', onStage: (s) => stages.push(s) });
+
+    // Engine.create() loads the wasm runtime, sets up a WebGPU device and
+    // compiles the model, reporting nothing throughout — so this is the only
+    // signal the UI has to distinguish that work from a hang.
+    expect(stages).toEqual(['downloading', 'compiling', 'generating']);
+  });
+
+  it('skips straight to generating once the engine is live', async () => {
+    const { generateMessage } = await import('#/lib/chat/index');
+
+    await generateMessage({ prompt: 'first' });
+
+    const stages: string[] = [];
+    await generateMessage({ prompt: 'second', onStage: (s) => stages.push(s) });
+
+    expect(stages).toEqual(['generating']);
+  });
+});
+
 describe('preload', () => {
   it('downloads the model file and forwards progress, without warming up the engine', async () => {
     const { preload } = await import('#/lib/chat/index');
@@ -165,6 +194,83 @@ describe('preload', () => {
 
     expect(modelCache.fetchModelAsBlob).toHaveBeenCalledTimes(1);
     expect(engineCreate).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('preloadRuntime', () => {
+  it('downloads both runtime files and then instantiates the module', async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(new Uint8Array([1, 2, 3]), {
+          status: 200,
+          headers: { 'Content-Length': '3' },
+        }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    vi.stubGlobal('caches', undefined);
+
+    const { preloadRuntime } = await import('#/lib/chat/index');
+    await preloadRuntime();
+
+    // The glue script and its wasm — the pair Engine.create() would
+    // otherwise fetch mid-conversation with no progress reported.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(getOrLoadGlobalLiteRtLm).toHaveBeenCalled();
+    // Downloading the runtime must not drag the model compile along with it;
+    // that stays where it was, in generateMessage().
+    expect(engineCreate).not.toHaveBeenCalled();
+
+    vi.unstubAllGlobals();
+  });
+
+  it('does not cache a failure, so a later attempt can retry', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(null, { status: 503 })),
+    );
+    vi.stubGlobal('caches', undefined);
+
+    const { preloadRuntime } = await import('#/lib/chat/index');
+
+    await expect(preloadRuntime()).rejects.toThrow();
+    await expect(preloadRuntime()).rejects.toThrow();
+
+    vi.unstubAllGlobals();
+  });
+});
+
+describe('isRuntimeCached', () => {
+  it('is true immediately once the runtime has been warmed in this session', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(new Uint8Array([1]), {
+            status: 200,
+            headers: { 'Content-Length': '1' },
+          }),
+      ),
+    );
+    vi.stubGlobal('caches', undefined);
+
+    const { preloadRuntime, isRuntimeCached } =
+      await import('#/lib/chat/index');
+
+    await preloadRuntime();
+
+    await expect(isRuntimeCached()).resolves.toBe(true);
+
+    vi.unstubAllGlobals();
+  });
+
+  it('is false when nothing is warmed and there is no Cache Storage', async () => {
+    vi.stubGlobal('caches', undefined);
+
+    const { isRuntimeCached } = await import('#/lib/chat/index');
+
+    await expect(isRuntimeCached()).resolves.toBe(false);
+
+    vi.unstubAllGlobals();
   });
 });
 

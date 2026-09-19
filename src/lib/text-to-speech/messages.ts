@@ -2,8 +2,9 @@
 
 export type WorkerRequest =
   | { mode: 'speak'; voiceId: string; text: string }
-  | { mode: 'preload'; voiceId: string }
-  | { mode: 'check'; voiceId: string };
+  /** Download the piper/ONNX wasm, without touching the voice model. */
+  | { mode: 'runtime' }
+  | { mode: 'preload'; voiceId: string };
 
 export type WorkerResponse =
   | {
@@ -14,7 +15,5 @@ export type WorkerResponse =
       type: 'done';
       buffer?: ArrayBuffer;
       mimeType?: string;
-      /** Answer to a 'check' request: is the voice already in OPFS? */
-      stored?: boolean;
     }
   | { type: 'error'; message: string };
