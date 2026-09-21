@@ -29,15 +29,18 @@
  */
 
 import { BUILD_ID, PRECACHE_URLS } from './sw-precache';
+// The leaves rather than a barrel: `lib/cache` deliberately has none, so that
+// what the service worker bundle pulls in is visible here at the call site.
+import {
+  PROGRESS_CHANNEL,
+  type AssetProgressMessage,
+} from './lib/cache/channel';
 import {
   MODELS_CACHE,
-  PROGRESS_CHANNEL,
-  ruleFor,
   SHELL_CACHE_PREFIX,
   shellCacheName,
-  type AssetProgressMessage,
-  type AssetRule,
-} from './lib/assets';
+} from './lib/cache/names';
+import { ruleFor, type AssetRule } from './lib/cache/rules';
 
 interface SwExtendableEvent {
   waitUntil(promise: Promise<unknown>): void;

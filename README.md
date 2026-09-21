@@ -70,8 +70,19 @@ the engine warm before the call is answered.
 
 ## Caching
 
-One service worker (`src/sw.ts`) owns it all, and `src/lib/assets.ts` is the
-only place URLs, cache policy and expected sizes are written.
+One service worker (`src/sw.ts`) owns it all, and `src/lib/cache/` is the only
+place cache policy is written:
+
+- **`names.ts`** — the two bucket names
+- **`rules.ts`** — which URLs belong to which preload step, whether the worker
+  stores them, and roughly how big they are
+- **`markers.ts`** — reading and writing the markers that record a step as done
+- **`channel.ts`** — the byte-count message the worker broadcasts
+
+`src/lib/cache/` is the bottom of the import graph: both `sw.ts` and the page
+import from it, so every file in it imports only dependency-free leaves
+(`preload/steps.ts` as a type, `chat/constants.ts`). Nothing that touches a
+library, a worker, or the DOM.
 
 Two buckets, because they have opposite lifecycles:
 

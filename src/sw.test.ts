@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
-  MODELS_CACHE,
   PROGRESS_CHANNEL,
   type AssetProgressMessage,
-} from '#/lib/assets';
+} from '#/lib/cache/channel';
+import { MODELS_CACHE } from '#/lib/cache/names';
 import { stubCacheStorage, type FakeCache } from '#/test-utils';
 
 const PRECACHE_URLS = [

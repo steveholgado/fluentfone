@@ -12,13 +12,12 @@ import {
   speak,
   VOICES,
 } from '#/lib/text-to-speech/index';
-import { RUNTIME_KEY, WASM_FILES } from '#/lib/text-to-speech/runtime';
+import { RUNTIME_KEY, WASM_FILES } from '#/lib/text-to-speech/constants';
+import { hasStep, markStep } from '#/lib/cache/markers';
 import {
-  hasStep,
-  markStep,
   PROGRESS_CHANNEL,
   type AssetProgressMessage,
-} from '#/lib/assets';
+} from '#/lib/cache/channel';
 import { stubCacheStorage } from '#/test-utils';
 
 /** Stands in for the service worker. Delivery is asynchronous. */

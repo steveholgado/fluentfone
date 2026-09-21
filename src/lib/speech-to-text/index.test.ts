@@ -1,13 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import * as decode from '#/lib/audio/decode';
+import * as audio from '#/lib/audio';
 import { stubCacheStorage } from '#/test-utils';
 import type {
   WorkerRequest,
   WorkerResponse,
 } from '#/lib/speech-to-text/messages';
 
-vi.mock('#/lib/audio/decode', () => ({
+// The barrel, because that is what index.ts imports. Only toMonoPcm is stubbed
+// — nothing else in `#/lib/audio` is reachable from speech-to-text.
+vi.mock('#/lib/audio', () => ({
   toMonoPcm: vi.fn(),
 }));
 
@@ -55,7 +57,7 @@ beforeEach(() => {
   FakeWorker.instances = [];
   vi.stubGlobal('Worker', FakeWorker);
   vi.stubGlobal('caches', undefined);
-  vi.mocked(decode.toMonoPcm).mockResolvedValue(new Float32Array([0.1]));
+  vi.mocked(audio.toMonoPcm).mockResolvedValue(new Float32Array([0.1]));
 });
 
 afterEach(() => {
@@ -73,7 +75,7 @@ describe('transcribe', () => {
     worker.emit({ id: 0, type: 'done', text: 'hello world' });
 
     await expect(promise).resolves.toBe('hello world');
-    expect(decode.toMonoPcm).toHaveBeenCalledWith(expect.any(Blob), 16000);
+    expect(audio.toMonoPcm).toHaveBeenCalledWith(expect.any(Blob), 16000);
   });
 
   it('passes language and task options through to the worker request', async () => {
@@ -157,8 +159,8 @@ describe('preload', () => {
   it('sends a preload request and marks the step once it lands', async () => {
     stubCacheStorage();
     const { preload } = await import('#/lib/speech-to-text/index');
-    const { hasStep } = await import('#/lib/assets');
-    const { MODEL_KEY } = await import('#/lib/speech-to-text/model');
+    const { hasStep } = await import('#/lib/cache/markers');
+    const { MODEL_KEY } = await import('#/lib/speech-to-text/constants');
 
     const promise = preload();
     await flush();
@@ -196,8 +198,8 @@ describe('isCached', () => {
 
   it('is true when the step marker is present', async () => {
     stubCacheStorage();
-    const { markStep } = await import('#/lib/assets');
-    const { MODEL_KEY } = await import('#/lib/speech-to-text/model');
+    const { markStep } = await import('#/lib/cache/markers');
+    const { MODEL_KEY } = await import('#/lib/speech-to-text/constants');
     await markStep('speech-to-text', MODEL_KEY);
 
     const { isCached } = await import('#/lib/speech-to-text/index');
@@ -209,7 +211,7 @@ describe('isCached', () => {
     // The marker carries the model and dtype, so changing either misses
     // rather than vouching for weights that were never downloaded.
     stubCacheStorage();
-    const { markStep } = await import('#/lib/assets');
+    const { markStep } = await import('#/lib/cache/markers');
     await markStep('speech-to-text', 'onnx-community/whisper-tiny:fp16');
 
     const { isCached } = await import('#/lib/speech-to-text/index');

@@ -1,7 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 
-import { AudioRecorder } from '#/lib/audio/recorder';
-import { play } from '#/lib/audio/player';
+import { AudioRecorder, play } from '#/lib/audio';
 import { transcribe } from '#/lib/speech-to-text';
 import {
   generateMessage,

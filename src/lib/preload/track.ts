@@ -9,12 +9,12 @@
  */
 
 import {
-  EXPECTED_BYTES,
   PROGRESS_CHANNEL,
   type AssetProgressMessage,
-  type PreloadStepId,
-} from './assets';
-import type { LoadProgress, ProgressCallback } from './progress';
+} from '#/lib/cache/channel';
+import { EXPECTED_BYTES } from '#/lib/cache/rules';
+import type { LoadProgress, ProgressCallback } from '#/lib/progress';
+import type { PreloadStepId } from './steps';
 
 /**
  * Reports bytes for `step` until the returned function is called.

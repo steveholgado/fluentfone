@@ -1,6 +1,6 @@
 /** Message contracts shared between the main thread and worker.ts. */
 
-import type { TranscribeOptions } from './index';
+import type { TranscribeOptions } from './types';
 
 export type WorkerRequest =
   | ({

@@ -1,13 +1,15 @@
-import * as speechToText from './speech-to-text';
-import * as chat from './chat';
-import * as textToSpeech from './text-to-speech';
-import { trackStep } from './asset-progress';
-import { DOWNLOAD_ORDER, STEPS_BY_LABEL } from './assets';
-import type { PreloadLabel, PreloadStatus, PreloadStepId } from './assets';
-import type { LoadProgress } from './progress';
+import * as speechToText from '#/lib/speech-to-text';
+import * as chat from '#/lib/chat';
+import * as textToSpeech from '#/lib/text-to-speech';
+import type { LoadProgress } from '#/lib/progress';
+import { trackStep } from './track';
+import { DOWNLOAD_ORDER, STEPS_BY_LABEL } from './steps';
+import type { PreloadLabel, PreloadStatus, PreloadStepId } from './steps';
 
-// Step identity lives in assets.ts, next to the URLs and sizes each step
-// stands for. Re-exported here because this is where the UI reaches for it.
+// This file is the preload tier's public API, so the step vocabulary defined
+// next door in steps.ts is re-exported through it — the UI reads
+// DOWNLOAD_ORDER and PreloadStatus from `#/lib/preload` alongside everything
+// else here, rather than reaching past it.
 export { DOWNLOAD_ORDER, STEPS_BY_LABEL };
 export type { PreloadLabel, PreloadStatus, PreloadStepId };
 

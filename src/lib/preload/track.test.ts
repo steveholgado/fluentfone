@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { trackStep } from '#/lib/asset-progress';
+import { trackStep } from '#/lib/preload/track';
 import {
-  EXPECTED_BYTES,
   PROGRESS_CHANNEL,
   type AssetProgressMessage,
-} from '#/lib/assets';
+} from '#/lib/cache/channel';
+import { EXPECTED_BYTES } from '#/lib/cache/rules';
 
 /** Stands in for the service worker. Delivery is asynchronous. */
 let sw: BroadcastChannel | undefined;

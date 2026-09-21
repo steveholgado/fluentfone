@@ -15,17 +15,13 @@
 // rather than to a worker, so spinning up a new worker per call doesn't cost
 // a re-download after the first time a given voice is used.
 
-import { trackStep } from '../asset-progress';
-import { hasStep, markStep } from '../assets';
-import type { ProgressCallback } from '../progress';
+import { hasStep, markStep } from '#/lib/cache/markers';
+import { trackStep } from '#/lib/preload/track';
+import type { ProgressCallback } from '#/lib/progress';
+import { OPFS_VOICE_DIR, RUNTIME_KEY, WASM_FILES } from './constants';
 import type { WorkerRequest, WorkerResponse } from './messages';
-import { OPFS_VOICE_DIR, RUNTIME_KEY, WASM_FILES } from './runtime';
 
-// Piper voice IDs. Full list: await (await import('@mintplex-labs/piper-tts-web')).voices()
-export const VOICES = {
-  en: 'en_US-hfc_female-medium',
-  es: 'es_ES-davefx-medium',
-};
+export { VOICES } from './constants';
 
 function runInWorker(
   request: WorkerRequest,

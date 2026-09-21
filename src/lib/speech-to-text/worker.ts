@@ -10,7 +10,7 @@
 
 import type { AutomaticSpeechRecognitionPipeline } from '@huggingface/transformers';
 import type { WorkerRequest, WorkerResponse } from './messages';
-import { MODEL, MODEL_DTYPE } from './model';
+import { MODEL, MODEL_DTYPE } from './constants';
 
 // DOM lib doesn't type worker-global `self`; the shape matches Worker's
 // instance side closely enough for postMessage's transfer-list overload.

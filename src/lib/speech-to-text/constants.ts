@@ -10,3 +10,6 @@ export const MODEL = 'onnx-community/whisper-base';
 export const MODEL_DTYPE = 'q8';
 
 export const MODEL_KEY = `${MODEL}:${MODEL_DTYPE}`;
+
+/** What Whisper expects its input resampled to. */
+export const SAMPLE_RATE = 16000;

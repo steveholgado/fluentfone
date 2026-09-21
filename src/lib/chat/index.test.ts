@@ -166,7 +166,8 @@ describe('onStage', () => {
     // fetchModel cannot tell the two apart — both are a fetch the worker
     // answers — so on every return visit a multi-gigabyte disk read was being
     // announced as a fresh download.
-    const { MODELS_CACHE, DEFAULT_CHAT_MODEL } = await import('#/lib/assets');
+    const { MODELS_CACHE } = await import('#/lib/cache/names');
+    const { DEFAULT_CHAT_MODEL } = await import('#/lib/chat/constants');
     const cache = await caches.open(MODELS_CACHE);
     await cache.put(DEFAULT_CHAT_MODEL, new Response('weights'));
 
@@ -193,7 +194,8 @@ describe('onStage', () => {
 describe('preload', () => {
   it('pulls the model file down and marks the step, without warming up the engine', async () => {
     const { preload } = await import('#/lib/chat/index');
-    const { hasStep, DEFAULT_CHAT_MODEL } = await import('#/lib/assets');
+    const { hasStep } = await import('#/lib/cache/markers');
+    const { DEFAULT_CHAT_MODEL } = await import('#/lib/chat/constants');
 
     await preload();
 
@@ -207,7 +209,8 @@ describe('preload', () => {
     // steps it warms nothing up. Running anyway meant every return visit
     // streamed the whole model out of the cache and discarded it, against the
     // same disk the greeting was waiting on to read that very file.
-    const { MODELS_CACHE, DEFAULT_CHAT_MODEL } = await import('#/lib/assets');
+    const { MODELS_CACHE } = await import('#/lib/cache/names');
+    const { DEFAULT_CHAT_MODEL } = await import('#/lib/chat/constants');
     const cache = await caches.open(MODELS_CACHE);
     await cache.put(DEFAULT_CHAT_MODEL, new Response('weights'));
 
@@ -221,8 +224,9 @@ describe('preload', () => {
   it('marks the step when it finds the bytes already cached', async () => {
     // Bytes present with no marker is what an interrupted run leaves behind,
     // and the marker is what the preload screen reads.
-    const { MODELS_CACHE, DEFAULT_CHAT_MODEL, hasStep } =
-      await import('#/lib/assets');
+    const { MODELS_CACHE } = await import('#/lib/cache/names');
+    const { DEFAULT_CHAT_MODEL } = await import('#/lib/chat/constants');
+    const { hasStep } = await import('#/lib/cache/markers');
     const cache = await caches.open(MODELS_CACHE);
     await cache.put(DEFAULT_CHAT_MODEL, new Response('weights'));
 
@@ -236,7 +240,8 @@ describe('preload', () => {
   it('downloads on the word of the cache, not of the marker', async () => {
     // A marker outlives a failed cache write, so trusting it here would skip
     // the download for bytes that are not there.
-    const { markStep, DEFAULT_CHAT_MODEL } = await import('#/lib/assets');
+    const { markStep } = await import('#/lib/cache/markers');
+    const { DEFAULT_CHAT_MODEL } = await import('#/lib/chat/constants');
     await markStep('chat', DEFAULT_CHAT_MODEL);
 
     const { preload } = await import('#/lib/chat/index');
@@ -277,7 +282,8 @@ describe('preload', () => {
     );
 
     const { preload } = await import('#/lib/chat/index');
-    const { hasStep, DEFAULT_CHAT_MODEL } = await import('#/lib/assets');
+    const { hasStep } = await import('#/lib/cache/markers');
+    const { DEFAULT_CHAT_MODEL } = await import('#/lib/chat/constants');
 
     await expect(preload()).resolves.toBeUndefined();
 
@@ -291,7 +297,8 @@ describe('preload', () => {
       vi.fn(async () => new Response(null, { status: 503 })),
     );
     const { preload } = await import('#/lib/chat/index');
-    const { hasStep, DEFAULT_CHAT_MODEL } = await import('#/lib/assets');
+    const { hasStep } = await import('#/lib/cache/markers');
+    const { DEFAULT_CHAT_MODEL } = await import('#/lib/chat/constants');
 
     await expect(preload()).rejects.toThrow('Failed to download model');
     await expect(hasStep('chat', DEFAULT_CHAT_MODEL)).resolves.toBe(false);
@@ -301,7 +308,7 @@ describe('preload', () => {
 describe('preloadRuntime', () => {
   it('lets the library load its own wasm, then marks the step', async () => {
     const { preloadRuntime } = await import('#/lib/chat/index');
-    const { hasStep } = await import('#/lib/assets');
+    const { hasStep } = await import('#/lib/cache/markers');
 
     await preloadRuntime();
 
@@ -338,7 +345,7 @@ describe('isRuntimeCached', () => {
   });
 
   it('is true when the step marker is present', async () => {
-    const { markStep } = await import('#/lib/assets');
+    const { markStep } = await import('#/lib/cache/markers');
     await markStep('chat-runtime', LITERT_VERSION);
 
     const { isRuntimeCached } = await import('#/lib/chat/index');
@@ -347,7 +354,7 @@ describe('isRuntimeCached', () => {
   });
 
   it('does not match a marker left by a different package version', async () => {
-    const { markStep } = await import('#/lib/assets');
+    const { markStep } = await import('#/lib/cache/markers');
     await markStep('chat-runtime', '0.0.1-ancient');
 
     const { isRuntimeCached } = await import('#/lib/chat/index');
@@ -384,7 +391,8 @@ describe('isCached', () => {
   });
 
   it('falls back to the step marker when nothing is live', async () => {
-    const { markStep, DEFAULT_CHAT_MODEL } = await import('#/lib/assets');
+    const { markStep } = await import('#/lib/cache/markers');
+    const { DEFAULT_CHAT_MODEL } = await import('#/lib/chat/constants');
     const { isCached } = await import('#/lib/chat/index');
     await markStep('chat', DEFAULT_CHAT_MODEL);
 
@@ -394,7 +402,8 @@ describe('isCached', () => {
   it('does not match a marker left by a different model', async () => {
     // Switching between the e2b and e4b builds has to miss, or the preload
     // screen would be skipped for a model that was never downloaded.
-    const { markStep, CHAT_MODELS } = await import('#/lib/assets');
+    const { markStep } = await import('#/lib/cache/markers');
+    const { CHAT_MODELS } = await import('#/lib/chat/constants');
     const { isCached } = await import('#/lib/chat/index');
     await markStep('chat', CHAT_MODELS.e2b);
 

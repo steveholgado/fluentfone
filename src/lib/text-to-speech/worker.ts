@@ -1,6 +1,6 @@
 import { TtsSession } from '@mintplex-labs/piper-tts-web';
 import type { WorkerRequest } from './messages';
-import { ONNX_WASM_BASE, PIPER_WASM_BASE } from './runtime';
+import { ONNX_WASM_BASE, PIPER_WASM_BASE } from './constants';
 
 // See the "why a fresh worker per call" comment in index.ts for why this
 // worker gets terminated after every message it handles.

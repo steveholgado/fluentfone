@@ -3,23 +3,13 @@
  * dedicated Web Worker (WebGPU if available, falling back to WASM).
  */
 
-import { toMonoPcm } from '../audio/decode';
-import { hasStep, markStep } from '../assets';
+import { toMonoPcm } from '#/lib/audio';
+import { hasStep, markStep } from '#/lib/cache/markers';
+import { MODEL_KEY, SAMPLE_RATE } from './constants';
 import type { WorkerRequest, WorkerResponse } from './messages';
-import { MODEL_KEY } from './model';
+import type { TranscribeOptions } from './types';
 
-const SAMPLE_RATE = 16000;
-
-export interface TranscribeOptions {
-  /**
-   * Source language. Pass 'english' or 'spanish' to force that language
-   * (recommended — it's faster and more accurate than auto-detection).
-   * Omit to let Whisper auto-detect the language instead.
-   */
-  language?: 'english' | 'spanish' | (string & {});
-  /** 'transcribe' keeps original language; 'translate' converts to English. */
-  task?: 'transcribe' | 'translate';
-}
+export type { TranscribeOptions };
 
 interface PendingRequest {
   resolve: (text: string) => void;

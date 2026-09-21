@@ -7,11 +7,11 @@ import {
   preloadAll,
 } from '#/lib/preload';
 import type { PreloadStatus } from '#/lib/preload';
+import { DOWNLOAD_ORDER } from '#/lib/preload/steps';
 import {
-  DOWNLOAD_ORDER,
   PROGRESS_CHANNEL,
   type AssetProgressMessage,
-} from '#/lib/assets';
+} from '#/lib/cache/channel';
 import * as chat from '#/lib/chat';
 import * as speechToText from '#/lib/speech-to-text';
 import * as textToSpeech from '#/lib/text-to-speech';
