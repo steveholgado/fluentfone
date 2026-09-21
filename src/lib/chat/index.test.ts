@@ -1,12 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import * as modelCache from '#/lib/chat/model-cache';
+import { version as LITERT_VERSION } from '@litert-lm/core/package.json';
 
-vi.mock('#/lib/chat/model-cache', () => ({
-  fetchModelAsBlob: vi.fn(),
-  hasCachedModel: vi.fn(),
-  clearModelCache: vi.fn(),
-}));
+import { stubCacheStorage } from '#/test-utils';
 
 const sendMessage = vi.fn();
 const createConversation = vi.fn();
@@ -23,8 +19,13 @@ vi.mock('@litert-lm/core', () => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(modelCache.fetchModelAsBlob).mockResolvedValue(new Blob(['x']));
+  stubCacheStorage();
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => new Response(new Uint8Array([1, 2, 3]))),
+  );
 
+  getOrLoadGlobalLiteRtLm.mockResolvedValue(undefined);
   createConversation.mockResolvedValue({ sendMessage });
   sendMessage.mockResolvedValue('a reply');
   engineCreate.mockResolvedValue({
@@ -34,6 +35,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.unstubAllGlobals();
   vi.resetModules();
 });
 
@@ -160,6 +162,22 @@ describe('onStage', () => {
     expect(stages).toEqual(['downloading', 'compiling', 'generating']);
   });
 
+  it('reports loading, not downloading, when the bytes are already on disk', async () => {
+    // fetchModel cannot tell the two apart — both are a fetch the worker
+    // answers — so on every return visit a multi-gigabyte disk read was being
+    // announced as a fresh download.
+    const { MODELS_CACHE, DEFAULT_CHAT_MODEL } = await import('#/lib/assets');
+    const cache = await caches.open(MODELS_CACHE);
+    await cache.put(DEFAULT_CHAT_MODEL, new Response('weights'));
+
+    const { generateMessage } = await import('#/lib/chat/index');
+    const stages: string[] = [];
+
+    await generateMessage({ prompt: 'hi', onStage: (s) => stages.push(s) });
+
+    expect(stages).toEqual(['loading', 'compiling', 'generating']);
+  });
+
   it('skips straight to generating once the engine is live', async () => {
     const { generateMessage } = await import('#/lib/chat/index');
 
@@ -173,145 +191,224 @@ describe('onStage', () => {
 });
 
 describe('preload', () => {
-  it('downloads the model file and forwards progress, without warming up the engine', async () => {
+  it('pulls the model file down and marks the step, without warming up the engine', async () => {
     const { preload } = await import('#/lib/chat/index');
-    const onProgress = vi.fn();
+    const { hasStep, DEFAULT_CHAT_MODEL } = await import('#/lib/assets');
 
-    await preload(onProgress);
+    await preload();
 
-    expect(modelCache.fetchModelAsBlob).toHaveBeenCalledWith(
-      expect.stringContaining('litertlm'),
-      onProgress,
-    );
+    expect(fetch).toHaveBeenCalledWith(expect.stringContaining('litertlm'));
     expect(engineCreate).not.toHaveBeenCalled();
+    await expect(hasStep('chat', DEFAULT_CHAT_MODEL)).resolves.toBe(true);
   });
 
-  it('lets a later generateMessage() reuse the already-downloaded blob', async () => {
+  it('does no work when the bytes are already cached', async () => {
+    // Getting them on disk is all this step does — unlike the other preload
+    // steps it warms nothing up. Running anyway meant every return visit
+    // streamed the whole model out of the cache and discarded it, against the
+    // same disk the greeting was waiting on to read that very file.
+    const { MODELS_CACHE, DEFAULT_CHAT_MODEL } = await import('#/lib/assets');
+    const cache = await caches.open(MODELS_CACHE);
+    await cache.put(DEFAULT_CHAT_MODEL, new Response('weights'));
+
+    const { preload } = await import('#/lib/chat/index');
+
+    await preload();
+
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('marks the step when it finds the bytes already cached', async () => {
+    // Bytes present with no marker is what an interrupted run leaves behind,
+    // and the marker is what the preload screen reads.
+    const { MODELS_CACHE, DEFAULT_CHAT_MODEL, hasStep } =
+      await import('#/lib/assets');
+    const cache = await caches.open(MODELS_CACHE);
+    await cache.put(DEFAULT_CHAT_MODEL, new Response('weights'));
+
+    const { preload } = await import('#/lib/chat/index');
+
+    await preload();
+
+    await expect(hasStep('chat', DEFAULT_CHAT_MODEL)).resolves.toBe(true);
+  });
+
+  it('downloads on the word of the cache, not of the marker', async () => {
+    // A marker outlives a failed cache write, so trusting it here would skip
+    // the download for bytes that are not there.
+    const { markStep, DEFAULT_CHAT_MODEL } = await import('#/lib/assets');
+    await markStep('chat', DEFAULT_CHAT_MODEL);
+
+    const { preload } = await import('#/lib/chat/index');
+
+    await preload();
+
+    expect(fetch).toHaveBeenCalledWith(expect.stringContaining('litertlm'));
+  });
+
+  it('does not hold the model in memory for the session', async () => {
+    // It is gigabytes. The service worker has the bytes, so Engine.create()
+    // re-reads them from there rather than this keeping a Blob alive.
     const { preload, generateMessage } = await import('#/lib/chat/index');
 
     await preload();
     await generateMessage({ prompt: 'hi' });
 
-    expect(modelCache.fetchModelAsBlob).toHaveBeenCalledTimes(1);
+    expect(fetch).toHaveBeenCalledTimes(2);
     expect(engineCreate).toHaveBeenCalledTimes(1);
   });
-});
 
-describe('preloadRuntime', () => {
-  it('downloads both runtime files and then instantiates the module', async () => {
-    const fetchMock = vi.fn(
-      async () =>
-        new Response(new Uint8Array([1, 2, 3]), {
-          status: 200,
-          headers: { 'Content-Length': '3' },
-        }),
+  it('streams the model past rather than buffering it whole', async () => {
+    // The file is ~3 GB. Reading it into an ArrayBuffer needs one contiguous
+    // allocation that size, which fails often enough that the step would
+    // reject *after* a successful download — leaving the marker unwritten and
+    // the screen still offering the download.
+    const arrayBuffer = vi.fn(async () => {
+      throw new RangeError('Array buffer allocation failed');
+    });
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        const response = new Response(new Uint8Array([1, 2, 3]));
+        Object.defineProperty(response, 'arrayBuffer', { value: arrayBuffer });
+        return response;
+      }),
     );
-    vi.stubGlobal('fetch', fetchMock);
-    vi.stubGlobal('caches', undefined);
 
-    const { preloadRuntime } = await import('#/lib/chat/index');
-    await preloadRuntime();
+    const { preload } = await import('#/lib/chat/index');
+    const { hasStep, DEFAULT_CHAT_MODEL } = await import('#/lib/assets');
 
-    // The glue script and its wasm — the pair Engine.create() would
-    // otherwise fetch mid-conversation with no progress reported.
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(getOrLoadGlobalLiteRtLm).toHaveBeenCalled();
-    // Downloading the runtime must not drag the model compile along with it;
-    // that stays where it was, in generateMessage().
-    expect(engineCreate).not.toHaveBeenCalled();
+    await expect(preload()).resolves.toBeUndefined();
 
-    vi.unstubAllGlobals();
+    expect(arrayBuffer).not.toHaveBeenCalled();
+    await expect(hasStep('chat', DEFAULT_CHAT_MODEL)).resolves.toBe(true);
   });
 
-  it('does not cache a failure, so a later attempt can retry', async () => {
+  it('does not mark the step if the download fails', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => new Response(null, { status: 503 })),
     );
-    vi.stubGlobal('caches', undefined);
+    const { preload } = await import('#/lib/chat/index');
+    const { hasStep, DEFAULT_CHAT_MODEL } = await import('#/lib/assets');
+
+    await expect(preload()).rejects.toThrow('Failed to download model');
+    await expect(hasStep('chat', DEFAULT_CHAT_MODEL)).resolves.toBe(false);
+  });
+});
+
+describe('preloadRuntime', () => {
+  it('lets the library load its own wasm, then marks the step', async () => {
+    const { preloadRuntime } = await import('#/lib/chat/index');
+    const { hasStep } = await import('#/lib/assets');
+
+    await preloadRuntime();
+
+    // We no longer reproduce LiteRT-LM's four-way build selection to fetch
+    // the file ourselves — the library picks, and the service worker
+    // recognises whichever one it asks for.
+    expect(getOrLoadGlobalLiteRtLm).toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
+    // Loading the runtime must not drag the model compile along with it;
+    // that stays where it was, in generateMessage().
+    expect(engineCreate).not.toHaveBeenCalled();
+    await expect(hasStep('chat-runtime', LITERT_VERSION)).resolves.toBe(true);
+  });
+
+  it('does not cache a failure, so a later attempt can retry', async () => {
+    getOrLoadGlobalLiteRtLm.mockRejectedValue(new Error('wasm unavailable'));
 
     const { preloadRuntime } = await import('#/lib/chat/index');
 
     await expect(preloadRuntime()).rejects.toThrow();
     await expect(preloadRuntime()).rejects.toThrow();
-
-    vi.unstubAllGlobals();
+    expect(getOrLoadGlobalLiteRtLm).toHaveBeenCalledTimes(2);
   });
 });
 
 describe('isRuntimeCached', () => {
-  it('is true immediately once the runtime has been warmed in this session', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(
-        async () =>
-          new Response(new Uint8Array([1]), {
-            status: 200,
-            headers: { 'Content-Length': '1' },
-          }),
-      ),
-    );
-    vi.stubGlobal('caches', undefined);
-
+  it('is true immediately once the runtime has loaded in this session', async () => {
     const { preloadRuntime, isRuntimeCached } =
       await import('#/lib/chat/index');
 
     await preloadRuntime();
 
     await expect(isRuntimeCached()).resolves.toBe(true);
-
-    vi.unstubAllGlobals();
   });
 
-  it('is false when nothing is warmed and there is no Cache Storage', async () => {
+  it('is true when the step marker is present', async () => {
+    const { markStep } = await import('#/lib/assets');
+    await markStep('chat-runtime', LITERT_VERSION);
+
+    const { isRuntimeCached } = await import('#/lib/chat/index');
+
+    await expect(isRuntimeCached()).resolves.toBe(true);
+  });
+
+  it('does not match a marker left by a different package version', async () => {
+    const { markStep } = await import('#/lib/assets');
+    await markStep('chat-runtime', '0.0.1-ancient');
+
+    const { isRuntimeCached } = await import('#/lib/chat/index');
+
+    await expect(isRuntimeCached()).resolves.toBe(false);
+  });
+
+  it('does not import the library to answer', async () => {
+    // Runs during the check stage, so it must not pull in 20 MB of wasm to
+    // say whether that wasm is present.
+    const { isRuntimeCached } = await import('#/lib/chat/index');
+
+    await isRuntimeCached();
+
+    expect(getOrLoadGlobalLiteRtLm).not.toHaveBeenCalled();
+  });
+
+  it('is false when nothing is loaded and there is no Cache Storage', async () => {
     vi.stubGlobal('caches', undefined);
 
     const { isRuntimeCached } = await import('#/lib/chat/index');
 
     await expect(isRuntimeCached()).resolves.toBe(false);
-
-    vi.unstubAllGlobals();
   });
 });
 
 describe('isCached', () => {
-  it('is true immediately once the model file has been downloaded in this session', async () => {
-    const { preload, isCached } = await import('#/lib/chat/index');
-
-    await preload();
-
-    await expect(isCached()).resolves.toBe(true);
-    expect(modelCache.hasCachedModel).not.toHaveBeenCalled();
-  });
-
   it('is true immediately once an engine has been created in this session', async () => {
     const { generateMessage, isCached } = await import('#/lib/chat/index');
 
     await generateMessage({ prompt: 'hi' });
 
     await expect(isCached()).resolves.toBe(true);
-    expect(modelCache.hasCachedModel).not.toHaveBeenCalled();
   });
 
-  it('falls back to checking the model cache when nothing is live', async () => {
-    vi.mocked(modelCache.hasCachedModel).mockResolvedValue(true);
+  it('falls back to the step marker when nothing is live', async () => {
+    const { markStep, DEFAULT_CHAT_MODEL } = await import('#/lib/assets');
     const { isCached } = await import('#/lib/chat/index');
+    await markStep('chat', DEFAULT_CHAT_MODEL);
 
     await expect(isCached()).resolves.toBe(true);
-    expect(modelCache.hasCachedModel).toHaveBeenCalled();
+  });
+
+  it('does not match a marker left by a different model', async () => {
+    // Switching between the e2b and e4b builds has to miss, or the preload
+    // screen would be skipped for a model that was never downloaded.
+    const { markStep, CHAT_MODELS } = await import('#/lib/assets');
+    const { isCached } = await import('#/lib/chat/index');
+    await markStep('chat', CHAT_MODELS.e2b);
+
+    await expect(isCached(CHAT_MODELS.e4b)).resolves.toBe(false);
   });
 });
 
 describe('dispose', () => {
-  it('deletes every cached engine and clears the cache', async () => {
-    const { generateMessage, dispose, isCached } =
-      await import('#/lib/chat/index');
+  it('deletes every cached engine', async () => {
+    const { generateMessage, dispose } = await import('#/lib/chat/index');
 
     await generateMessage({ prompt: 'hi' });
     await dispose();
 
     expect(engineDelete).toHaveBeenCalled();
-    vi.mocked(modelCache.hasCachedModel).mockResolvedValue(false);
-    await expect(isCached()).resolves.toBe(false);
   });
 });

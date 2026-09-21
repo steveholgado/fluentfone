@@ -5,8 +5,11 @@ import type { WorkerRequest } from '#/lib/speech-to-text/messages';
 const transcriberFn = vi.fn();
 const pipelineFactory = vi.fn();
 
+const env = { useBrowserCache: true };
+
 vi.mock('@huggingface/transformers', () => ({
   pipeline: (...args: unknown[]) => pipelineFactory(...args),
+  env,
 }));
 
 let postedMessages: unknown[] = [];
@@ -18,6 +21,7 @@ function post(request: WorkerRequest) {
 
 beforeEach(async () => {
   postedMessages = [];
+  env.useBrowserCache = true;
   pipelineFactory.mockResolvedValue(transcriberFn);
   transcriberFn.mockResolvedValue({ text: '  hello world  ' });
 
@@ -99,36 +103,13 @@ describe('worker onmessage', () => {
     expect(postedMessages).toEqual([{ id: 6, type: 'done' }]);
   });
 
-  it('forwards progress updates with the request id', async () => {
-    pipelineFactory.mockImplementation(async (_task, _model, options) => {
-      options.progress_callback({
-        status: 'progress_total',
-        loaded: 10,
-        total: 100,
-        progress: 10,
-        files: {},
-      });
-      return transcriberFn;
-    });
+  it('stops Transformers.js keeping a second copy of every weight file', async () => {
+    // It would otherwise write its own `transformers-cache` bucket alongside
+    // the one the service worker already holds — the same bytes twice, and a
+    // second place to ask whether they are present.
+    await post({ id: 1, mode: 'preload' });
 
-    await post({ id: 8, mode: 'preload' });
-
-    expect(postedMessages).toContainEqual({
-      id: 8,
-      type: 'progress',
-      progress: { loaded: 10, total: 100, progress: 0.1 },
-    });
-  });
-
-  it('ignores non-progress status updates', async () => {
-    pipelineFactory.mockImplementation(async (_task, _model, options) => {
-      options.progress_callback({ status: 'done' });
-      return transcriberFn;
-    });
-
-    await post({ id: 9, mode: 'preload' });
-
-    expect(postedMessages).toEqual([{ id: 9, type: 'done' }]);
+    expect(env.useBrowserCache).toBe(false);
   });
 
   it('posts an error message when transcription throws', async () => {

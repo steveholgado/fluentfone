@@ -26,22 +26,6 @@ beforeEach(async () => {
       onmessage = handler;
     },
   });
-  // A 'runtime' request warms the browser's HTTP cache for the wasm files —
-  // give it something to fetch.
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(
-      async () =>
-        new Response(new Uint8Array([1, 2, 3]), {
-          status: 200,
-          headers: { 'Content-Length': '3' },
-        }),
-    ),
-  );
-  // warmRuntime writes a receipt on success; the worker shouldn't care
-  // whether Cache Storage exists.
-  vi.stubGlobal('caches', undefined);
-
   await import('#/lib/text-to-speech/worker');
 });
 
@@ -52,36 +36,6 @@ afterEach(() => {
 });
 
 describe('worker onmessage', () => {
-  it('downloads the wasm runtime files without creating a session', async () => {
-    await post({ mode: 'runtime' });
-
-    expect(fetch).toHaveBeenCalledTimes(3);
-    expect(sessionCreate).not.toHaveBeenCalled();
-    expect(postedMessages.at(-1)).toEqual({ type: 'done' });
-  });
-
-  it('reports one combined progress figure across the runtime files', async () => {
-    await post({ mode: 'runtime' });
-
-    // Summed across all three files rather than reported per-file, so the
-    // bar moves forward once instead of restarting three times.
-    expect(postedMessages).toContainEqual({
-      type: 'progress',
-      progress: { url: 'piper-runtime', loaded: 9, total: 9 },
-    });
-  });
-
-  it('does not download the runtime again as part of a preload request', async () => {
-    // The two are separate steps so each gets its own progress sweep; folding
-    // the wasm back into 'preload' would make the voice download share a bar
-    // that had already reached 100%.
-    sessionCreate.mockResolvedValue({ predict: vi.fn() });
-
-    await post({ mode: 'preload', voiceId: 'voice-a' });
-
-    expect(fetch).not.toHaveBeenCalled();
-  });
-
   it('creates a session and reports done for a preload request', async () => {
     sessionCreate.mockResolvedValue({ predict: vi.fn() });
 
@@ -107,22 +61,6 @@ describe('worker onmessage', () => {
         }),
       }),
     );
-  });
-
-  it('forwards session progress callbacks to postMessage', async () => {
-    let capturedProgress: ((p: unknown) => void) | undefined;
-    sessionCreate.mockImplementation(async (opts) => {
-      capturedProgress = opts.progress;
-      return { predict: vi.fn() };
-    });
-
-    await post({ mode: 'preload', voiceId: 'voice-a' });
-    capturedProgress?.({ url: 'x', loaded: 1, total: 2 });
-
-    expect(postedMessages).toContainEqual({
-      type: 'progress',
-      progress: { url: 'x', loaded: 1, total: 2 },
-    });
   });
 
   it('predicts speech and posts the resulting audio buffer for a speak request', async () => {

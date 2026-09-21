@@ -13,7 +13,6 @@ vi.mock('#/lib/preload', () => ({
   DOWNLOAD_ORDER: [
     'text-to-speech-runtime',
     'text-to-speech',
-    'speech-to-text-runtime',
     'speech-to-text',
     'chat-runtime',
     'chat',
@@ -28,7 +27,6 @@ function status(
   return {
     'text-to-speech-runtime': value,
     'text-to-speech': value,
-    'speech-to-text-runtime': value,
     'speech-to-text': value,
     'chat-runtime': value,
     chat: value,
@@ -153,7 +151,11 @@ describe('usePreload', () => {
       expect(result.current.phase).toBe('needed');
     });
 
-    it('only counts steps that still need downloading in progress totals', async () => {
+    it('gives every step a slot, including ones the check called cached', async () => {
+      // preloadAll runs all five whatever the check found, so a step whose
+      // marker claims it is on disk while the bytes are not still downloads in
+      // full. Dropping its reports for want of a slot is what left the bar
+      // frozen on the previous step's 100% for the length of that download.
       vi.mocked(checkPreloaded).mockResolvedValue(
         status(true, { chat: false }),
       );
@@ -164,10 +166,8 @@ describe('usePreload', () => {
 
       let resolvePreloadAll: () => void = () => {};
       vi.mocked(preloadAll).mockImplementation(async (_voice, onProgress) => {
-        // preloadAll still reports the already-cached steps internally...
         onProgress?.('text-to-speech', { loaded: 1, total: 1, progress: 1 });
         onProgress?.('speech-to-text', { loaded: 1, total: 1, progress: 1 });
-        // ...but only the one step that needed downloading should surface.
         onProgress?.('chat', {
           loaded: 500_000,
           total: 1_000_000,
@@ -184,8 +184,8 @@ describe('usePreload', () => {
 
       await waitFor(() =>
         expect(result.current.progress).toEqual({
-          index: 1,
-          total: 1,
+          index: 5,
+          total: 5,
           percent: 50,
           isFinishing: false,
         }),
@@ -227,11 +227,11 @@ describe('usePreload', () => {
         void result.current.preload();
       });
 
-      // Step 2 of 6, back down at 25% — not pinned at the runtime's 100%.
+      // Step 2 of 5, back down at 25% — not pinned at the runtime's 100%.
       await waitFor(() =>
         expect(result.current.progress).toEqual({
           index: 2,
-          total: 6,
+          total: 5,
           percent: 25,
           isFinishing: false,
         }),
@@ -268,7 +268,7 @@ describe('usePreload', () => {
       await waitFor(() =>
         expect(result.current.progress).toEqual({
           index: 1,
-          total: 6,
+          total: 5,
           percent: 100,
           isFinishing: true,
         }),

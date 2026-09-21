@@ -2,15 +2,11 @@
 
 export type WorkerRequest =
   | { mode: 'speak'; voiceId: string; text: string }
-  /** Download the piper/ONNX wasm, without touching the voice model. */
-  | { mode: 'runtime' }
   | { mode: 'preload'; voiceId: string };
 
+// No progress message: the service worker counts the bytes as they stream
+// past and broadcasts them, so they no longer have to be relayed through here.
 export type WorkerResponse =
-  | {
-      type: 'progress';
-      progress: { url: string; loaded: number; total: number };
-    }
   | {
       type: 'done';
       buffer?: ArrayBuffer;

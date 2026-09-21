@@ -12,12 +12,15 @@ import { speak } from '#/lib/text-to-speech';
 import { formatProgress } from '#/lib/progress';
 import { LANGUAGE, SYSTEM_INSTRUCTION, VOICE_ID } from '#/config';
 
-// Preload normally leaves only 'compiling' and 'generating' to happen here.
-// 'downloading' shows up when the browser has evicted the model or the wasm
-// runtime since — rare, but it re-fetches gigabytes, so it says so rather
-// than looking stuck.
+// 'loading' is the everyday one: preload put the model on disk, and this is
+// the wait while several gigabytes are read back off it. 'downloading' is
+// reserved for bytes actually crossing the network — a first run that skipped
+// preload, or a browser that has evicted the model since. Worth separating,
+// because one of them is a reason to check your connection and the other
+// isn't.
 const STAGE_STATUS: Record<GenerateStage, string> = {
   downloading: 'Downloading…',
+  loading: 'Loading…',
   compiling: 'Warming up…',
   generating: 'Generating…',
 };

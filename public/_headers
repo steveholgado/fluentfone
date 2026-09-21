@@ -3,3 +3,10 @@
 # it's always safe to cache these indefinitely.
 /vendor/*
   Cache-Control: public, max-age=31536000, immutable
+
+# The worker script decides when every other asset is refreshed, so it must not
+# be served from cache itself. Browsers already bypass the HTTP cache for the
+# worker script on an update check; this makes it explicit and covers hosts
+# that would otherwise apply a default TTL.
+/sw.js
+  Cache-Control: no-cache

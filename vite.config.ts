@@ -7,6 +7,7 @@ import babel from '@rolldown/plugin-babel';
 import tailwindcss from '@tailwindcss/vite';
 
 import { vendorWasmAssets } from './vite-plugin-vendor-wasm-assets.ts';
+import { serviceWorker } from './vite-plugin-service-worker.ts';
 
 const config = defineConfig({
   resolve: { tsconfigPaths: true },
@@ -20,6 +21,10 @@ const config = defineConfig({
     viteReact(),
     babel({ presets: [reactCompilerPreset()] }),
     tailwindcss(),
+    // Must come after tanstackStart(): it emits in a post-order buildApp hook
+    // that has to sort after the one TanStack prerenders in. See the header
+    // comment in vite-plugin-service-worker.ts.
+    serviceWorker(),
   ],
 });
 

@@ -1,6 +1,5 @@
 /** Message contracts shared between the main thread and worker.ts. */
 
-import type { LoadProgress } from '../progress';
 import type { TranscribeOptions } from './index';
 
 export type WorkerRequest =
@@ -9,11 +8,10 @@ export type WorkerRequest =
       mode: 'transcribe';
       audio: Float32Array;
     } & TranscribeOptions)
-  /** Download the ONNX Runtime wasm, without building the pipeline. */
-  | { id: number; mode: 'runtime' }
   | { id: number; mode: 'preload' };
 
+// No progress message: the service worker counts the bytes as they stream
+// past and broadcasts them, so they no longer have to be relayed through here.
 export type WorkerResponse =
-  | { id: number; type: 'progress'; progress: LoadProgress }
   | { id: number; type: 'done'; text?: string }
   | { id: number; type: 'error'; message: string };

@@ -7,6 +7,7 @@ import {
   preloadAll,
   type PreloadStatus,
 } from '#/lib/preload';
+import { ensureController } from '#/lib/sw-client';
 import { VOICE_ID } from '#/config';
 
 /**
@@ -34,7 +35,6 @@ export interface PreloadProgress {
 const NOTHING_CACHED: PreloadStatus = {
   'text-to-speech-runtime': false,
   'text-to-speech': false,
-  'speech-to-text-runtime': false,
   'speech-to-text': false,
   'chat-runtime': false,
   chat: false,
@@ -43,7 +43,6 @@ const NOTHING_CACHED: PreloadStatus = {
 const ALL_CACHED: PreloadStatus = {
   'text-to-speech-runtime': true,
   'text-to-speech': true,
-  'speech-to-text-runtime': true,
   'speech-to-text': true,
   'chat-runtime': true,
   chat: true,
@@ -60,6 +59,14 @@ export function usePreload() {
     let cancelled = false;
 
     void (async () => {
+      // Before anything is probed or fetched. The worker has to be controlling
+      // this page for it to see the downloads that follow, and on a first
+      // visit it only becomes so partway through startup. A false here means
+      // no caching is available — the app still runs, it just re-downloads
+      // each session.
+      await ensureController();
+      if (cancelled) return;
+
       const result = await checkPreloaded(VOICE_ID);
       if (cancelled) return;
 
@@ -92,12 +99,16 @@ export function usePreload() {
     setIsPreloading(true);
     maxPercentRef.current = { index: 0, percent: 0 };
 
-    // Only steps not already cached get a slot in the progress bar.
-    const needed = DOWNLOAD_ORDER.filter((step) => !cached[step]);
-
+    // Every step gets a slot, including ones the check said were already
+    // cached. preloadAll runs all of them regardless of what the check found,
+    // so a step whose marker claims it is on disk while the bytes are not —
+    // a cache write that failed after the marker was written, say — would
+    // otherwise download in full with no slot to report into, leaving the bar
+    // frozen on the previous step. Steps that really are cached cost a slot
+    // the bar passes through in a frame.
     try {
       await preloadAll(VOICE_ID, (step, p) => {
-        const position = needed.indexOf(step);
+        const position = DOWNLOAD_ORDER.indexOf(step);
         if (position === -1) return;
         const index = position + 1;
 
@@ -115,7 +126,7 @@ export function usePreload() {
 
         setProgress({
           index,
-          total: needed.length,
+          total: DOWNLOAD_ORDER.length,
           percent: maxPercentRef.current.percent,
           // All of this step's bytes are in, but preloadAll() hasn't moved
           // on to the next step yet — it's still inside this one's preload()
@@ -133,7 +144,7 @@ export function usePreload() {
     } finally {
       setIsPreloading(false);
     }
-  }, [cached]);
+  }, []);
 
   const start = useCallback(() => setPhase('ready'), []);
 

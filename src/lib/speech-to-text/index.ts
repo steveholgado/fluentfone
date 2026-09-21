@@ -4,21 +4,11 @@
  */
 
 import { toMonoPcm } from '../audio/decode';
-import { hasWarmRuntime } from '../runtime-cache';
-import type { LoadProgress, ProgressCallback } from '../progress';
+import { hasStep, markStep } from '../assets';
 import type { WorkerRequest, WorkerResponse } from './messages';
-import { ORT_RUNTIME_MARKER_KEY } from './runtime';
+import { MODEL_KEY } from './model';
 
 const SAMPLE_RATE = 16000;
-
-// Transformers.js caches every file it downloads in the Cache Storage under
-// `env.cacheKey`, keyed by the full remote URL it fetched them from.
-const TRANSFORMERS_CACHE_NAME = 'transformers-cache';
-// Whisper needs an encoder and a (merged) decoder, so a ready model means at
-// least two weight files. Matching on the model prefix rather than exact
-// filenames keeps this working if the dtype or file layout changes.
-const MODEL = 'onnx-community/whisper-base';
-const MIN_CACHED_WEIGHTS = 2;
 
 export interface TranscribeOptions {
   /**
@@ -34,7 +24,6 @@ export interface TranscribeOptions {
 interface PendingRequest {
   resolve: (text: string) => void;
   reject: (err: Error) => void;
-  onProgress?: ProgressCallback;
 }
 
 // One long-lived worker for the session, so the compiled pipeline it holds
@@ -45,7 +34,7 @@ let nextRequestId = 0;
 const pending = new Map<number, PendingRequest>();
 
 // Set once a 'done' response has come back at least once, so `isCached()`
-// can short-circuit without asking the worker.
+// can short-circuit without touching storage.
 let pipelineReady = false;
 
 function getWorker(): Worker {
@@ -61,9 +50,7 @@ function getWorker(): Worker {
         const request = pending.get(message.id);
         if (!request) return;
 
-        if (message.type === 'progress') {
-          request.onProgress?.(message.progress as LoadProgress);
-        } else if (message.type === 'done') {
+        if (message.type === 'done') {
           pipelineReady = true;
           pending.delete(message.id);
           request.resolve(message.text ?? '');
@@ -84,12 +71,9 @@ function getWorker(): Worker {
   return worker;
 }
 
-function send(
-  request: WorkerRequest,
-  onProgress?: ProgressCallback,
-): Promise<string> {
+function send(request: WorkerRequest): Promise<string> {
   return new Promise((resolve, reject) => {
-    pending.set(request.id, { resolve, reject, onProgress });
+    pending.set(request.id, { resolve, reject });
     getWorker().postMessage(request);
   });
 }
@@ -115,44 +99,26 @@ export async function transcribe(
 }
 
 /**
- * Downloads the ONNX Runtime wasm that the pipeline runs on. Reported as its
- * own preload step because it's tens of megabytes and, unlike the model
- * weights, Transformers.js fetches it without reporting any progress.
+ * Warms up the Whisper model cache so the first real `transcribe()` call is
+ * instant.
+ *
+ * This is one step rather than two, unlike the other capabilities: nothing in
+ * the Transformers.js API downloads its ONNX Runtime wasm without also
+ * building the pipeline, so the runtime and the weights arrive together and
+ * share a progress bar. Splitting them again would mean predicting the wasm
+ * URLs — reproducing a build-variant choice that is Transformers.js' to make.
  */
-export async function preloadRuntime(
-  onProgress?: ProgressCallback,
-): Promise<void> {
-  await send({ id: nextRequestId++, mode: 'runtime' }, onProgress);
-}
-
-/** Warms up the Whisper model cache so the first real `transcribe()` call is instant. */
-export async function preload(onProgress?: ProgressCallback): Promise<void> {
-  await send({ id: nextRequestId++, mode: 'preload' }, onProgress);
-}
-
-/** Whether the ONNX Runtime wasm has already been downloaded. */
-export async function isRuntimeCached(): Promise<boolean> {
-  if (pipelineReady) return true;
-  return hasWarmRuntime(ORT_RUNTIME_MARKER_KEY);
+export async function preload(): Promise<void> {
+  await send({ id: nextRequestId++, mode: 'preload' });
+  await markStep('speech-to-text', MODEL_KEY);
 }
 
 /**
  * Whether the model is ready to use without a download — either the pipeline
- * is already live in this session's worker, or its weights are in the Cache
- * Storage. Only reads the cache; never fetches.
+ * is already live in this session's worker, or the runtime and weights are in
+ * the service worker's cache. Only reads storage; never fetches.
  */
 export async function isCached(): Promise<boolean> {
   if (pipelineReady) return true;
-  if (typeof caches === 'undefined') return false;
-
-  const cache = await caches.open(TRANSFORMERS_CACHE_NAME);
-  const requests = await cache.keys();
-
-  // The ONNX runtime's WASM binaries live in this cache too, hence the
-  // model-prefix filter.
-  const weights = requests.filter(
-    (req) => req.url.includes(`/${MODEL}/`) && req.url.endsWith('.onnx'),
-  );
-
-  return weights.length >= MIN_CACHED_WEIGHTS;
+  return hasStep('speech-to-text', MODEL_KEY);
 }

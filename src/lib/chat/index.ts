@@ -11,10 +11,13 @@ import type {
   EngineSettings,
   ConversationConfig,
 } from '@litert-lm/core';
-import { fetchModelAsBlob, hasCachedModel } from './model-cache';
-import { resolveRuntimeUrls, runtimeMarkerKey } from './runtime';
-import { hasWarmRuntime, warmRuntime } from '../runtime-cache';
-import type { ProgressCallback } from '../progress';
+// The only part of @litert-lm/core the check stage is allowed to pull in. It
+// keys the runtime marker, so a dependency bump misses the old one rather than
+// matching it — and it comes from the package manifest, which the `exports`
+// map does expose, rather than from the library itself, whose 20 MB of wasm
+// must not be dragged in to answer a question about whether it is cached.
+import { version as LITERT_VERSION } from '@litert-lm/core/package.json';
+import { DEFAULT_CHAT_MODEL, hasAsset, hasStep, markStep } from '../assets';
 
 /** A single turn of prior conversation history to seed context with. */
 export interface ChatMessage {
@@ -64,16 +67,20 @@ export interface GenerateMessageOptions {
    */
   samplerParams?: SamplerParams;
   /**
-   * Called as the call moves between phases. Preload normally gets the model
-   * and the wasm runtime onto disk ahead of time, leaving only 'compiling' and
-   * 'generating' to happen here — but 'downloading' can still appear if the
-   * browser evicted either since. Lets the UI say which, instead of showing
-   * one undifferentiated wait.
+   * Called as the call moves between phases, so the UI can say which one it is
+   * waiting on instead of showing one undifferentiated wait.
+   *
+   * Preload normally gets the model and the wasm runtime onto disk ahead of
+   * time, so the usual sequence is 'loading' (reading the file back off disk),
+   * 'compiling', 'generating'. 'downloading' appears in its place only when
+   * the bytes really are being fetched — a first run that skipped preload, or
+   * a browser that has evicted them since.
    */
   onStage?: (stage: GenerateStage) => void;
 }
 
-export type GenerateStage = 'downloading' | 'compiling' | 'generating';
+export type GenerateStage =
+  'downloading' | 'loading' | 'compiling' | 'generating';
 
 const DEFAULT_SAMPLER_PARAMS: Required<Omit<SamplerParams, 'randomSeed'>> = {
   temperature: 0.8,
@@ -81,31 +88,23 @@ const DEFAULT_SAMPLER_PARAMS: Required<Omit<SamplerParams, 'randomSeed'>> = {
   topP: 0.95,
 };
 
-export const MODELS = {
-  /** Lower-end devices — smaller/faster, less capable. */
-  e2b: 'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it-web.litertlm',
-  /** Default — better output quality, for devices that can handle it. */
-  e4b: 'https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it-web.litertlm',
-};
-
-export const DEFAULT_MODEL = MODELS.e4b;
-
-// The model blob download is cached per modelUrl, separately from the engine
-// itself, so preload() can pull the file down ahead of time without paying
-// the cost of compiling/initializing the engine (the "warm up") — that only
-// happens once generateMessage() is actually called.
-const modelBlobPromises = new Map<string, Promise<Blob>>();
-
-function getModelBlob(
-  modelUrl: string,
-  onProgress?: ProgressCallback,
-): Promise<Blob> {
-  let promise = modelBlobPromises.get(modelUrl);
-  if (!promise) {
-    promise = fetchModelAsBlob(modelUrl, onProgress);
-    modelBlobPromises.set(modelUrl, promise);
+/**
+ * The LiteRT-LM web SDK (early preview) doesn't persist a downloaded model
+ * across page loads and `Engine.create()` takes a Blob rather than a URL, so
+ * the file is fetched here and handed over.
+ *
+ * Nothing is memoized. The service worker holds the bytes, so a second fetch
+ * is a cache read rather than a download — and keeping a multi-gigabyte Blob
+ * alive for the whole session to avoid it would be a poor trade.
+ */
+async function fetchModel(modelUrl: string): Promise<Blob> {
+  const response = await fetch(modelUrl);
+  if (!response.ok) {
+    throw new Error(
+      `Failed to download model (${response.status}): ${modelUrl}`,
+    );
   }
-  return promise;
+  return response.blob();
 }
 
 // The engine (and its loaded model weights) is expensive to create, so we
@@ -120,16 +119,20 @@ function engineKey(modelUrl: string, maxNumTokens: number): string {
 function getEngine(
   modelUrl: string,
   maxNumTokens: number,
-  onProgress?: ProgressCallback,
   onStage?: (stage: GenerateStage) => void,
 ): Promise<Engine> {
   const key = engineKey(modelUrl, maxNumTokens);
   let promise = enginePromises.get(key);
   if (!promise) {
     promise = (async () => {
-      onStage?.('downloading');
+      // Which wait this is, asked of the cache rather than assumed. fetchModel
+      // cannot tell a network download from a cache hit — both are a `fetch`
+      // the service worker answers — and on a return visit calling it a
+      // download misreported a disk read of several gigabytes as a fresh one.
+      onStage?.((await hasAsset(modelUrl)) ? 'loading' : 'downloading');
+
       const [modelBlob, { Engine: LiteRTEngine }] = await Promise.all([
-        getModelBlob(modelUrl, onProgress),
+        fetchModel(modelUrl),
         import('@litert-lm/core'),
       ]);
       const settings: EngineSettings = {
@@ -164,12 +167,12 @@ export async function generateMessage({
   prompt,
   systemInstruction,
   history = [],
-  modelUrl = DEFAULT_MODEL,
+  modelUrl = DEFAULT_CHAT_MODEL,
   maxNumTokens = 8192,
   samplerParams,
   onStage,
 }: GenerateMessageOptions = {}): Promise<string> {
-  const engine = await getEngine(modelUrl, maxNumTokens, undefined, onStage);
+  const engine = await getEngine(modelUrl, maxNumTokens, onStage);
 
   const prefaceMessages: Array<{
     role: 'system' | 'user' | 'model';
@@ -242,44 +245,76 @@ function extractText(message: unknown): string {
 }
 
 /**
- * Kicks off the model file download ahead of time, so the first call to
- * generateMessage() doesn't pay that cost. Deliberately stops short of
- * initializing the engine (the "warm up") — that's a separate, slower step
- * left for generateMessage() to do on demand, e.g. while generating the
- * greeting. Safe to call multiple times — memoized by modelUrl.
+ * Pulls the model file down ahead of time so the first call to
+ * generateMessage() doesn't pay that cost. The bytes land in the service
+ * worker's cache and are discarded here — `Engine.create()` re-reads them from
+ * there, which is cheap, rather than this holding gigabytes for the session.
+ *
+ * Deliberately stops short of initializing the engine (the "warm up") — that's
+ * a separate, slower step left for generateMessage() to do on demand, e.g.
+ * while generating the greeting.
  */
-export function preload(
-  onProgress?: ProgressCallback,
-  modelUrl: string = DEFAULT_MODEL,
-): Promise<Blob> {
-  return getModelBlob(modelUrl, onProgress);
+export async function preload(
+  modelUrl: string = DEFAULT_CHAT_MODEL,
+): Promise<void> {
+  // Alone among the preload steps this one warms nothing up: getting the bytes
+  // on disk is all it does, so once they are there it has no work left. It ran
+  // regardless until now, and on every return visit streamed the whole model
+  // out of the cache only to discard it — against the same disk the greeting
+  // was waiting on to read that very file.
+  //
+  // Asked of the cache rather than of the marker: the marker is what a failed
+  // cache write leaves behind looking like success, and skipping the download
+  // on its word is exactly the mistake that would cost the bytes.
+  if (await hasAsset(modelUrl)) {
+    // Written even so. The bytes being present while the marker is missing is
+    // the interrupted-run case, and the marker is what the preload screen
+    // reads.
+    await markStep('chat', modelUrl);
+    return;
+  }
+
+  const response = await fetch(modelUrl);
+  if (!response.ok) {
+    throw new Error(
+      `Failed to download model (${response.status}): ${modelUrl}`,
+    );
+  }
+
+  // Drained, not buffered. The bytes only need to stream past the service
+  // worker so it can store and count them; `arrayBuffer()` would additionally
+  // demand a single contiguous ~3 GB allocation, which fails often enough that
+  // the step would reject after a successful download — leaving the marker
+  // unwritten and the screen still offering the download.
+  await response.body?.pipeTo(new WritableStream());
+
+  await markStep('chat', modelUrl);
 }
 
-// Memoized separately from the model blob: the runtime is shared across every
-// model, and re-warming it on each call would re-download nothing but still
-// cost a round trip per URL.
+// Memoized because the runtime is shared across every model, and a repeat call
+// would re-download nothing but still cost a round trip per URL.
 let runtimeWarmPromise: Promise<void> | null = null;
 
 /**
- * Downloads the LiteRT-LM wasm runtime — tens of megabytes, from the CDN
- * baked into the library — so that Engine.create() finds it on disk rather
- * than fetching it silently mid-conversation.
+ * Loads the LiteRT-LM wasm runtime — tens of megabytes, from the CDN baked
+ * into the library — so that Engine.create() finds it in memory rather than
+ * fetching it silently mid-conversation.
  *
- * Stops short of compiling the model, which is the slow half of
- * Engine.create() and stays where it was.
+ * The library picks between four wasm builds by feature detection and fetches
+ * the winner itself. We used to reproduce that choice in order to prefetch the
+ * right file; now the service worker recognises whichever one it asks for, so
+ * this just asks the library to load, and stops short of compiling the model —
+ * the slow half of Engine.create(), which stays where it was.
  */
-export function preloadRuntime(onProgress?: ProgressCallback): Promise<void> {
+export function preloadRuntime(): Promise<void> {
   runtimeWarmPromise ??= (async () => {
-    const { LiteRtLm, getOrLoadGlobalLiteRtLm } =
-      await import('@litert-lm/core');
-    const { js, wasm } = await resolveRuntimeUrls(LiteRtLm.DEFAULT_WASM_PATH);
+    const { getOrLoadGlobalLiteRtLm } = await import('@litert-lm/core');
 
-    await warmRuntime([js, wasm], await runtimeMarkerKey(), onProgress);
-
-    // Instantiate it now the bytes are local. Engine.create() calls this same
-    // memoizing getter with no path, which returns whatever is already
-    // loading rather than complaining about a mismatch.
+    // Engine.create() calls this same memoizing getter, which returns whatever
+    // is already loading rather than starting a second copy.
     await getOrLoadGlobalLiteRtLm();
+
+    await markStep('chat-runtime', LITERT_VERSION);
   })().catch((err) => {
     // Don't cache a failure — a later attempt (or the engine itself) should
     // be free to retry.
@@ -291,27 +326,27 @@ export function preloadRuntime(onProgress?: ProgressCallback): Promise<void> {
 }
 
 /**
- * Whether the wasm runtime has already been downloaded. Answers from the
- * receipt alone — importing @litert-lm/core to resolve its real URLs would
- * defeat the point, since this runs during the check stage.
+ * Whether the wasm runtime has already been downloaded. Keyed by package
+ * version rather than by URL, since resolving the real URL would mean
+ * importing @litert-lm/core — and this runs during the check stage, before the
+ * user has agreed to download anything.
  */
 export async function isRuntimeCached(): Promise<boolean> {
   if (runtimeWarmPromise) return true;
-  return hasWarmRuntime(await runtimeMarkerKey());
+  return hasStep('chat-runtime', LITERT_VERSION);
 }
 
 /**
- * Whether the model is ready to use without a download — either the model
- * file is already fetched into memory this page session, an engine is
- * already live, or the file is in the Cache Storage.
+ * Whether the model is ready to use without a download — either an engine is
+ * already live this page session, or the file is in the service worker's
+ * cache.
  */
 export async function isCached(
-  modelUrl: string = DEFAULT_MODEL,
+  modelUrl: string = DEFAULT_CHAT_MODEL,
   maxNumTokens = 8192,
 ): Promise<boolean> {
-  if (modelBlobPromises.has(modelUrl)) return true;
   if (enginePromises.has(engineKey(modelUrl, maxNumTokens))) return true;
-  return hasCachedModel(modelUrl);
+  return hasStep('chat', modelUrl);
 }
 
 /**
@@ -319,7 +354,6 @@ export async function isCached(
  * A fresh engine will be lazily created again on the next generateMessage() call.
  */
 export async function dispose(): Promise<void> {
-  modelBlobPromises.clear();
   const promises = Array.from(enginePromises.values());
   enginePromises.clear();
   for (const enginePromise of promises) {
@@ -332,5 +366,3 @@ export async function dispose(): Promise<void> {
     }
   }
 }
-
-export { clearModelCache } from './model-cache';

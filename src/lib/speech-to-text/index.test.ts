@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import * as decode from '#/lib/audio/decode';
+import { stubCacheStorage } from '#/test-utils';
 import type {
   WorkerRequest,
   WorkerResponse,
@@ -152,88 +153,26 @@ describe('transcribe', () => {
   });
 });
 
-describe('preloadRuntime', () => {
-  it('sends a runtime request and forwards progress updates', async () => {
-    const { preloadRuntime } = await import('#/lib/speech-to-text/index');
-    const onProgress = vi.fn();
-
-    const promise = preloadRuntime(onProgress);
-    await flush();
-    const worker = FakeWorker.instances[0];
-
-    expect(worker.postedMessages[0]).toEqual({ id: 0, mode: 'runtime' });
-
-    worker.emit({
-      id: 0,
-      type: 'progress',
-      progress: { loaded: 5, total: 50, progress: 0.1 },
-    });
-    worker.emit({ id: 0, type: 'done' });
-
-    await expect(promise).resolves.toBeUndefined();
-    expect(onProgress).toHaveBeenCalledWith({
-      loaded: 5,
-      total: 50,
-      progress: 0.1,
-    });
-  });
-});
-
-describe('isRuntimeCached', () => {
-  it('is false when nothing has been warmed and there is no Cache Storage', async () => {
-    const { isRuntimeCached } = await import('#/lib/speech-to-text/index');
-
-    await expect(isRuntimeCached()).resolves.toBe(false);
-  });
-
-  it('is true when the runtime receipt is present', async () => {
-    vi.stubGlobal('caches', {
-      open: vi.fn().mockResolvedValue({
-        match: vi.fn().mockResolvedValue(new Response('1')),
-      }),
-    });
-
-    const { isRuntimeCached } = await import('#/lib/speech-to-text/index');
-
-    await expect(isRuntimeCached()).resolves.toBe(true);
-  });
-
-  it('does not spawn a worker', async () => {
-    // Runs during the check stage, so it must not pull in the 500 KB
-    // Transformers.js chunk the worker would load.
-    const { isRuntimeCached } = await import('#/lib/speech-to-text/index');
-
-    await isRuntimeCached();
-
-    expect(FakeWorker.instances).toHaveLength(0);
-  });
-});
-
 describe('preload', () => {
-  it('sends a preload request and forwards progress updates', async () => {
+  it('sends a preload request and marks the step once it lands', async () => {
+    stubCacheStorage();
     const { preload } = await import('#/lib/speech-to-text/index');
-    const onProgress = vi.fn();
+    const { hasStep } = await import('#/lib/assets');
+    const { MODEL_KEY } = await import('#/lib/speech-to-text/model');
 
-    const promise = preload(onProgress);
+    const promise = preload();
     await flush();
     const worker = FakeWorker.instances[0];
 
+    // No 'runtime' request any more: Transformers.js downloads its ONNX
+    // Runtime as part of building the pipeline, and the service worker
+    // reports the bytes rather than us fetching them first.
     expect(worker.postedMessages[0]).toEqual({ id: 0, mode: 'preload' });
 
-    worker.emit({
-      id: 0,
-      type: 'progress',
-      progress: { loaded: 10, total: 100, progress: 0.1 },
-    });
     worker.emit({ id: 0, type: 'done' });
-
     await promise;
 
-    expect(onProgress).toHaveBeenCalledWith({
-      loaded: 10,
-      total: 100,
-      progress: 0.1,
-    });
+    await expect(hasStep('speech-to-text', MODEL_KEY)).resolves.toBe(true);
   });
 });
 
@@ -255,33 +194,37 @@ describe('isCached', () => {
     await expect(isCached()).resolves.toBe(false);
   });
 
-  it('checks Cache Storage for at least two cached weight files', async () => {
-    const keys = vi
-      .fn()
-      .mockResolvedValue([
-        { url: 'https://cdn/onnx-community/whisper-base/encoder.onnx' },
-        { url: 'https://cdn/onnx-community/whisper-base/decoder.onnx' },
-        { url: 'https://cdn/other/file.onnx' },
-      ]);
-
-    vi.stubGlobal('caches', { open: vi.fn().mockResolvedValue({ keys }) });
+  it('is true when the step marker is present', async () => {
+    stubCacheStorage();
+    const { markStep } = await import('#/lib/assets');
+    const { MODEL_KEY } = await import('#/lib/speech-to-text/model');
+    await markStep('speech-to-text', MODEL_KEY);
 
     const { isCached } = await import('#/lib/speech-to-text/index');
 
     await expect(isCached()).resolves.toBe(true);
   });
 
-  it('is false when fewer than two weight files are cached', async () => {
-    const keys = vi
-      .fn()
-      .mockResolvedValue([
-        { url: 'https://cdn/onnx-community/whisper-base/encoder.onnx' },
-      ]);
-
-    vi.stubGlobal('caches', { open: vi.fn().mockResolvedValue({ keys }) });
+  it('does not match a marker left by a different model or precision', async () => {
+    // The marker carries the model and dtype, so changing either misses
+    // rather than vouching for weights that were never downloaded.
+    stubCacheStorage();
+    const { markStep } = await import('#/lib/assets');
+    await markStep('speech-to-text', 'onnx-community/whisper-tiny:fp16');
 
     const { isCached } = await import('#/lib/speech-to-text/index');
 
     await expect(isCached()).resolves.toBe(false);
+  });
+
+  it('does not spawn a worker', async () => {
+    // Runs during the check stage, so it must not pull in the 500 KB
+    // Transformers.js chunk the worker would load.
+    stubCacheStorage();
+    const { isCached } = await import('#/lib/speech-to-text/index');
+
+    await isCached();
+
+    expect(FakeWorker.instances).toHaveLength(0);
   });
 });

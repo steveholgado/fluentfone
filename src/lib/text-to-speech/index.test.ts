@@ -8,9 +8,27 @@ import {
   isCached,
   isRuntimeCached,
   preload,
+  preloadRuntime,
   speak,
   VOICES,
 } from '#/lib/text-to-speech/index';
+import { RUNTIME_KEY, WASM_FILES } from '#/lib/text-to-speech/runtime';
+import {
+  hasStep,
+  markStep,
+  PROGRESS_CHANNEL,
+  type AssetProgressMessage,
+} from '#/lib/assets';
+import { stubCacheStorage } from '#/test-utils';
+
+/** Stands in for the service worker. Delivery is asynchronous. */
+let sw: BroadcastChannel | undefined;
+
+async function report(message: AssetProgressMessage) {
+  sw ??= new BroadcastChannel(PROGRESS_CHANNEL);
+  sw.postMessage(message);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+}
 
 class FakeWorker {
   static instances: FakeWorker[] = [];
@@ -42,6 +60,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  sw?.close();
+  sw = undefined;
   vi.unstubAllGlobals();
 });
 
@@ -95,28 +115,52 @@ describe('speak', () => {
     await expect(promise).rejects.toThrow('Worker returned no audio data.');
   });
 
-  it('forwards progress updates', async () => {
+  it('reports voice bytes streaming past the service worker', async () => {
+    // Normally silent — after preload the voice is in OPFS. This is the path
+    // where the conversation was reached without one, or it has been evicted.
     const onProgress = vi.fn();
     const promise = speak(VOICES.en, 'hello', onProgress);
     const worker = FakeWorker.instances[0];
 
-    worker.emit({
-      type: 'progress',
-      progress: { url: 'https://voice/model.onnx', loaded: 5, total: 10 },
+    await report({
+      step: 'text-to-speech',
+      url: 'https://huggingface.co/piper-voices/model.onnx',
+      loaded: 5,
+      total: 10,
     });
+
     worker.emit({
       type: 'done',
       buffer: new ArrayBuffer(1),
       mimeType: 'audio/wav',
     });
-
     await promise;
 
-    expect(onProgress).toHaveBeenCalledWith({
+    expect(onProgress).toHaveBeenCalledWith(
+      expect.objectContaining({ loaded: 5 }),
+    );
+  });
+
+  it('stops listening once the call is over', async () => {
+    const onProgress = vi.fn();
+    const promise = speak(VOICES.en, 'hello', onProgress);
+
+    FakeWorker.instances[0].emit({
+      type: 'done',
+      buffer: new ArrayBuffer(1),
+      mimeType: 'audio/wav',
+    });
+    await promise;
+    onProgress.mockClear();
+
+    await report({
+      step: 'text-to-speech',
+      url: 'https://huggingface.co/piper-voices/model.onnx',
       loaded: 5,
       total: 10,
-      progress: 0.5,
     });
+
+    expect(onProgress).not.toHaveBeenCalled();
   });
 });
 
@@ -136,26 +180,64 @@ describe('preload', () => {
   });
 });
 
+describe('preloadRuntime', () => {
+  it('pulls the vendored wasm through and marks the step', async () => {
+    stubCacheStorage();
+    const fetchMock = vi.fn(async () => new Response(new Uint8Array([1])));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await preloadRuntime();
+
+    // Fetched here rather than left to TtsSession.create(), so the wasm and
+    // the voice each get their own progress sweep. Cheap to do because these
+    // URLs are ours — there is no build variant to guess at.
+    expect(fetchMock).toHaveBeenCalledTimes(WASM_FILES.length);
+    expect(FakeWorker.instances).toHaveLength(0);
+    await expect(hasStep('text-to-speech-runtime', RUNTIME_KEY)).resolves.toBe(
+      true,
+    );
+  });
+
+  it('does not mark the step if a file fails to download', async () => {
+    stubCacheStorage();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('nope', { status: 404 })),
+    );
+
+    await expect(preloadRuntime()).rejects.toThrow('Failed to download');
+    await expect(hasStep('text-to-speech-runtime', RUNTIME_KEY)).resolves.toBe(
+      false,
+    );
+  });
+});
+
 describe('isRuntimeCached', () => {
-  it('is false when nothing has been warmed and there is no Cache Storage', async () => {
+  it('is false when nothing has been downloaded and there is no Cache Storage', async () => {
     vi.stubGlobal('caches', undefined);
 
     await expect(isRuntimeCached()).resolves.toBe(false);
   });
 
-  it('is true when the runtime receipt is present', async () => {
-    vi.stubGlobal('caches', {
-      open: vi.fn().mockResolvedValue({
-        match: vi.fn().mockResolvedValue(new Response('1')),
-      }),
-    });
+  it('is true when the step marker is present', async () => {
+    stubCacheStorage();
+    await markStep('text-to-speech-runtime', RUNTIME_KEY);
 
     await expect(isRuntimeCached()).resolves.toBe(true);
   });
 
+  it('does not match a marker from a different vendored version', async () => {
+    // Both paths carry their package version, so a bump misses rather than
+    // vouching for wasm that was never fetched.
+    stubCacheStorage();
+    await markStep('text-to-speech-runtime', '/vendor/onnx/0.0.1/|/vendor/x/');
+
+    await expect(isRuntimeCached()).resolves.toBe(false);
+  });
+
   it('neither fetches nor spawns a worker', async () => {
-    // Runs during the check stage. A probe of the HTTP cache here would show
-    // up as a failed request in the network panel on every cold load.
+    // Runs during the check stage, before the user has agreed to download
+    // anything.
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
     vi.stubGlobal('caches', undefined);
