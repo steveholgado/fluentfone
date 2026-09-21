@@ -134,7 +134,11 @@ describe('usePreload', () => {
       vi.mocked(checkPreloaded).mockResolvedValue(status(false));
       vi.mocked(isFullyPreloaded).mockReturnValue(false);
       vi.mocked(preloadAll).mockImplementation(async (_voice, onProgress) => {
-        onProgress?.('speech-to-text', { loaded: 500_000 });
+        onProgress?.('speech-to-text', {
+          loaded: 500_000,
+          total: 1_000_000,
+          progress: 0.5,
+        });
         return undefined;
       });
 

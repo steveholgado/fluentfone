@@ -112,8 +112,7 @@ export function usePreload() {
         if (position === -1) return;
         const index = position + 1;
 
-        const rawPercent =
-          typeof p.progress === 'number' ? Math.round(p.progress * 100) : 0;
+        const rawPercent = Math.round(p.progress * 100);
 
         if (index !== maxPercentRef.current.index) {
           maxPercentRef.current = { index, percent: rawPercent };

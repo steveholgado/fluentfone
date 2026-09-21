@@ -29,7 +29,7 @@ afterEach(() => {
  * measured against — fixtures smaller than it would simply be overridden by
  * it, and would be testing the floor rather than the summing.
  */
-const CHAT = EXPECTED_BYTES.chat!;
+const CHAT = EXPECTED_BYTES.chat;
 
 describe('trackStep', () => {
   it('reports a single file against its declared size', async () => {
@@ -147,7 +147,7 @@ describe('trackStep', () => {
     const onProgress = vi.fn();
     stop = trackStep('chat-runtime', onProgress);
 
-    const observed = EXPECTED_BYTES['chat-runtime']! * 2;
+    const observed = EXPECTED_BYTES['chat-runtime'] * 2;
     await report({
       step: 'chat-runtime',
       url: 'a',
@@ -171,28 +171,17 @@ describe('trackStep', () => {
     );
   });
 
-  it('reports an unknown total rather than one the bar would overrun', async () => {
-    // Every step carries an estimate today, so the entry is removed for the
-    // duration: this guards the case of one added later without, where no
-    // Content-Length leaves no denominator at all. Reporting "unknown" is what
-    // keeps the bar from being handed a number it would run past.
-    const estimate = EXPECTED_BYTES.chat;
-    delete EXPECTED_BYTES.chat;
+  it('falls back to the estimate when no response declares a length', async () => {
+    const onProgress = vi.fn();
+    stop = trackStep('chat', onProgress);
 
-    try {
-      const onProgress = vi.fn();
-      stop = trackStep('chat', onProgress);
+    await report({ step: 'chat', url: 'a', loaded: 10, total: null });
 
-      await report({ step: 'chat', url: 'a', loaded: 10, total: null });
-
-      expect(onProgress).toHaveBeenLastCalledWith({
-        loaded: 10,
-        total: undefined,
-        progress: undefined,
-      });
-    } finally {
-      EXPECTED_BYTES.chat = estimate;
-    }
+    expect(onProgress).toHaveBeenLastCalledWith({
+      loaded: 10,
+      total: CHAT,
+      progress: 10 / CHAT,
+    });
   });
 
   it('stops reporting once the step is over', async () => {

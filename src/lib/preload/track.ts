@@ -68,14 +68,9 @@ function summarize(
     observed += file.total;
   }
 
-  const total = Math.max(EXPECTED_BYTES[step] ?? 0, observed);
+  // Every step carries an estimate (see EXPECTED_BYTES), so the denominator is
+  // never zero even when no response declared a Content-Length.
+  const total = Math.max(EXPECTED_BYTES[step], observed);
 
-  return {
-    loaded,
-    // A step whose files all arrived without a Content-Length and has no
-    // estimate reports an unknown total, rather than a number the bar would
-    // overrun.
-    total: total || undefined,
-    progress: total ? Math.min(loaded / total, 1) : undefined,
-  };
+  return { loaded, total, progress: Math.min(loaded / total, 1) };
 }

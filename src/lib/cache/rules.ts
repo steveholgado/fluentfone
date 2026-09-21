@@ -87,11 +87,16 @@ export function ruleFor(url: URL): AssetRule | undefined {
  * step's terminal 100% snaps it up. Refresh on a dependency bump by taking the
  * Content-Length of each file; measured 2026-09-19.
  *
+ * Every step needs an entry, which is why this is a total record rather than a
+ * partial one: the estimate is the progress bar's floor, so a step without one
+ * could report no denominator at all if its responses declared no length.
+ * Adding a `PreloadStepId` without a figure here is a type error, by design.
+ *
  * The text-to-speech figure is per voice. Every piper "medium" voice happens
  * to be the same size, so it holds for either entry in VOICES — but a voice at
  * another quality would need a new figure.
  */
-export const EXPECTED_BYTES: Partial<Record<PreloadStepId, number>> = {
+export const EXPECTED_BYTES: Record<PreloadStepId, number> = {
   'text-to-speech-runtime': 30_638_000,
   'text-to-speech': 63_206_000,
   'speech-to-text': 101_000_000,

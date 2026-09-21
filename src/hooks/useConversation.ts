@@ -8,7 +8,7 @@ import {
   type GenerateStage,
 } from '#/lib/chat';
 import { speak } from '#/lib/text-to-speech';
-import { formatProgress } from '#/lib/progress';
+import { formatProgress } from '#/utils/formatProgress';
 import { LANGUAGE, SYSTEM_INSTRUCTION, VOICE_ID } from '#/config';
 
 // 'loading' is the everyday one: preload put the model on disk, and this is
@@ -39,7 +39,7 @@ export function useConversation() {
   const speakReply = useCallback(async (text: string) => {
     setStatus('Speaking…');
     const audio = await speak(VOICE_ID, text, (p) =>
-      setStatus(`Downloading voice model... ${formatProgress(p)}`),
+      setStatus(`Downloading voice model… ${formatProgress(p.progress)}`),
     );
     await play(audio);
     setStatus('');
@@ -55,7 +55,7 @@ export function useConversation() {
         onStage: (stage) => setStatus(STAGE_STATUS[stage]),
       });
       const audio = await speak(VOICE_ID, opening, (p) =>
-        setStatus(`Downloading voice model… ${formatProgress(p)}`),
+        setStatus(`Downloading voice model… ${formatProgress(p.progress)}`),
       );
       greetingRef.current = { text: opening, audio };
       setStatus('');
