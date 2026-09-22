@@ -1,0 +1,41 @@
+import { useEffect, useState } from 'react';
+
+import { cn } from '#/utils/cn';
+
+interface NotificationProps {
+  visible: boolean;
+  children: React.ReactNode;
+}
+
+export function Notification({ visible, children }: NotificationProps) {
+  const [shouldRender, setShouldRender] = useState(visible);
+
+  useEffect(() => {
+    if (visible) setShouldRender(true);
+  }, [visible]);
+
+  if (!shouldRender) return null;
+
+  return (
+    <div className="absolute inset-0 h-full w-full">
+      <div
+        className={cn(
+          'absolute inset-0 bg-neutral-800/90',
+          !visible && 'animate-fade-out [animation-delay:300ms]',
+        )}
+        onAnimationEnd={() => {
+          if (!visible) setShouldRender(false);
+        }}
+      />
+
+      <div
+        className={cn(
+          'absolute right-4 bottom-4 left-4 flex flex-col gap-4 rounded-4xl bg-white p-8 text-black',
+          visible ? 'animate-scale-in' : 'animate-scale-out',
+        )}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}

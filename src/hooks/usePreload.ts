@@ -7,15 +7,17 @@ import {
   preloadAll,
   type PreloadStatus,
 } from '#/lib/preload';
+import { checkDeviceSupport, type DeviceSupport } from '#/lib/device';
 import { ensureController } from '#/lib/sw-client';
 import { VOICE_ID } from '#/config';
 
 /**
- * 'checking' — probing local storage on mount
- * 'needed'   — at least one model still has to be downloaded
- * 'ready'    — everything is on disk, the conversation can start
+ * 'checking'    — probing device support and local storage on mount
+ * 'unsupported' — this device can't run the models; nothing will be downloaded
+ * 'needed'      — at least one model still has to be downloaded
+ * 'ready'       — everything is on disk, the conversation can start
  */
-export type PreloadPhase = 'checking' | 'needed' | 'ready';
+export type PreloadPhase = 'checking' | 'unsupported' | 'needed' | 'ready';
 
 /** Progress through the current model download, for the progress bar. */
 export interface PreloadProgress {
@@ -54,16 +56,31 @@ export function usePreload() {
   const [status, setStatus] = useState('');
   const [progress, setProgress] = useState<PreloadProgress | null>(null);
   const [isPreloading, setIsPreloading] = useState(false);
+  const [support, setSupport] = useState<DeviceSupport | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
     void (async () => {
-      // Before anything is probed or fetched. The worker has to be controlling
-      // this page for it to see the downloads that follow, and on a first
-      // visit it only becomes so partway through startup. A false here means
-      // no caching is available — the app still runs, it just re-downloads
-      // each session.
+      // First, and before the service worker is even woken: a device that
+      // can't run the models shouldn't be asked to cache gigabytes of them.
+      // This is also what keeps a *previously* downloaded device out of
+      // 'ready' — where the greeting would start the chat engine and throw.
+      const deviceSupport = await checkDeviceSupport();
+      if (cancelled) return;
+
+      setSupport(deviceSupport);
+
+      if (!deviceSupport.supported) {
+        setStatus('Device not supported');
+        setPhase('unsupported');
+        return;
+      }
+
+      // The worker has to be controlling this page for it to see the downloads
+      // that follow, and on a first visit it only becomes so partway through
+      // startup. A false here means no caching is available — the app still
+      // runs, it just re-downloads each session.
       await ensureController();
       if (cancelled) return;
 
@@ -96,6 +113,10 @@ export function usePreload() {
   const maxPercentRef = useRef({ index: 0, percent: 0 });
 
   const preload = useCallback(async () => {
+    // The UI doesn't offer the button in this phase, but downloading gigabytes
+    // onto a device that can't use them is worth refusing at the source too.
+    if (phase === 'unsupported') return;
+
     setIsPreloading(true);
     maxPercentRef.current = { index: 0, percent: 0 };
 
@@ -143,9 +164,18 @@ export function usePreload() {
     } finally {
       setIsPreloading(false);
     }
-  }, []);
+  }, [phase]);
 
   const start = useCallback(() => setPhase('ready'), []);
 
-  return { phase, cached, status, progress, isPreloading, preload, start };
+  return {
+    phase,
+    cached,
+    status,
+    progress,
+    isPreloading,
+    support,
+    preload,
+    start,
+  };
 }

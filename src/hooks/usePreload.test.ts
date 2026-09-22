@@ -1,5 +1,5 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { usePreload } from '#/hooks/usePreload';
 import { checkPreloaded, isFullyPreloaded, preloadAll } from '#/lib/preload';
@@ -36,6 +36,14 @@ function status(
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // jsdom has no navigator.gpu, which every test below but the device-support
+  // ones would otherwise trip — landing in 'unsupported' before preload is
+  // reached at all. See the 'device support' block for that path.
+  vi.stubGlobal('navigator', { ...navigator, gpu: {} });
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe('usePreload', () => {
@@ -301,6 +309,52 @@ describe('usePreload', () => {
       expect(errorSpy).toHaveBeenCalled();
 
       errorSpy.mockRestore();
+    });
+  });
+
+  describe('device support', () => {
+    it('stops at unsupported without probing the cache when WebGPU is missing', async () => {
+      vi.stubGlobal('navigator', {});
+
+      const { result } = renderHook(() => usePreload());
+
+      await waitFor(() => expect(result.current.phase).toBe('unsupported'));
+      expect(result.current.status).toBe('Device not supported');
+      expect(result.current.support?.unmet.map((r) => r.id)).toEqual([
+        'webgpu',
+      ]);
+      // The point of the gate: nothing is asked of storage, and nothing is
+      // fetched.
+      expect(checkPreloaded).not.toHaveBeenCalled();
+      expect(preloadAll).not.toHaveBeenCalled();
+    });
+
+    it('never reaches ready on an unsupported device, even fully cached', async () => {
+      // The case that crashed Safari: everything downloaded on a previous
+      // visit, so the greeting starts the chat engine and throws on
+      // navigator.gpu.requestAdapter.
+      vi.stubGlobal('navigator', {});
+      vi.mocked(checkPreloaded).mockResolvedValue(status(true));
+      vi.mocked(isFullyPreloaded).mockReturnValue(true);
+
+      const { result } = renderHook(() => usePreload());
+
+      await waitFor(() => expect(result.current.phase).toBe('unsupported'));
+      expect(preloadAll).not.toHaveBeenCalled();
+    });
+
+    it('refuses to download when asked anyway', async () => {
+      vi.stubGlobal('navigator', {});
+
+      const { result } = renderHook(() => usePreload());
+      await waitFor(() => expect(result.current.phase).toBe('unsupported'));
+
+      await act(async () => {
+        await result.current.preload();
+      });
+
+      expect(preloadAll).not.toHaveBeenCalled();
+      expect(result.current.isPreloading).toBe(false);
     });
   });
 

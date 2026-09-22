@@ -34,12 +34,39 @@ ctx.onmessage = async (event: MessageEvent<WorkerRequest>) => {
         // second place to ask whether they are present.
         env.useBrowserCache = false;
 
+        const device =
+          typeof navigator !== 'undefined' && navigator.gpu ? 'webgpu' : 'wasm';
+
         return pipeline('automatic-speech-recognition', MODEL, {
           dtype: MODEL_DTYPE,
-          device:
-            typeof navigator !== 'undefined' && navigator.gpu
-              ? 'webgpu'
-              : 'wasm',
+          device,
+          // Any browser without WebGPU lands on the wasm CPU EP — where ORT's
+          // extended (level 2) optimizer rewrites the decoder's QDQ pattern
+          // into MatMulNBits and then throws on this q8 export:
+          //
+          //   qdq_actions.cc:137 TransposeDQWeightsForMatMulNBits
+          //   Missing required scale: model.decoder.embed_tokens.weight_merged_0_scale
+          //
+          // Whisper ties embed_tokens to lm_head, so that one quantized weight
+          // has two DequantizeLinear consumers — the case the fusion mishandles
+          // in the onnxruntime-web build transformers.js 4.2.0 pins
+          // (1.26.0-dev.20260416; regressed in 1.25, fixed upstream by
+          // microsoft/onnxruntime#28326). Capping at 'basic' skips that pass
+          // and leaves constant folding and the level-1 fusions in place.
+          //
+          // Safari is how this surfaces in practice, but not because Safari
+          // lacks WebGPU outright — it shipped in Safari 26. It's gated on the
+          // OS: WebGPU is only on by default on macOS Tahoe 26+ and iOS 26+, so
+          // Safari on Sequoia or Sonoma has no navigator.gpu whatever its
+          // version (WebKit #299237). Those users take this branch; Safari on
+          // Tahoe behaves like Chrome and does not.
+          //
+          // Scoped to wasm so WebGPU keeps its level-2 fusions, which is where
+          // they actually pay for themselves. Drop the condition, not the
+          // option, if a WebGPU browser ever hits the same error.
+          ...(device === 'wasm' && {
+            session_options: { graphOptimizationLevel: 'basic' as const },
+          }),
         }) as Promise<AutomaticSpeechRecognitionPipeline>;
       })();
     }

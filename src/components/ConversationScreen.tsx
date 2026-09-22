@@ -6,6 +6,7 @@ interface ConversationScreenProps {
   hasGreeted: boolean;
   isGreetingReady: boolean;
   status: string;
+  minimal?: boolean;
   onAnswer: () => void;
   onToggleRecording: () => void;
 }
@@ -16,6 +17,7 @@ export function ConversationScreen({
   hasGreeted,
   isGreetingReady,
   status,
+  minimal = false,
   onAnswer,
   onToggleRecording,
 }: ConversationScreenProps) {
@@ -25,7 +27,7 @@ export function ConversationScreen({
         <div className="mb-4 h-40 w-40 rounded-full bg-gray-300" />
         <div className="text-2xl">Example Name</div>
       </div>
-      {!hasGreeted ? (
+      {minimal ? null : !hasGreeted ? (
         <>
           <div className="animate-pulse text-center text-2xl">
             {/* Before the call connects there's the engine to compile and the

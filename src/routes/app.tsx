@@ -3,6 +3,7 @@ import { createFileRoute } from '@tanstack/react-router';
 
 import { CheckScreen } from '#/components/CheckScreen';
 import { PreloadScreen } from '#/components/PreloadScreen';
+import { UnsupportedScreen } from '#/components/UnsupportedScreen';
 import { ConversationScreen } from '#/components/ConversationScreen';
 import { useConversation } from '#/hooks/useConversation';
 import { usePreload } from '#/hooks/usePreload';
@@ -16,6 +17,7 @@ function App() {
     status: preloadStatus,
     progress: preloadProgress,
     isPreloading,
+    support,
     preload,
     start,
   } = usePreload();
@@ -39,13 +41,14 @@ function App() {
       <div className="relative h-screen w-full overflow-hidden bg-neutral-800 text-white sm:aspect-9/18 sm:h-auto sm:w-100 sm:rounded-[48px]">
         {phase === 'checking' && <CheckScreen />}
 
-        {(phase === 'ready' || phase === 'needed') && (
+        {phase !== 'checking' && (
           <ConversationScreen
             isRecording={isRecording}
             isAudioLive={isAudioLive}
             hasGreeted={hasGreeted}
             isGreetingReady={isGreetingReady}
             status={status}
+            minimal={phase !== 'ready'}
             onAnswer={greet}
             onToggleRecording={toggleRecording}
           />
@@ -59,6 +62,12 @@ function App() {
           visible={phase === 'needed'}
           onPreload={() => void preload()}
           onStart={start}
+        />
+
+        <UnsupportedScreen
+          visible={phase === 'unsupported'}
+          status={preloadStatus}
+          unmet={support?.unmet ?? []}
         />
       </div>
     </main>
