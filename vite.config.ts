@@ -7,6 +7,7 @@ import babel from '@rolldown/plugin-babel';
 import tailwindcss from '@tailwindcss/vite';
 
 import { vendorWasmAssets } from './vite-plugin-vendor-wasm-assets.ts';
+import { dropBundledOnnxWasm } from './vite-plugin-drop-bundled-onnx-wasm.ts';
 import { serviceWorker } from './vite-plugin-service-worker.ts';
 
 const config = defineConfig({
@@ -15,6 +16,9 @@ const config = defineConfig({
   worker: { format: 'es' },
   plugins: [
     vendorWasmAssets(),
+    // The counterpart to vendorWasmAssets(): that one puts the ORT wasm we do
+    // serve under /vendor/, this one removes the copies we don't.
+    dropBundledOnnxWasm(),
     tanstackStart({
       prerender: { enabled: true, crawlLinks: true },
     }),
