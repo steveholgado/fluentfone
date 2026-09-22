@@ -21,6 +21,7 @@ function App() {
   } = usePreload();
   const {
     isRecording,
+    isAudioLive,
     hasGreeted,
     isGreetingReady,
     status,
@@ -41,6 +42,7 @@ function App() {
         {(phase === 'ready' || phase === 'needed') && (
           <ConversationScreen
             isRecording={isRecording}
+            isAudioLive={isAudioLive}
             hasGreeted={hasGreeted}
             isGreetingReady={isGreetingReady}
             status={status}

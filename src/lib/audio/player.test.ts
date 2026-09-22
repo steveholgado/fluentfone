@@ -23,9 +23,12 @@ beforeEach(() => {
   FakeAudio.instances = [];
 
   vi.stubGlobal('Audio', FakeAudio);
+  // Spreading URL copies nothing — its statics are non-enumerable — so every
+  // method this module uses has to be listed explicitly.
   vi.stubGlobal('URL', {
     ...URL,
     createObjectURL: vi.fn().mockReturnValue('blob:fake-url'),
+    revokeObjectURL: vi.fn(),
   });
 });
 
@@ -48,6 +51,13 @@ describe('play', () => {
     FakeAudio.instances[0].onended?.();
 
     await expect(promise).resolves.toBeUndefined();
+  });
+
+  it('releases the object URL once playback ends', () => {
+    void play(new Blob());
+    FakeAudio.instances[0].onended?.();
+
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:fake-url');
   });
 
   it('rejects when playback errors', async () => {

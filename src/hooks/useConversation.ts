@@ -1,6 +1,12 @@
 import { useCallback, useRef, useState } from 'react';
 
-import { AudioRecorder, play } from '#/lib/audio';
+import {
+  AudioRecorder,
+  play,
+  releaseTap,
+  tapStream,
+  unlock,
+} from '#/lib/audio';
 import { transcribe } from '#/lib/speech-to-text';
 import {
   generateMessage,
@@ -26,6 +32,7 @@ const STAGE_STATUS: Record<GenerateStage, string> = {
 
 export function useConversation() {
   const [isRecording, setIsRecording] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
   const [hasGreeted, setHasGreeted] = useState(false);
   const [isGreetingReady, setIsGreetingReady] = useState(false);
   const [status, setStatus] = useState('');
@@ -36,14 +43,28 @@ export function useConversation() {
   const preparingGreetingRef = useRef(false);
   const greetingRef = useRef<{ text: string; audio: Blob } | null>(null);
 
-  const speakReply = useCallback(async (text: string) => {
-    setStatus('Speaking…');
-    const audio = await speak(VOICE_ID, text, (p) =>
-      setStatus(`Downloading voice model… ${formatProgress(p.progress)}`),
-    );
-    await play(audio);
-    setStatus('');
+  // Both playback sites go through here so the flag clears even when playback
+  // rejects — the callers turn that into a status message and carry on.
+  const playVoice = useCallback(async (audio: Blob) => {
+    setIsSpeaking(true);
+    try {
+      await play(audio);
+    } finally {
+      setIsSpeaking(false);
+    }
   }, []);
+
+  const speakReply = useCallback(
+    async (text: string) => {
+      setStatus('Speaking…');
+      const audio = await speak(VOICE_ID, text, (p) =>
+        setStatus(`Downloading voice model… ${formatProgress(p.progress)}`),
+      );
+      await playVoice(audio);
+      setStatus('');
+    },
+    [playVoice],
+  );
 
   const prepareGreeting = useCallback(async () => {
     if (preparingGreetingRef.current || greetingRef.current) return;
@@ -69,6 +90,9 @@ export function useConversation() {
   }, []);
 
   const greet = useCallback(async () => {
+    // Synchronously, before any await: the audio context can only start from
+    // inside the gesture that triggered this.
+    unlock();
     if (busyRef.current) return;
     const greeting = greetingRef.current;
     if (!greeting) return;
@@ -77,7 +101,7 @@ export function useConversation() {
       historyRef.current.push({ role: 'model', content: greeting.text });
       setHasGreeted(true);
       setStatus('Speaking…');
-      await play(greeting.audio);
+      await playVoice(greeting.audio);
       setStatus('');
     } catch (err) {
       console.error(err);
@@ -85,7 +109,7 @@ export function useConversation() {
     } finally {
       busyRef.current = false;
     }
-  }, []);
+  }, [playVoice]);
 
   const startRecording = useCallback(async () => {
     busyRef.current = true;
@@ -93,6 +117,7 @@ export function useConversation() {
       const recorder = new AudioRecorder();
       await recorder.start();
       recorderRef.current = recorder;
+      tapStream(recorder.stream);
       setIsRecording(true);
     } catch (err) {
       console.error(err);
@@ -107,6 +132,8 @@ export function useConversation() {
     if (!recorder) return;
 
     setIsRecording(false);
+    // Before stop(), which ends the tracks the tap is reading from.
+    releaseTap();
     busyRef.current = true;
     try {
       const audioBlob = await recorder.stop();
@@ -134,6 +161,7 @@ export function useConversation() {
   }, [speakReply]);
 
   const toggleRecording = useCallback(() => {
+    unlock();
     if (busyRef.current) return;
     if (!isRecording) {
       void startRecording();
@@ -144,6 +172,7 @@ export function useConversation() {
 
   return {
     isRecording,
+    isAudioLive: isRecording || isSpeaking,
     hasGreeted,
     isGreetingReady,
     status,

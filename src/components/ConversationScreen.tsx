@@ -1,5 +1,8 @@
+import { Waveform } from '#/components/Waveform';
+
 interface ConversationScreenProps {
   isRecording: boolean;
+  isAudioLive: boolean;
   hasGreeted: boolean;
   isGreetingReady: boolean;
   status: string;
@@ -9,6 +12,7 @@ interface ConversationScreenProps {
 
 export function ConversationScreen({
   isRecording,
+  isAudioLive,
   hasGreeted,
   isGreetingReady,
   status,
@@ -40,7 +44,17 @@ export function ConversationScreen({
         </>
       ) : (
         <>
-          <div className="text-center text-2xl">{status}</div>
+          {isAudioLive ? (
+            <>
+              <Waveform />
+              {/* The waveform has taken the status line's place, so the cue it
+                  was carrying needs somewhere else to live. sr-only is out of
+                  flow, so it costs the layout nothing. */}
+              <span className="sr-only">{status}</span>
+            </>
+          ) : (
+            <div className="text-center text-2xl">{status}</div>
+          )}
           <button
             onClick={onToggleRecording}
             className="min-w-48 cursor-pointer rounded-lg bg-gray-200 px-8 py-3 text-xl text-black hover:bg-gray-300"

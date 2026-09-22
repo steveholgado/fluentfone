@@ -10,6 +10,7 @@ afterEach(cleanup);
 
 const BASE = {
   isRecording: false,
+  isAudioLive: false,
   hasGreeted: false,
   isGreetingReady: false,
   status: '',
@@ -60,5 +61,20 @@ describe('ConversationScreen', () => {
 
     expect(screen.getByText('Speaking…')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Start' })).toBeInTheDocument();
+  });
+
+  it('gives the status line over to the waveform while audio is live', () => {
+    const { container } = render(
+      <ConversationScreen
+        {...BASE}
+        hasGreeted
+        isAudioLive
+        status="Speaking…"
+      />,
+    );
+
+    expect(container.querySelector('canvas')).toBeInTheDocument();
+    // Still announced, just no longer the visible element.
+    expect(screen.getByText('Speaking…')).toHaveClass('sr-only');
   });
 });

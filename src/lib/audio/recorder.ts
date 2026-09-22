@@ -13,16 +13,23 @@ function pickMimeType(): string | undefined {
  */
 export class AudioRecorder {
   private recorder: MediaRecorder | null = null;
-  private stream: MediaStream | null = null;
+  private mediaStream: MediaStream | null = null;
   private chunks: Blob[] = [];
 
+  /** The live capture stream, for callers that want to analyse it as it runs. */
+  get stream(): MediaStream | null {
+    return this.mediaStream;
+  }
+
   async start(): Promise<void> {
-    this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    this.mediaStream = await navigator.mediaDevices.getUserMedia({
+      audio: true,
+    });
     this.chunks = [];
 
     const mimeType = pickMimeType();
     this.recorder = new MediaRecorder(
-      this.stream,
+      this.mediaStream,
       mimeType ? { mimeType } : undefined,
     );
     this.recorder.ondataavailable = (e) => {
@@ -33,7 +40,7 @@ export class AudioRecorder {
 
   stop(): Promise<Blob> {
     const recorder = this.recorder;
-    const stream = this.stream;
+    const stream = this.mediaStream;
     if (!recorder || !stream) {
       return Promise.reject(new Error('Recording was not started.'));
     }
