@@ -53,11 +53,29 @@ function status(
  * posted has to be given a turn of the event loop to arrive.
  */
 let sw: BroadcastChannel | undefined;
+let echo: BroadcastChannel | undefined;
 
 async function report(message: AssetProgressMessage) {
   sw ??= new BroadcastChannel(PROGRESS_CHANNEL);
+  // A second subscriber standing in for the one under test. Delivery is a
+  // queued task per destination channel, in channel creation order, and
+  // trackStep's channel is opened by runStep before the step's work calls in
+  // here — so once this one has the message, that one has had it too.
+  //
+  // Waited on rather than a turn of the event loop, which was enough until the
+  // suite grew busy enough to lose the race now and then. Timing out is not
+  // the failure mode: runStep closes trackStep's channel the moment the step's
+  // work resolves, so a message still in flight when report() returns is lost
+  // rather than late, and no later assertion can recover it.
+  echo ??= new BroadcastChannel(PROGRESS_CHANNEL);
+  const receiver = echo;
+
+  const delivered = new Promise<void>((resolve) => {
+    receiver.addEventListener('message', () => resolve(), { once: true });
+  });
+
   sw.postMessage(message);
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  await delivered;
 }
 
 beforeEach(() => {
@@ -66,7 +84,9 @@ beforeEach(() => {
 
 afterEach(() => {
   sw?.close();
+  echo?.close();
   sw = undefined;
+  echo = undefined;
 });
 
 describe('preloadAll', () => {

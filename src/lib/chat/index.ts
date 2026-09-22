@@ -5,21 +5,29 @@
  * Docs: https://developers.google.com/edge/litert-lm/js
  * Package: @litert-lm/core (early preview — text-in / text-out only)
  *
- * The public API of the module. Engine lifecycle and the wasm runtime live in
- * ./engine.ts; the configuration values in ./constants.ts.
+ * The public API of the module, and the last stop on the main thread: every
+ * function here resolves its defaults and hands the work to a worker. The
+ * engine and the wasm runtime live in ./engine.ts, which runs inside
+ * ./worker.ts; the channel between the two threads is ./client.ts and
+ * ./messages.ts; the configuration values are in ./constants.ts.
  */
 
-import type { ConversationConfig } from '@litert-lm/core';
-import { hasAsset, hasStep, markStep } from '#/lib/cache/markers';
+// Keyed on by `isRuntimeCached` below, and imported the same way ./engine.ts
+// imports it: from the package manifest, which the `exports` map does expose,
+// rather than from the library itself, whose 20 MB of wasm must not be dragged
+// in to answer a question about whether it is cached. Not in ./constants.ts
+// either, which `sw.ts` can reach through `lib/cache/rules.ts` and which must
+// therefore stay free of this package.
+import { version as LITERT_VERSION } from '@litert-lm/core/package.json';
+import { hasStep } from '#/lib/cache/markers';
+import { send } from './client';
 import {
   DEFAULT_CHAT_MODEL,
   DEFAULT_MAX_TOKENS,
   DEFAULT_SAMPLER_PARAMS,
 } from './constants';
-import { extractText, getEngine, hasLiveEngine } from './engine';
 import type { GenerateMessageOptions } from './types';
 
-export { dispose, isRuntimeCached, preloadRuntime } from './engine';
 export { CHAT_MODELS, DEFAULT_CHAT_MODEL } from './constants';
 export type {
   ChatMessage,
@@ -27,6 +35,23 @@ export type {
   GenerateStage,
   SamplerParams,
 } from './types';
+
+/**
+ * Which engines have finished a generate this page session, and so are warm in
+ * the worker. The worker owns the engines themselves and keys them the same
+ * way; this only mirrors the question `isCached` asks.
+ *
+ * Recorded on completion rather than on dispatch, which is the one behavioural
+ * difference from when the engine lived here: an engine mid-compile no longer
+ * counts as live. That is the safer direction — `isCached` saying "no" costs a
+ * preload screen, saying "yes" too early would skip one.
+ */
+const liveEngineKeys = new Set<string>();
+let runtimeReady = false;
+
+function engineKey(modelUrl: string, maxNumTokens: number): string {
+  return `${modelUrl}::${maxNumTokens}`;
+}
 
 /**
  * Generate the next model response, optionally grounded with a system
@@ -50,112 +75,91 @@ export async function generateMessage({
   samplerParams,
   onStage,
 }: GenerateMessageOptions = {}): Promise<string> {
-  const engine = await getEngine(modelUrl, maxNumTokens, onStage);
+  const text = await send(
+    {
+      mode: 'generate',
+      prompt,
+      systemInstruction,
+      history,
+      modelUrl,
+      maxNumTokens,
+      samplerParams: { ...DEFAULT_SAMPLER_PARAMS, ...samplerParams },
+    },
+    onStage,
+  );
 
-  const prefaceMessages: Array<{
-    role: 'system' | 'user' | 'model';
-    content: string;
-  }> = [];
-  if (systemInstruction) {
-    prefaceMessages.push({ role: 'system', content: systemInstruction });
-  }
-  for (const turn of history) {
-    prefaceMessages.push({ role: turn.role, content: turn.content });
-  }
+  liveEngineKeys.add(engineKey(modelUrl, maxNumTokens));
 
-  const mergedSamplerParams = { ...DEFAULT_SAMPLER_PARAMS, ...samplerParams };
-
-  const conversationConfig: ConversationConfig = {
-    preface: { messages: prefaceMessages },
-    // NOTE: `samplerParams` is not yet documented on the official JS API page
-    // (as of writing the docs only show `preface`), but the underlying
-    // engine's SessionConfig — which every platform binding maps onto —
-    // carries an equivalent field. If your installed version of
-    // @litert-lm/core uses a different key, check the shipped type defs.
-    samplerParams: mergedSamplerParams,
-  } as ConversationConfig;
-
-  const conversation = await engine.createConversation(conversationConfig);
-
-  onStage?.('generating');
-
-  try {
-    // The SDK requires an outbound message to elicit a response — there's no
-    // documented "generate from the preface alone" call. When `prompt` is
-    // omitted (the opening-message case), we send an empty trigger turn; the
-    // system instruction should describe what that first message should say.
-    // This trigger is NOT part of `history` — don't store it as a real turn.
-    const response = await conversation.sendMessage({
-      role: 'user',
-      content: prompt ?? '',
-    });
-    return extractText(response);
-  } finally {
-    const maybeDeletable = conversation as unknown as {
-      delete?: () => Promise<void> | void;
-    };
-    if (typeof maybeDeletable.delete === 'function') {
-      await maybeDeletable.delete();
-    }
-  }
+  return text;
 }
 
 /**
  * Pulls the model file down ahead of time so the first call to
- * generateMessage() doesn't pay that cost. The bytes land in the service
- * worker's cache and are discarded here — `Engine.create()` re-reads them from
- * there, which is cheap, rather than this holding gigabytes for the session.
+ * generateMessage() doesn't pay that cost.
  *
- * Deliberately stops short of initializing the engine (the "warm up") — that's
- * a separate, slower step left for generateMessage() to do on demand, e.g.
- * while generating the greeting.
+ * Runs in the worker like everything else here, which costs nothing extra —
+ * the worker module doesn't touch @litert-lm/core until an engine is actually
+ * wanted — and keeps the several gigabytes of chunks it drains off the main
+ * thread. The service worker still counts the bytes and broadcasts them, and a
+ * BroadcastChannel is scoped to the origin rather than to a client, so the
+ * preload screen hears them from here exactly as it did before.
  */
 export async function preload(
   modelUrl: string = DEFAULT_CHAT_MODEL,
 ): Promise<void> {
-  // Alone among the preload steps this one warms nothing up: getting the bytes
-  // on disk is all it does, so once they are there it has no work left. It ran
-  // regardless until now, and on every return visit streamed the whole model
-  // out of the cache only to discard it — against the same disk the greeting
-  // was waiting on to read that very file.
-  //
-  // Asked of the cache rather than of the marker: the marker is what a failed
-  // cache write leaves behind looking like success, and skipping the download
-  // on its word is exactly the mistake that would cost the bytes.
-  if (await hasAsset(modelUrl)) {
-    // Written even so. The bytes being present while the marker is missing is
-    // the interrupted-run case, and the marker is what the preload screen
-    // reads.
-    await markStep('chat', modelUrl);
-    return;
-  }
+  await send({ mode: 'preload', modelUrl });
+}
 
-  const response = await fetch(modelUrl);
-  if (!response.ok) {
-    throw new Error(
-      `Failed to download model (${response.status}): ${modelUrl}`,
-    );
-  }
+/**
+ * Loads the LiteRT-LM wasm runtime — tens of megabytes, from the CDN baked
+ * into the library — so that the first generate finds it in memory rather than
+ * fetching it silently mid-conversation.
+ *
+ * Stops short of compiling the model, the slow half of `Engine.create()`,
+ * which stays where it was.
+ */
+export async function preloadRuntime(): Promise<void> {
+  await send({ mode: 'preload-runtime' });
+  runtimeReady = true;
+}
 
-  // Drained, not buffered. The bytes only need to stream past the service
-  // worker so it can store and count them; `arrayBuffer()` would additionally
-  // demand a single contiguous ~3 GB allocation, which fails often enough that
-  // the step would reject after a successful download — leaving the marker
-  // unwritten and the screen still offering the download.
-  await response.body?.pipeTo(new WritableStream());
-
-  await markStep('chat', modelUrl);
+/**
+ * Whether the wasm runtime has already been downloaded. Keyed by package
+ * version rather than by URL, since resolving the real URL would mean
+ * importing @litert-lm/core — and this runs during the check stage, before the
+ * user has agreed to download anything.
+ *
+ * Answered here rather than asked of the worker, so that the check stage
+ * doesn't spawn one just to read a marker.
+ */
+export async function isRuntimeCached(): Promise<boolean> {
+  if (runtimeReady) return true;
+  return hasStep('chat-runtime', LITERT_VERSION);
 }
 
 /**
  * Whether the model is ready to use without a download — either an engine is
- * already live this page session, or the file is in the service worker's
- * cache.
+ * already warm in the worker this page session, or the file is in the service
+ * worker's cache.
  */
 export async function isCached(
   modelUrl: string = DEFAULT_CHAT_MODEL,
   maxNumTokens = DEFAULT_MAX_TOKENS,
 ): Promise<boolean> {
-  if (hasLiveEngine(modelUrl, maxNumTokens)) return true;
+  if (liveEngineKeys.has(engineKey(modelUrl, maxNumTokens))) return true;
   return hasStep('chat', modelUrl);
+}
+
+/**
+ * Releases the cached engine(s) and their underlying model weights/resources.
+ * A fresh engine will be lazily created again on the next generateMessage()
+ * call.
+ *
+ * The worker itself is left running. Terminating it would reclaim the wasm heap
+ * more thoroughly than deleting the engines does, but it would also throw away
+ * a loaded runtime that `preloadRuntime()` is not asked to redo.
+ */
+export async function dispose(): Promise<void> {
+  await send({ mode: 'dispose' });
+  liveEngineKeys.clear();
 }

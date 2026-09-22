@@ -1,0 +1,80 @@
+/**
+ * The main thread's end of the channel to worker.ts: one long-lived worker,
+ * requests matched to replies by id.
+ *
+ * Long-lived rather than spawned per call (the pattern text-to-speech uses)
+ * because keeping a compiled engine resident is the whole point of the worker —
+ * terminating between calls would throw away the minutes of model compile this
+ * exists to keep off the main thread in the first place.
+ */
+
+import type { ChatRequest, WorkerRequest, WorkerResponse } from './messages';
+import type { GenerateStage } from './types';
+
+interface PendingRequest {
+  resolve: (text: string) => void;
+  reject: (err: Error) => void;
+  /**
+   * Held here rather than posted. A function can't be structured-cloned, so
+   * the worker reports stages by id and this is where they are routed back to.
+   */
+  onStage?: (stage: GenerateStage) => void;
+}
+
+// Created lazily (not at module scope) since this module is also evaluated
+// during prerendering, where `Worker` doesn't exist.
+let worker: Worker | null = null;
+let nextRequestId = 0;
+const pending = new Map<number, PendingRequest>();
+
+function getWorker(): Worker {
+  if (!worker) {
+    worker = new Worker(new URL('./worker.ts', import.meta.url), {
+      type: 'module',
+    });
+
+    worker.addEventListener(
+      'message',
+      (event: MessageEvent<WorkerResponse>) => {
+        const message = event.data;
+        const request = pending.get(message.id);
+        if (!request) return;
+
+        if (message.type === 'stage') {
+          // Not terminal: more stages (and eventually a 'done') follow, so the
+          // pending entry stays put.
+          request.onStage?.(message.stage);
+        } else if (message.type === 'done') {
+          pending.delete(message.id);
+          request.resolve(message.text ?? '');
+        } else {
+          pending.delete(message.id);
+          request.reject(new Error(message.message));
+        }
+      },
+    );
+
+    worker.addEventListener('error', (err) => {
+      for (const [id, request] of pending) {
+        request.reject(err instanceof Error ? err : new Error(String(err)));
+        pending.delete(id);
+      }
+    });
+  }
+  return worker;
+}
+
+/**
+ * Posts one request and resolves with whatever text comes back — the empty
+ * string for the requests that produce none.
+ */
+export function send(
+  request: ChatRequest,
+  onStage?: (stage: GenerateStage) => void,
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const id = nextRequestId++;
+    pending.set(id, { resolve, reject, onStage });
+    getWorker().postMessage({ ...request, id } as WorkerRequest);
+  });
+}

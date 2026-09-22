@@ -1,21 +1,27 @@
 /**
  * Engine lifecycle and the LiteRT-LM wasm runtime behind it: creating engines,
- * keeping them warm, and answering what is already on disk.
+ * keeping them warm, and getting the model onto disk.
+ *
+ * Worker-side only — everything here runs inside ./worker.ts, and nothing on
+ * the main thread may import it. That isn't a bundle-size rule (the heavy
+ * imports below are dynamic either way) but a threading one: the library pins
+ * itself to whichever thread calls it, via `setSingleThreadedExecution(true)`
+ * in `Engine.create()`, so a stray main-thread call would quietly put the
+ * model compile and the decode loop back where they were.
  *
  * The conversational API that uses all this lives in ./index.ts.
  */
 
 import type { Engine, EngineSettings } from '@litert-lm/core';
-// The only part of @litert-lm/core the check stage is allowed to pull in. It
-// keys the runtime marker, so a dependency bump misses the old one rather than
-// matching it — and it comes from the package manifest, which the `exports`
-// map does expose, rather than from the library itself, whose 20 MB of wasm
-// must not be dragged in to answer a question about whether it is cached.
-//
-// Kept here rather than in ./constants.ts, which `sw.ts` can reach through
+// Keys the runtime marker written below, so a dependency bump misses the old
+// marker rather than matching it. ./index.ts reads that marker back and so
+// imports the same version the same way — from the package manifest, which the
+// `exports` map does expose, rather than from the library itself, whose 20 MB
+// of wasm must not be dragged in to answer a question about whether it is
+// cached. Not in ./constants.ts either, which `sw.ts` can reach through
 // `lib/cache/rules.ts` and which must therefore stay free of this package.
 import { version as LITERT_VERSION } from '@litert-lm/core/package.json';
-import { hasAsset, hasStep, markStep } from '#/lib/cache/markers';
+import { hasAsset, markStep } from '#/lib/cache/markers';
 import type { GenerateStage } from './types';
 
 /**
@@ -44,11 +50,6 @@ const enginePromises = new Map<string, Promise<Engine>>();
 
 function engineKey(modelUrl: string, maxNumTokens: number): string {
   return `${modelUrl}::${maxNumTokens}`;
-}
-
-/** Whether an engine for this combination is already live this page session. */
-export function hasLiveEngine(modelUrl: string, maxNumTokens: number): boolean {
-  return enginePromises.has(engineKey(modelUrl, maxNumTokens));
 }
 
 export function getEngine(
@@ -142,14 +143,48 @@ export function preloadRuntime(): Promise<void> {
 }
 
 /**
- * Whether the wasm runtime has already been downloaded. Keyed by package
- * version rather than by URL, since resolving the real URL would mean
- * importing @litert-lm/core — and this runs during the check stage, before the
- * user has agreed to download anything.
+ * Pulls the model file down ahead of time so the first call to generate()
+ * doesn't pay that cost. The bytes land in the service worker's cache and are
+ * discarded here — `Engine.create()` re-reads them from there, which is cheap,
+ * rather than this holding gigabytes for the session.
+ *
+ * Deliberately stops short of initializing the engine (the "warm up") — that's
+ * a separate, slower step left for the first generate to do on demand, e.g.
+ * while generating the greeting.
  */
-export async function isRuntimeCached(): Promise<boolean> {
-  if (runtimeWarmPromise) return true;
-  return hasStep('chat-runtime', LITERT_VERSION);
+export async function preloadModel(modelUrl: string): Promise<void> {
+  // Alone among the preload steps this one warms nothing up: getting the bytes
+  // on disk is all it does, so once they are there it has no work left. It ran
+  // regardless until now, and on every return visit streamed the whole model
+  // out of the cache only to discard it — against the same disk the greeting
+  // was waiting on to read that very file.
+  //
+  // Asked of the cache rather than of the marker: the marker is what a failed
+  // cache write leaves behind looking like success, and skipping the download
+  // on its word is exactly the mistake that would cost the bytes.
+  if (await hasAsset(modelUrl)) {
+    // Written even so. The bytes being present while the marker is missing is
+    // the interrupted-run case, and the marker is what the preload screen
+    // reads.
+    await markStep('chat', modelUrl);
+    return;
+  }
+
+  const response = await fetch(modelUrl);
+  if (!response.ok) {
+    throw new Error(
+      `Failed to download model (${response.status}): ${modelUrl}`,
+    );
+  }
+
+  // Drained, not buffered. The bytes only need to stream past the service
+  // worker so it can store and count them; `arrayBuffer()` would additionally
+  // demand a single contiguous ~3 GB allocation, which fails often enough that
+  // the step would reject after a successful download — leaving the marker
+  // unwritten and the screen still offering the download.
+  await response.body?.pipeTo(new WritableStream());
+
+  await markStep('chat', modelUrl);
 }
 
 /**
