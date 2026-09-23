@@ -9,6 +9,15 @@ import { ONNX_WASM_BASE, PIPER_WASM_BASE } from './constants';
 // instance side closely enough for postMessage's transfer-list overload.
 const ctx = self as unknown as Worker;
 
+// This page isn't cross-origin isolated, so onnxruntime-web can't actually
+// use multiple threads — it detects that itself and falls back to one, but
+// only after piper-tts-web has already set numThreads to
+// navigator.hardwareConcurrency, which makes onnxruntime-web log two
+// spurious warnings on every session first. Reporting 1 here up front (this
+// worker is disposable, so it doesn't affect anything else) skips that path
+// and matches the single-threaded behavior we end up with anyway.
+Object.defineProperty(self.navigator, 'hardwareConcurrency', { value: 1 });
+
 ctx.onmessage = async (event: MessageEvent<WorkerRequest>) => {
   const request = event.data;
 

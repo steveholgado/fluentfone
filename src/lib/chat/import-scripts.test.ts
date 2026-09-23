@@ -28,7 +28,11 @@ declare global {
 
 let scope: {
   importScripts?: (...urls: Array<string | URL>) => void;
-  Module?: { locateFile?: (path: string) => string };
+  Module?: {
+    locateFile?: (path: string) => string;
+    print?: (text: string) => void;
+    printErr?: (text: string) => void;
+  };
 };
 
 beforeEach(() => {
@@ -42,6 +46,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
   delete globalThis.__shimProbe;
 });
 
@@ -147,5 +152,29 @@ describe('installClassicScriptLoader', () => {
     expect(() => scope.importScripts?.('https://cdn.example/glue.js')).toThrow(
       'Failed to load script (0)',
     );
+  });
+
+  it('leaves the engine’s native trace wired to the console in dev', () => {
+    expect(import.meta.env.DEV).toBe(true);
+    installClassicScriptLoader();
+
+    scope.importScripts?.('https://cdn.example/glue.js');
+
+    expect(scope.Module?.print).toBeUndefined();
+    expect(scope.Module?.printErr).toBeUndefined();
+  });
+
+  it('silences the engine’s native trace via Module.print and Module.printErr in production', () => {
+    vi.stubEnv('DEV', false);
+    installClassicScriptLoader();
+
+    scope.importScripts?.('https://cdn.example/glue.js');
+
+    expect(scope.Module?.print).toBeTypeOf('function');
+    expect(scope.Module?.printErr).toBeTypeOf('function');
+    expect(() => scope.Module?.print?.('some native trace line')).not.toThrow();
+    expect(() =>
+      scope.Module?.printErr?.('WARNING: some native trace line'),
+    ).not.toThrow();
   });
 });

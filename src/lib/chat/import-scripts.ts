@@ -36,7 +36,11 @@
 export function installClassicScriptLoader(): void {
   const scope = self as unknown as {
     importScripts: (...urls: Array<string | URL>) => void;
-    Module?: { locateFile?: (path: string) => string };
+    Module?: {
+      locateFile?: (path: string) => string;
+      print?: (text: string) => void;
+      printErr?: (text: string) => void;
+    };
   };
 
   scope.importScripts = (...urls) => {
@@ -74,6 +78,19 @@ export function installClassicScriptLoader(): void {
       scope.Module = {
         ...scope.Module,
         locateFile: (path: string) => new URL(path, scriptUrl).href,
+        // The engine's native side logs its own trace unconditionally —
+        // engine settings, the full jinja prompt template, per-step timings
+        // on stdout, and INFO/WARNING lines from its own logger (accelerator
+        // registration, NPU availability, etc.) on stderr — and there is no
+        // verbosity flag for either. `print`/`printErr` are the documented
+        // emscripten hooks for the two streams; left unset they fall back to
+        // `console.log`/`console.error`, which is how that trace reaches
+        // devtools. Actual failures don't travel this way: they reject the
+        // SDK call itself, which worker.ts's try/catch already reports — so
+        // silencing both here in production loses nothing but the noise.
+        // Left wired to the console in dev, where that trace is more often
+        // useful than not.
+        ...(import.meta.env.DEV ? {} : { print: () => {}, printErr: () => {} }),
       };
 
       // Indirect eval, so the glue is evaluated in global scope. That is the

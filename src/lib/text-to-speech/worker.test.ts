@@ -21,6 +21,7 @@ function post(request: WorkerRequest) {
 beforeEach(async () => {
   postedMessages = [];
   vi.stubGlobal('self', {
+    navigator: { hardwareConcurrency: 8 },
     postMessage: (msg: unknown) => postedMessages.push(msg),
     set onmessage(handler: typeof onmessage) {
       onmessage = handler;
