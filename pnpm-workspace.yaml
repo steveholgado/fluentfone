@@ -1,3 +1,6 @@
+# Write exact versions on `pnpm add` rather than ^ ranges.
+saveExact: true
+
 allowBuilds:
   esbuild: true
   lightningcss: true
