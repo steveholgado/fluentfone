@@ -1,5 +1,5 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useConversation } from '#/hooks/useConversation';
 import { AudioRecorder } from '#/lib/audio/recorder';
@@ -47,6 +47,12 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(speak).mockResolvedValue(new Blob(['voice']));
   vi.mocked(play).mockResolvedValue(undefined);
+  // Every turn logs its stage timings in dev, which tests run as.
+  vi.spyOn(console, 'info').mockImplementation(() => {});
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
 });
 
 describe('useConversation', () => {
@@ -236,6 +242,56 @@ describe('useConversation', () => {
       );
       expect(play).toHaveBeenCalledWith(GREETING_AUDIO);
       expect(result.current.status).toBe('');
+    });
+
+    it('logs stage timings once the reply is ready to play, in dev', async () => {
+      mockRecorderImpl();
+      vi.mocked(transcribe).mockResolvedValue('Hola');
+      vi.mocked(generateMessage).mockImplementation(async (options) => {
+        options?.onStage?.('generating');
+        return '¡Hola!';
+      });
+      let loggedBeforePlay = false;
+      vi.mocked(play).mockImplementation(async () => {
+        loggedBeforePlay = vi.mocked(console.info).mock.calls.length === 1;
+      });
+
+      const { result } = renderHook(() => useConversation());
+
+      await act(async () => {
+        result.current.toggleRecording();
+      });
+      await waitFor(() => expect(result.current.isRecording).toBe(true));
+      await act(async () => {
+        result.current.toggleRecording();
+      });
+
+      expect(loggedBeforePlay).toBe(true);
+      expect(console.info).toHaveBeenCalledWith(
+        expect.stringMatching(
+          /^\[turn\] stop \d+ · stt \d+ · gen \d+ \(setup \d+\) · tts \d+ · first audio \d+ms · reply 6 chars$/,
+        ),
+      );
+    });
+
+    it('does not log stage timings in production', async () => {
+      vi.stubEnv('DEV', false);
+      mockRecorderImpl();
+      vi.mocked(transcribe).mockResolvedValue('Hola');
+      vi.mocked(generateMessage).mockResolvedValue('¡Hola!');
+
+      const { result } = renderHook(() => useConversation());
+
+      await act(async () => {
+        result.current.toggleRecording();
+      });
+      await waitFor(() => expect(result.current.isRecording).toBe(true));
+      await act(async () => {
+        result.current.toggleRecording();
+      });
+
+      expect(play).toHaveBeenCalled();
+      expect(console.info).not.toHaveBeenCalled();
     });
 
     it('includes prior turns as history on the next exchange', async () => {

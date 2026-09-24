@@ -15,6 +15,7 @@ import {
 } from '#/lib/chat';
 import { speak } from '#/lib/text-to-speech';
 import { formatProgress } from '#/utils/formatProgress';
+import { formatTurnTimings } from '#/utils/formatTurnTimings';
 import { LANGUAGE, SYSTEM_INSTRUCTION, VOICE_ID } from '#/config';
 
 // 'loading' is the everyday one: preload put the model on disk, and this is
@@ -55,7 +56,7 @@ export function useConversation() {
   }, []);
 
   const speakReply = useCallback(
-    async (text: string) => {
+    async (text: string, onSynthesised?: () => void) => {
       setStatus('Speaking…');
       const audio = await speak(
         VOICE_ID,
@@ -64,6 +65,7 @@ export function useConversation() {
           setStatus(`Downloading voice model… ${formatProgress(p.progress)}`),
         { slow: true },
       );
+      onSynthesised?.();
       await playVoice(audio);
       setStatus('');
     },
@@ -144,22 +146,44 @@ export function useConversation() {
     releaseTap();
     busyRef.current = true;
     try {
+      const start = performance.now();
       const audioBlob = await recorder.stop();
+      const stopped = performance.now();
 
       setStatus('Transcribing…');
       const text = await transcribe(audioBlob, { language: LANGUAGE });
+      const transcribed = performance.now();
       historyRef.current.push({ role: 'user', content: text });
 
       setStatus(STAGE_STATUS.generating);
+      let generating: number | undefined;
       const reply = await generateMessage({
         prompt: text,
         systemInstruction: SYSTEM_INSTRUCTION,
         history: historyRef.current.slice(0, -1),
-        onStage: (stage) => setStatus(STAGE_STATUS[stage]),
+        onStage: (stage) => {
+          if (stage === 'generating') generating = performance.now();
+          setStatus(STAGE_STATUS[stage]);
+        },
       });
+      const generated = performance.now();
       historyRef.current.push({ role: 'model', content: reply });
 
-      await speakReply(reply);
+      await speakReply(reply, () => {
+        if (!import.meta.env.DEV) return;
+        const timings = formatTurnTimings(
+          {
+            start,
+            stopped,
+            transcribed,
+            generating,
+            generated,
+            synthesised: performance.now(),
+          },
+          reply.length,
+        );
+        console.info(`[turn] ${timings}`);
+      });
     } catch (err) {
       console.error(err);
       setStatus('Something went wrong');
