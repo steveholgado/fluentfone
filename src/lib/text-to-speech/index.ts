@@ -28,6 +28,7 @@ import type { WorkerRequest, WorkerResponse } from './messages';
 import type { SpeakOptions } from './types';
 
 export { VOICES } from './constants';
+export type { SpeakOptions, SpeakTimings } from './types';
 
 function runInWorker(
   request: WorkerRequest,
@@ -62,13 +63,14 @@ export async function speak(
   voiceId: string,
   text: string,
   onProgress?: ProgressCallback,
-  { slow = false }: SpeakOptions = {},
+  { slow = false, onTimings }: SpeakOptions = {},
 ): Promise<Blob> {
   // Normally silent: after preload the voice is in OPFS and nothing is
   // fetched. It only reports where the conversation was reached without a
   // preload, or the voice has been evicted since.
   const stop = trackStep('text-to-speech', onProgress);
 
+  const start = performance.now();
   let result;
   try {
     result = await runInWorker({
@@ -84,6 +86,13 @@ export async function speak(
   if (!result.buffer || !result.mimeType) {
     throw new Error('Worker returned no audio data.');
   }
+
+  // Startup is what's left of the round trip once synthesis is taken out,
+  // which is why the worker reports only the one number: the worker's own
+  // clock starts after it has been spawned, so it can't see all of startup.
+  const synthesis = result.synthesisMs ?? 0;
+  onTimings?.({ startup: performance.now() - start - synthesis, synthesis });
+
   return new Blob([result.buffer], { type: result.mimeType });
 }
 

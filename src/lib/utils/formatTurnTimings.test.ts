@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatTurnTimings } from '#/utils/formatTurnTimings';
+import { formatTurnTimings } from '#/lib/utils/formatTurnTimings';
 
 describe('formatTurnTimings', () => {
   it('reports each stage as the gap since the previous one', () => {
@@ -36,6 +36,26 @@ describe('formatTurnTimings', () => {
       ),
     ).toBe(
       'stop 10 · stt 10 · gen 9 (setup 0) · tts 11 · first audio 41ms · reply 1 chars',
+    );
+  });
+
+  it('breaks down transcription and synthesis when their timings are known', () => {
+    expect(
+      formatTurnTimings(
+        {
+          start: 1000,
+          stopped: 1006,
+          transcribed: 4362,
+          generating: 4368,
+          generated: 5223,
+          synthesised: 7689,
+          stt: { decode: 40.4, inference: 3290.6, device: 'webgpu' },
+          tts: { startup: 925.5, synthesis: 1540.2 },
+        },
+        62,
+      ),
+    ).toBe(
+      'stop 6 · stt 3356 (decode 40, whisper 3291 on webgpu) · gen 861 (setup 6) · tts 2466 (startup 926, synthesis 1540) · first audio 6689ms · reply 62 chars',
     );
   });
 

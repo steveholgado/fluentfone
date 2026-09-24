@@ -227,6 +227,7 @@ describe('useConversation', () => {
       expect(result.current.isRecording).toBe(false);
       expect(transcribe).toHaveBeenCalledWith(AUDIO_BLOB, {
         language: 'spanish',
+        onTimings: expect.any(Function),
       });
       expect(generateMessage).toHaveBeenCalledWith({
         prompt: 'Hola, ¿cómo estás?',
@@ -238,7 +239,7 @@ describe('useConversation', () => {
         VOICE_ID,
         '¡Muy bien, gracias!',
         expect.any(Function),
-        { slow: true },
+        { slow: true, onTimings: expect.any(Function) },
       );
       expect(play).toHaveBeenCalledWith(GREETING_AUDIO);
       expect(result.current.status).toBe('');
@@ -246,10 +247,17 @@ describe('useConversation', () => {
 
     it('logs stage timings once the reply is ready to play, in dev', async () => {
       mockRecorderImpl();
-      vi.mocked(transcribe).mockResolvedValue('Hola');
+      vi.mocked(transcribe).mockImplementation(async (_audio, options) => {
+        options?.onTimings?.({ decode: 40, inference: 3300, device: 'webgpu' });
+        return 'Hola';
+      });
       vi.mocked(generateMessage).mockImplementation(async (options) => {
         options?.onStage?.('generating');
         return '¡Hola!';
+      });
+      vi.mocked(speak).mockImplementation(async (_voice, _text, _p, opts) => {
+        opts?.onTimings?.({ startup: 900, synthesis: 1500 });
+        return GREETING_AUDIO;
       });
       let loggedBeforePlay = false;
       vi.mocked(play).mockImplementation(async () => {
@@ -269,7 +277,7 @@ describe('useConversation', () => {
       expect(loggedBeforePlay).toBe(true);
       expect(console.info).toHaveBeenCalledWith(
         expect.stringMatching(
-          /^\[turn\] stop \d+ · stt \d+ · gen \d+ \(setup \d+\) · tts \d+ · first audio \d+ms · reply 6 chars$/,
+          /^\[turn\] stop \d+ · stt \d+ \(decode 40, whisper 3300 on webgpu\) · gen \d+ \(setup \d+\) · tts \d+ \(startup 900, synthesis 1500\) · first audio \d+ms · reply 6 chars$/,
         ),
       );
     });

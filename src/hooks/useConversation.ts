@@ -7,15 +7,15 @@ import {
   tapStream,
   unlock,
 } from '#/lib/audio';
-import { transcribe } from '#/lib/speech-to-text';
+import { transcribe, type TranscribeTimings } from '#/lib/speech-to-text';
 import {
   generateMessage,
   type ChatMessage,
   type GenerateStage,
 } from '#/lib/chat';
-import { speak } from '#/lib/text-to-speech';
+import { speak, type SpeakTimings } from '#/lib/text-to-speech';
 import { formatProgress } from '#/utils/formatProgress';
-import { formatTurnTimings } from '#/utils/formatTurnTimings';
+import { formatTurnTimings } from '#/lib/utils/formatTurnTimings';
 import { LANGUAGE, SYSTEM_INSTRUCTION, VOICE_ID } from '#/config';
 
 // 'loading' is the everyday one: preload put the model on disk, and this is
@@ -56,16 +56,20 @@ export function useConversation() {
   }, []);
 
   const speakReply = useCallback(
-    async (text: string, onSynthesised?: () => void) => {
+    async (
+      text: string,
+      onSynthesised?: (timings: SpeakTimings | undefined) => void,
+    ) => {
       setStatus('Speaking…');
+      let timings: SpeakTimings | undefined;
       const audio = await speak(
         VOICE_ID,
         text,
         (p) =>
           setStatus(`Downloading voice model… ${formatProgress(p.progress)}`),
-        { slow: true },
+        { slow: true, onTimings: (t) => (timings = t) },
       );
-      onSynthesised?.();
+      onSynthesised?.(timings);
       await playVoice(audio);
       setStatus('');
     },
@@ -151,7 +155,11 @@ export function useConversation() {
       const stopped = performance.now();
 
       setStatus('Transcribing…');
-      const text = await transcribe(audioBlob, { language: LANGUAGE });
+      let sttTimings: TranscribeTimings | undefined;
+      const text = await transcribe(audioBlob, {
+        language: LANGUAGE,
+        onTimings: (t) => (sttTimings = t),
+      });
       const transcribed = performance.now();
       historyRef.current.push({ role: 'user', content: text });
 
@@ -169,7 +177,7 @@ export function useConversation() {
       const generated = performance.now();
       historyRef.current.push({ role: 'model', content: reply });
 
-      await speakReply(reply, () => {
+      await speakReply(reply, (ttsTimings) => {
         if (!import.meta.env.DEV) return;
         const timings = formatTurnTimings(
           {
@@ -179,6 +187,8 @@ export function useConversation() {
             generating,
             generated,
             synthesised: performance.now(),
+            stt: sttTimings,
+            tts: ttsTimings,
           },
           reply.length,
         );

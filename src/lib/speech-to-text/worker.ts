@@ -10,6 +10,7 @@
 
 import type { AutomaticSpeechRecognitionPipeline } from '@huggingface/transformers';
 import type { WorkerRequest, WorkerResponse } from './messages';
+import type { TranscribeDevice } from './types';
 import { MODEL, MODEL_DTYPE } from './constants';
 
 // DOM lib doesn't type worker-global `self`; the shape matches Worker's
@@ -18,6 +19,9 @@ const ctx = self as unknown as Worker;
 
 // Cached so the (large) model is only loaded once per worker lifetime.
 let pipelinePromise: Promise<AutomaticSpeechRecognitionPipeline> | null = null;
+
+// Which backend the pipeline is built on, reported with each transcription.
+let device: TranscribeDevice = 'wasm';
 
 ctx.onmessage = async (event: MessageEvent<WorkerRequest>) => {
   const request = event.data;
@@ -34,7 +38,7 @@ ctx.onmessage = async (event: MessageEvent<WorkerRequest>) => {
         // second place to ask whether they are present.
         env.useBrowserCache = false;
 
-        const device =
+        device =
           typeof navigator !== 'undefined' && navigator.gpu ? 'webgpu' : 'wasm';
 
         return pipeline('automatic-speech-recognition', MODEL, {
@@ -80,17 +84,25 @@ ctx.onmessage = async (event: MessageEvent<WorkerRequest>) => {
 
     const { audio, language, task = 'transcribe' } = request;
 
+    const inferenceStart = performance.now();
     const result = await transcriber(audio, {
       language,
       task,
       chunk_length_s: 30,
       stride_length_s: 5,
     });
+    const inferenceMs = performance.now() - inferenceStart;
 
     const output = Array.isArray(result) ? result[0] : result;
     const text = (output as { text?: string })?.text?.trim() ?? '';
 
-    ctx.postMessage({ id, type: 'done', text } satisfies WorkerResponse);
+    ctx.postMessage({
+      id,
+      type: 'done',
+      text,
+      inferenceMs,
+      device,
+    } satisfies WorkerResponse);
   } catch (err) {
     ctx.postMessage({
       id,

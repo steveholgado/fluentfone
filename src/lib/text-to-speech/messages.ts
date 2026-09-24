@@ -11,5 +11,7 @@ export type WorkerResponse =
       type: 'done';
       buffer?: ArrayBuffer;
       mimeType?: string;
+      /** Speak requests only: the `predict()` call's duration, in ms. */
+      synthesisMs?: number;
     }
   | { type: 'error'; message: string };

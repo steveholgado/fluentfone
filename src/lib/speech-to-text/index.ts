@@ -9,10 +9,16 @@ import { MODEL_KEY, SAMPLE_RATE } from './constants';
 import type { WorkerRequest, WorkerResponse } from './messages';
 import type { TranscribeOptions } from './types';
 
-export type { TranscribeOptions };
+export type {
+  TranscribeDevice,
+  TranscribeOptions,
+  TranscribeTimings,
+} from './types';
+
+type DoneResponse = Extract<WorkerResponse, { type: 'done' }>;
 
 interface PendingRequest {
-  resolve: (text: string) => void;
+  resolve: (response: DoneResponse) => void;
   reject: (err: Error) => void;
 }
 
@@ -43,7 +49,7 @@ function getWorker(): Worker {
         if (message.type === 'done') {
           pipelineReady = true;
           pending.delete(message.id);
-          request.resolve(message.text ?? '');
+          request.resolve(message);
         } else if (message.type === 'error') {
           pending.delete(message.id);
           request.reject(new Error(message.message));
@@ -61,7 +67,7 @@ function getWorker(): Worker {
   return worker;
 }
 
-function send(request: WorkerRequest): Promise<string> {
+function send(request: WorkerRequest): Promise<DoneResponse> {
   return new Promise((resolve, reject) => {
     pending.set(request.id, { resolve, reject });
     getWorker().postMessage(request);
@@ -73,19 +79,29 @@ export async function transcribe(
   audio: File | Blob | ArrayBuffer | Float32Array,
   options: TranscribeOptions = {},
 ): Promise<string> {
-  const { language, task = 'transcribe' } = options;
+  const { language, task = 'transcribe', onTimings } = options;
 
   // Audio decoding relies on AudioContext/OfflineAudioContext, which are
   // Window-only APIs (not exposed in workers), so it has to happen here.
+  const decodeStart = performance.now();
   const audioData = await toMonoPcm(audio, SAMPLE_RATE);
+  const decode = performance.now() - decodeStart;
 
-  return send({
+  const response = await send({
     id: nextRequestId++,
     mode: 'transcribe',
     audio: audioData,
     language,
     task,
   });
+
+  onTimings?.({
+    decode,
+    inference: response.inferenceMs ?? 0,
+    device: response.device ?? 'wasm',
+  });
+
+  return response.text ?? '';
 }
 
 /**

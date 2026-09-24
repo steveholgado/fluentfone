@@ -48,13 +48,17 @@ ctx.onmessage = async (event: MessageEvent<WorkerRequest>) => {
       return;
     }
 
+    const synthesisStart = performance.now();
     const wav = await (session as PatchedSession).predict(request.text, {
       lengthScale: request.lengthScale,
     });
+    const synthesisMs = performance.now() - synthesisStart;
 
     // Transfer the underlying bytes rather than copying them.
     const buffer = await wav.arrayBuffer();
-    ctx.postMessage({ type: 'done', buffer, mimeType: wav.type }, [buffer]);
+    ctx.postMessage({ type: 'done', buffer, mimeType: wav.type, synthesisMs }, [
+      buffer,
+    ]);
   } catch (err) {
     ctx.postMessage({
       type: 'error',

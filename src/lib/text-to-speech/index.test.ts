@@ -89,6 +89,35 @@ describe('speak', () => {
     expect(worker.terminate).toHaveBeenCalled();
   });
 
+  it('reports startup as the round trip less the worker’s synthesis time', async () => {
+    const now = vi
+      .spyOn(performance, 'now')
+      .mockReturnValueOnce(1000)
+      .mockReturnValueOnce(3500);
+    const onTimings = vi.fn();
+    const promise = speak(VOICES.en, 'hello', undefined, { onTimings });
+
+    FakeWorker.instances[0].emit({
+      type: 'done',
+      buffer: new ArrayBuffer(1),
+      mimeType: 'audio/wav',
+      synthesisMs: 1500,
+    });
+    await promise;
+
+    expect(onTimings).toHaveBeenCalledWith({ startup: 1000, synthesis: 1500 });
+    now.mockRestore();
+  });
+
+  it('keeps the timings callback out of the worker request', () => {
+    // A function can't be structured-cloned; posting one would throw.
+    void speak(VOICES.en, 'hello', undefined, { onTimings: vi.fn() });
+
+    expect(FakeWorker.instances[0].postedMessages[0]).not.toHaveProperty(
+      'onTimings',
+    );
+  });
+
   it('asks for a longer length scale when slow', () => {
     void speak(VOICES.en, 'hello', undefined, { slow: true });
 

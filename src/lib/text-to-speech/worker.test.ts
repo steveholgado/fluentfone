@@ -81,6 +81,21 @@ describe('worker onmessage', () => {
     expect(new TextDecoder().decode(message.buffer)).toBe('wav bytes');
   });
 
+  it('reports how long predict took', async () => {
+    sessionCreate.mockResolvedValue({
+      predict: vi.fn().mockResolvedValue(new Blob(['wav'])),
+    });
+    const now = vi
+      .spyOn(performance, 'now')
+      .mockReturnValueOnce(200)
+      .mockReturnValueOnce(1700);
+
+    await post({ mode: 'speak', voiceId: 'voice-a', text: 'hello' });
+
+    expect(postedMessages[0]).toMatchObject({ synthesisMs: 1500 });
+    now.mockRestore();
+  });
+
   it('passes lengthScale through to predict', async () => {
     const predict = vi.fn().mockResolvedValue(new Blob(['wav']));
     sessionCreate.mockResolvedValue({ predict });
