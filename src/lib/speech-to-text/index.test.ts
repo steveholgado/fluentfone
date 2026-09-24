@@ -53,6 +53,11 @@ class FakeWorker {
 // `FakeWorker.instances`.
 const flush = () => Promise.resolve();
 
+// Literal rather than read from constants.ts, whose MODEL_KEY is fixed by
+// whichever backend the module saw when it loaded.
+const Q8_KEY = 'onnx-community/whisper-base:q8';
+const WEBGPU_KEY = 'onnx-community/whisper-base:fp32+q4';
+
 beforeEach(() => {
   FakeWorker.instances = [];
   vi.stubGlobal('Worker', FakeWorker);
@@ -190,7 +195,6 @@ describe('preload', () => {
     stubCacheStorage();
     const { preload } = await import('#/lib/speech-to-text/index');
     const { hasStep } = await import('#/lib/cache/markers');
-    const { MODEL_KEY } = await import('#/lib/speech-to-text/constants');
 
     const promise = preload();
     await flush();
@@ -204,7 +208,22 @@ describe('preload', () => {
     worker.emit({ id: 0, type: 'done' });
     await promise;
 
-    await expect(hasStep('speech-to-text', MODEL_KEY)).resolves.toBe(true);
+    await expect(hasStep('speech-to-text', Q8_KEY)).resolves.toBe(true);
+  });
+
+  it('marks the WebGPU weights when the pipeline is built on WebGPU', async () => {
+    vi.stubGlobal('navigator', { gpu: {} });
+    stubCacheStorage();
+    const { preload } = await import('#/lib/speech-to-text/index');
+    const { hasStep } = await import('#/lib/cache/markers');
+
+    const promise = preload();
+    await flush();
+    FakeWorker.instances[0].emit({ id: 0, type: 'done' });
+    await promise;
+
+    await expect(hasStep('speech-to-text', WEBGPU_KEY)).resolves.toBe(true);
+    await expect(hasStep('speech-to-text', Q8_KEY)).resolves.toBe(false);
   });
 });
 
@@ -226,15 +245,41 @@ describe('isCached', () => {
     await expect(isCached()).resolves.toBe(false);
   });
 
-  it('is true when the step marker is present', async () => {
+  it('is true when the q8 marker is present on the wasm path', async () => {
+    // The same key q8 had before the per-device split, so a marker written
+    // then still counts.
     stubCacheStorage();
     const { markStep } = await import('#/lib/cache/markers');
-    const { MODEL_KEY } = await import('#/lib/speech-to-text/constants');
-    await markStep('speech-to-text', MODEL_KEY);
+    await markStep('speech-to-text', Q8_KEY);
 
     const { isCached } = await import('#/lib/speech-to-text/index');
 
     await expect(isCached()).resolves.toBe(true);
+  });
+
+  it('is true when the WebGPU marker is present on WebGPU', async () => {
+    vi.stubGlobal('navigator', { gpu: {} });
+    stubCacheStorage();
+    const { markStep } = await import('#/lib/cache/markers');
+    await markStep('speech-to-text', WEBGPU_KEY);
+
+    const { isCached } = await import('#/lib/speech-to-text/index');
+
+    await expect(isCached()).resolves.toBe(true);
+  });
+
+  it('does not let a q8 marker vouch for the WebGPU weights', async () => {
+    // An install from before the split has q8 on disk, not fp32+q4. Counting
+    // its marker would skip preload and leave the first transcription to
+    // download ~206 MB mid-conversation.
+    vi.stubGlobal('navigator', { gpu: {} });
+    stubCacheStorage();
+    const { markStep } = await import('#/lib/cache/markers');
+    await markStep('speech-to-text', Q8_KEY);
+
+    const { isCached } = await import('#/lib/speech-to-text/index');
+
+    await expect(isCached()).resolves.toBe(false);
   });
 
   it('does not match a marker left by a different model or precision', async () => {

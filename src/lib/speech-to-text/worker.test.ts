@@ -161,6 +161,25 @@ describe('worker onmessage', () => {
     );
   });
 
+  it('loads q8 weights on the wasm path', async () => {
+    await post({ id: 1, mode: 'preload' });
+
+    expect(pipelineFactory.mock.calls[0][2]).toMatchObject({ dtype: 'q8' });
+  });
+
+  it('loads a full-precision encoder and q4 decoder on the webgpu path', async () => {
+    // q8 runs on WebGPU but ~8× slower per utterance.
+    vi.resetModules();
+    vi.stubGlobal('navigator', { gpu: {} });
+    await import('#/lib/speech-to-text/worker');
+
+    await post({ id: 1, mode: 'preload' });
+
+    expect(pipelineFactory.mock.calls[0][2]).toMatchObject({
+      dtype: { encoder_model: 'fp32', decoder_model_merged: 'q4' },
+    });
+  });
+
   it('leaves graph optimization alone on the webgpu path', async () => {
     vi.resetModules();
     vi.stubGlobal('navigator', { gpu: {} });

@@ -10,18 +10,19 @@
 
 import type { AutomaticSpeechRecognitionPipeline } from '@huggingface/transformers';
 import type { WorkerRequest, WorkerResponse } from './messages';
-import type { TranscribeDevice } from './types';
+import { HAS_WEBGPU } from '#/lib/device';
 import { MODEL, MODEL_DTYPE } from './constants';
 
 // DOM lib doesn't type worker-global `self`; the shape matches Worker's
 // instance side closely enough for postMessage's transfer-list overload.
 const ctx = self as unknown as Worker;
 
+// ORT's name for the backend: what the pipeline is built on, and what each
+// transcription reports it ran on.
+const device = HAS_WEBGPU ? 'webgpu' : 'wasm';
+
 // Cached so the (large) model is only loaded once per worker lifetime.
 let pipelinePromise: Promise<AutomaticSpeechRecognitionPipeline> | null = null;
-
-// Which backend the pipeline is built on, reported with each transcription.
-let device: TranscribeDevice = 'wasm';
 
 ctx.onmessage = async (event: MessageEvent<WorkerRequest>) => {
   const request = event.data;
@@ -37,9 +38,6 @@ ctx.onmessage = async (event: MessageEvent<WorkerRequest>) => {
         // the service worker already holds — the same bytes twice, and a
         // second place to ask whether they are present.
         env.useBrowserCache = false;
-
-        device =
-          typeof navigator !== 'undefined' && navigator.gpu ? 'webgpu' : 'wasm';
 
         return pipeline('automatic-speech-recognition', MODEL, {
           dtype: MODEL_DTYPE,

@@ -49,10 +49,19 @@ export interface DeviceSupport {
  * in Safari 26. It's gated on the OS: on by default only on macOS Tahoe 26+ and
  * iOS 26+, so Safari on Sequoia or Sonoma has no `navigator.gpu` whatever its
  * version (WebKit #299237).
+ *
+ * Read once, when the module loads: whether the browser exposes WebGPU can't
+ * change during a page's life, so there's nothing to ask again. Guarded
+ * because a throw here would fail the import of every module that reads it;
+ * a getter that throws counts as no WebGPU.
  */
-export function hasWebGpu(): boolean {
-  return typeof navigator !== 'undefined' && !!navigator.gpu;
-}
+export const HAS_WEBGPU = (() => {
+  try {
+    return typeof navigator !== 'undefined' && !!navigator.gpu;
+  } catch {
+    return false;
+  }
+})();
 
 const REQUIREMENTS: Requirement[] = [
   // Chat runs Gemma 4 through LiteRT-LM, which is WebGPU-only — the
@@ -61,7 +70,7 @@ const REQUIREMENTS: Requirement[] = [
     id: 'webgpu',
     label: 'WebGPU',
     required: true,
-    check: hasWebGpu,
+    check: () => HAS_WEBGPU,
   },
 ];
 

@@ -99,7 +99,9 @@ export function ruleFor(url: URL): AssetRule | undefined {
 export const EXPECTED_BYTES: Record<PreloadStepId, number> = {
   'text-to-speech-runtime': 30_638_000,
   'text-to-speech': 63_206_000,
-  'speech-to-text': 101_000_000,
+  // The WebGPU weights (see MODEL_DTYPE in speech-to-text/constants.ts), since
+  // the app requires WebGPU.
+  'speech-to-text': 232_454_000,
   'chat-runtime': 20_140_000,
   // Unlike the others this is a single file, so its Content-Length is normally
   // known before the first byte and this estimate goes unused. It is here for

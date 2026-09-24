@@ -1,10 +1,31 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { usePreload } from '#/hooks/usePreload';
+import { checkDeviceSupport, type DeviceSupport } from '#/lib/device';
 import { checkPreloaded, isFullyPreloaded, preloadAll } from '#/lib/preload';
 import type { PreloadStatus } from '#/lib/preload';
 import { VOICE_ID } from '#/config';
+
+// Mocked rather than driven through a stubbed navigator.gpu: the real module
+// reads that once, when it loads, so a per-test stub would never reach it.
+vi.mock('#/lib/device', () => ({
+  checkDeviceSupport: vi.fn(),
+}));
+
+const WEBGPU = { id: 'webgpu', label: 'WebGPU', required: true } as const;
+
+const SUPPORTED: DeviceSupport = {
+  supported: true,
+  results: [{ ...WEBGPU, met: true }],
+  unmet: [],
+};
+
+const UNSUPPORTED: DeviceSupport = {
+  supported: false,
+  results: [{ ...WEBGPU, met: false }],
+  unmet: [{ ...WEBGPU, met: false }],
+};
 
 vi.mock('#/lib/preload', () => ({
   checkPreloaded: vi.fn(),
@@ -36,14 +57,10 @@ function status(
 
 beforeEach(() => {
   vi.clearAllMocks();
-  // jsdom has no navigator.gpu, which every test below but the device-support
-  // ones would otherwise trip — landing in 'unsupported' before preload is
-  // reached at all. See the 'device support' block for that path.
-  vi.stubGlobal('navigator', { ...navigator, gpu: {} });
-});
-
-afterEach(() => {
-  vi.unstubAllGlobals();
+  // Every test below but the device-support ones would otherwise land in
+  // 'unsupported' before preload is reached at all. See the 'device support'
+  // block for that path.
+  vi.mocked(checkDeviceSupport).mockResolvedValue(SUPPORTED);
 });
 
 describe('usePreload', () => {
@@ -314,7 +331,7 @@ describe('usePreload', () => {
 
   describe('device support', () => {
     it('stops at unsupported without probing the cache when WebGPU is missing', async () => {
-      vi.stubGlobal('navigator', {});
+      vi.mocked(checkDeviceSupport).mockResolvedValue(UNSUPPORTED);
 
       const { result } = renderHook(() => usePreload());
 
@@ -333,7 +350,7 @@ describe('usePreload', () => {
       // The case that crashed Safari: everything downloaded on a previous
       // visit, so the greeting starts the chat engine and throws on
       // navigator.gpu.requestAdapter.
-      vi.stubGlobal('navigator', {});
+      vi.mocked(checkDeviceSupport).mockResolvedValue(UNSUPPORTED);
       vi.mocked(checkPreloaded).mockResolvedValue(status(true));
       vi.mocked(isFullyPreloaded).mockReturnValue(true);
 
@@ -344,7 +361,7 @@ describe('usePreload', () => {
     });
 
     it('refuses to download when asked anyway', async () => {
-      vi.stubGlobal('navigator', {});
+      vi.mocked(checkDeviceSupport).mockResolvedValue(UNSUPPORTED);
 
       const { result } = renderHook(() => usePreload());
       await waitFor(() => expect(result.current.phase).toBe('unsupported'));
