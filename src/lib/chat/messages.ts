@@ -14,9 +14,9 @@ import type { ChatMessage, GenerateStage, SamplerParams } from './types';
  * the worker reads is already concrete. There is deliberately no second copy of
  * the defaults on the far side of the channel.
  *
- * `onStage` is the one option that can't come along: a function isn't
- * structured-cloneable, so it stays on the main thread and the worker reports
- * stages by request id instead. See ./client.ts.
+ * `onStage` and `onChunk` are the options that can't come along: a function
+ * isn't structured-cloneable, so they stay on the main thread and the worker
+ * reports stages and chunks by request id instead. See ./client.ts.
  */
 export type ChatRequest =
   | {

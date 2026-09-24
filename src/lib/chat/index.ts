@@ -63,8 +63,11 @@ function engineKey(modelUrl: string, maxNumTokens: number): string {
  * 2. Follow-up turns: `generateMessage({ prompt: userText, systemInstruction,
  *    history })` — pass the full running history so the model has context.
  *
- * Each call creates a fresh Conversation seeded with the supplied history,
- * so this function is stateless between calls — callers own the history.
+ * Stateless as far as callers are concerned — they own the history, and pass
+ * all of it every time. Behind that, the worker keeps the last call's
+ * conversation and, when the history passed is exactly what it already holds,
+ * sends just the new message rather than having the model read everything
+ * again. Any other history gets a fresh conversation built from it.
  */
 export async function generateMessage({
   prompt,

@@ -190,9 +190,9 @@ describe('generate', () => {
     expect(chunks()).toEqual(['Hola']);
   });
 
-  it('passes the resolved sampler params straight through', async () => {
-    // index.ts merges them over the defaults before posting; nothing on this
-    // side has a second copy of those defaults to disagree with.
+  it('leaves sampling to the engine', async () => {
+    // Anything above top-1 fails outright on the GPU_ARTISAN backend, which is
+    // created with max_top_k 1 — "Top-K value 40 must be <= 1".
     await post(
       generateRequest({
         prompt: 'hi',
@@ -200,23 +200,9 @@ describe('generate', () => {
       }),
     );
 
-    expect(createConversation).toHaveBeenCalledWith(
-      expect.objectContaining({
-        samplerParams: { temperature: 0.1, topK: 40, topP: 0.95 },
-      }),
-    );
-  });
-
-  it('deletes the conversation after use when supported', async () => {
-    const conversationDelete = vi.fn();
-    createConversation.mockResolvedValue({
-      sendMessageStreaming,
-      delete: conversationDelete,
-    });
-
-    await post(generateRequest({ prompt: 'hi' }));
-
-    expect(conversationDelete).toHaveBeenCalled();
+    const config = createConversation.mock.calls[0][0];
+    expect(config).not.toHaveProperty('sessionConfig');
+    expect(config).not.toHaveProperty('samplerParams');
   });
 
   it('reuses the same engine for repeated calls with the same model/context size', async () => {
@@ -274,6 +260,133 @@ describe('generate', () => {
     expect(replies()).toEqual([
       { id: 0, type: 'error', message: 'plain string failure' },
     ]);
+  });
+});
+
+describe('conversation reuse', () => {
+  /** A conversation of its own per createConversation call, to tell them apart. */
+  function distinctConversations() {
+    const made: Array<{ delete: ReturnType<typeof vi.fn> }> = [];
+    createConversation.mockImplementation(async () => {
+      const conversation = { sendMessageStreaming, delete: vi.fn() };
+      made.push(conversation);
+      return conversation;
+    });
+    return made;
+  }
+
+  it('sends only the new message when the history is what the conversation holds', async () => {
+    await post(generateRequest({ prompt: 'hi' }));
+    await post(
+      generateRequest({
+        prompt: 'next',
+        history: [
+          { role: 'user', content: 'hi' },
+          { role: 'model', content: 'a reply' },
+        ],
+      }),
+    );
+
+    expect(createConversation).toHaveBeenCalledTimes(1);
+    expect(sendMessageStreaming.mock.calls).toEqual([
+      [{ role: 'user', content: 'hi' }],
+      [{ role: 'user', content: 'next' }],
+    ]);
+  });
+
+  it('carries on from an opening message, whose trigger isn’t in the history', async () => {
+    await post(generateRequest({ systemInstruction: 'greet' }));
+    await post(
+      generateRequest({
+        systemInstruction: 'greet',
+        prompt: 'hola',
+        history: [{ role: 'model', content: 'a reply' }],
+      }),
+    );
+
+    expect(createConversation).toHaveBeenCalledTimes(1);
+  });
+
+  it('builds afresh, and deletes the old one, when the history differs', async () => {
+    const made = distinctConversations();
+
+    await post(generateRequest({ prompt: 'hi' }));
+    await post(
+      generateRequest({
+        prompt: 'next',
+        history: [
+          { role: 'user', content: 'hi' },
+          { role: 'model', content: 'something else' },
+        ],
+      }),
+    );
+
+    expect(made).toHaveLength(2);
+    expect(made[0].delete).toHaveBeenCalled();
+    expect(createConversation).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        preface: {
+          messages: [
+            { role: 'user', content: 'hi' },
+            { role: 'model', content: 'something else' },
+          ],
+        },
+      }),
+    );
+  });
+
+  it('builds afresh when the settings change', async () => {
+    await post(generateRequest({ prompt: 'hi', systemInstruction: 'a' }));
+    await post(
+      generateRequest({
+        prompt: 'next',
+        systemInstruction: 'b',
+        history: [
+          { role: 'user', content: 'hi' },
+          { role: 'model', content: 'a reply' },
+        ],
+      }),
+    );
+
+    expect(createConversation).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not keep a conversation whose generation failed', async () => {
+    const made = distinctConversations();
+    sendMessageStreaming.mockImplementationOnce(
+      () =>
+        new ReadableStream({
+          start(controller) {
+            controller.error(new Error('boom'));
+          },
+        }),
+    );
+
+    await post(generateRequest({ prompt: 'hi' }));
+    await post(generateRequest({ prompt: 'hi' }));
+
+    expect(made).toHaveLength(2);
+    expect(made[0].delete).toHaveBeenCalled();
+  });
+
+  it('keeps the conversation after a turn, rather than deleting it', async () => {
+    const made = distinctConversations();
+
+    await post(generateRequest({ prompt: 'hi' }));
+
+    expect(made[0].delete).not.toHaveBeenCalled();
+  });
+
+  it('deletes the kept conversation on dispose, before the engines', async () => {
+    const made = distinctConversations();
+    const order: string[] = [];
+    engineDelete.mockImplementation(() => order.push('engine'));
+
+    await post(generateRequest({ prompt: 'hi' }));
+    made[0].delete.mockImplementation(() => order.push('conversation'));
+    await post({ mode: 'dispose' });
+
+    expect(order).toEqual(['conversation', 'engine']);
   });
 });
 

@@ -31,8 +31,9 @@ export interface GenerateMessageOptions {
   systemInstruction?: string;
   /**
    * Prior turns to give the model context, in chronological order. Include
-   * every turn so far, since each call is stateless and only sees what you
-   * pass in here.
+   * every turn so far: each call only sees what you pass in here. (When it
+   * matches what the worker's kept conversation already holds, the model
+   * doesn't have to read it again — see `generateMessage`.)
    */
   history?: ChatMessage[];
   /** URL of the .litertlm model file. */
