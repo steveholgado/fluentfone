@@ -78,6 +78,7 @@ describe('useConversation', () => {
         VOICE_ID,
         '¡Hola!',
         expect.any(Function),
+        { slow: true },
       );
       expect(result.current.isGreetingReady).toBe(true);
       expect(result.current.status).toBe('');
@@ -231,6 +232,7 @@ describe('useConversation', () => {
         VOICE_ID,
         '¡Muy bien, gracias!',
         expect.any(Function),
+        { slow: true },
       );
       expect(play).toHaveBeenCalledWith(GREETING_AUDIO);
       expect(result.current.status).toBe('');

@@ -18,8 +18,14 @@
 import { hasStep, markStep } from '#/lib/cache/markers';
 import { trackStep } from '#/lib/preload/track';
 import type { ProgressCallback } from '#/lib/progress';
-import { OPFS_VOICE_DIR, RUNTIME_KEY, WASM_FILES } from './constants';
+import {
+  OPFS_VOICE_DIR,
+  RUNTIME_KEY,
+  SLOW_LENGTH_SCALE,
+  WASM_FILES,
+} from './constants';
 import type { WorkerRequest, WorkerResponse } from './messages';
+import type { SpeakOptions } from './types';
 
 export { VOICES } from './constants';
 
@@ -56,6 +62,7 @@ export async function speak(
   voiceId: string,
   text: string,
   onProgress?: ProgressCallback,
+  { slow = false }: SpeakOptions = {},
 ): Promise<Blob> {
   // Normally silent: after preload the voice is in OPFS and nothing is
   // fetched. It only reports where the conversation was reached without a
@@ -64,7 +71,12 @@ export async function speak(
 
   let result;
   try {
-    result = await runInWorker({ mode: 'speak', voiceId, text });
+    result = await runInWorker({
+      mode: 'speak',
+      voiceId,
+      text,
+      ...(slow && { lengthScale: SLOW_LENGTH_SCALE }),
+    });
   } finally {
     stop();
   }

@@ -21,6 +21,12 @@ export const VOICES = {
   es: 'es_ES-davefx-medium',
 };
 
+/**
+ * Slow speech. Piper's length_scale lengthens every phoneme and pause, which
+ * sounds like deliberate speech; this multiplies the voice's own value.
+ */
+export const SLOW_LENGTH_SCALE = 1.5;
+
 /** Self-hosted by vite-plugin-vendor-wasm-assets.ts; versioned by path. */
 export const ONNX_WASM_BASE = '/vendor/onnx/1.23.2/';
 export const PIPER_WASM_BASE = '/vendor/piper-wasm/1.0.0/';

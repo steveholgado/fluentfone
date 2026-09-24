@@ -12,7 +12,11 @@ import {
   speak,
   VOICES,
 } from '#/lib/text-to-speech/index';
-import { RUNTIME_KEY, WASM_FILES } from '#/lib/text-to-speech/constants';
+import {
+  RUNTIME_KEY,
+  SLOW_LENGTH_SCALE,
+  WASM_FILES,
+} from '#/lib/text-to-speech/constants';
 import { hasStep, markStep } from '#/lib/cache/markers';
 import {
   PROGRESS_CHANNEL,
@@ -83,6 +87,17 @@ describe('speak', () => {
     expect(result).toBeInstanceOf(Blob);
     expect(result.type).toBe('audio/wav');
     expect(worker.terminate).toHaveBeenCalled();
+  });
+
+  it('asks for a longer length scale when slow', () => {
+    void speak(VOICES.en, 'hello', undefined, { slow: true });
+
+    expect(FakeWorker.instances[0].postedMessages[0]).toEqual({
+      mode: 'speak',
+      voiceId: VOICES.en,
+      text: 'hello',
+      lengthScale: SLOW_LENGTH_SCALE,
+    });
   });
 
   it('rejects and terminates the worker when it reports an error', async () => {

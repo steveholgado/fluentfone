@@ -10,3 +10,6 @@ allowBuilds:
   onnxruntime-node: false
   protobufjs: false
   sharp: false
+
+patchedDependencies:
+  '@mintplex-labs/piper-tts-web@1.0.5': patches/@mintplex-labs__piper-tts-web@1.0.5.patch

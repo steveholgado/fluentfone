@@ -18,6 +18,15 @@ const ctx = self as unknown as Worker;
 // and matches the single-threaded behavior we end up with anyway.
 Object.defineProperty(self.navigator, 'hardwareConcurrency', { value: 1 });
 
+// predict()'s `lengthScale` option comes from
+// patches/@mintplex-labs__piper-tts-web@*.patch. It's typed here rather than
+// in the patch so that losing the patch (say, on an upgrade) still builds:
+// the unpatched predict() ignores the extra argument, and slow speech just
+// plays at normal speed.
+type PatchedSession = {
+  predict(text: string, options?: { lengthScale?: number }): Promise<Blob>;
+};
+
 ctx.onmessage = async (event: MessageEvent<WorkerRequest>) => {
   const request = event.data;
 
@@ -39,7 +48,9 @@ ctx.onmessage = async (event: MessageEvent<WorkerRequest>) => {
       return;
     }
 
-    const wav = await session.predict(request.text);
+    const wav = await (session as PatchedSession).predict(request.text, {
+      lengthScale: request.lengthScale,
+    });
 
     // Transfer the underlying bytes rather than copying them.
     const buffer = await wav.arrayBuffer();

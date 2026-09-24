@@ -57,8 +57,12 @@ export function useConversation() {
   const speakReply = useCallback(
     async (text: string) => {
       setStatus('Speaking…');
-      const audio = await speak(VOICE_ID, text, (p) =>
-        setStatus(`Downloading voice model… ${formatProgress(p.progress)}`),
+      const audio = await speak(
+        VOICE_ID,
+        text,
+        (p) =>
+          setStatus(`Downloading voice model… ${formatProgress(p.progress)}`),
+        { slow: true },
       );
       await playVoice(audio);
       setStatus('');
@@ -75,8 +79,12 @@ export function useConversation() {
         systemInstruction: SYSTEM_INSTRUCTION,
         onStage: (stage) => setStatus(STAGE_STATUS[stage]),
       });
-      const audio = await speak(VOICE_ID, opening, (p) =>
-        setStatus(`Downloading voice model… ${formatProgress(p.progress)}`),
+      const audio = await speak(
+        VOICE_ID,
+        opening,
+        (p) =>
+          setStatus(`Downloading voice model… ${formatProgress(p.progress)}`),
+        { slow: true },
       );
       greetingRef.current = { text: opening, audio };
       setStatus('');

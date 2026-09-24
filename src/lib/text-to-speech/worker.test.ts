@@ -81,6 +81,29 @@ describe('worker onmessage', () => {
     expect(new TextDecoder().decode(message.buffer)).toBe('wav bytes');
   });
 
+  it('passes lengthScale through to predict', async () => {
+    const predict = vi.fn().mockResolvedValue(new Blob(['wav']));
+    sessionCreate.mockResolvedValue({ predict });
+
+    await post({
+      mode: 'speak',
+      voiceId: 'voice-a',
+      text: 'hello',
+      lengthScale: 1.5,
+    });
+
+    expect(predict).toHaveBeenCalledWith('hello', { lengthScale: 1.5 });
+  });
+
+  it('leaves lengthScale unset for normal-speed speech', async () => {
+    const predict = vi.fn().mockResolvedValue(new Blob(['wav']));
+    sessionCreate.mockResolvedValue({ predict });
+
+    await post({ mode: 'speak', voiceId: 'voice-a', text: 'hello' });
+
+    expect(predict).toHaveBeenCalledWith('hello', { lengthScale: undefined });
+  });
+
   it('posts an error message when session creation throws', async () => {
     sessionCreate.mockRejectedValue(new Error('boom'));
 

@@ -257,6 +257,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  '@mintplex-labs/piper-tts-web@1.0.5': ac50bd829590943fd82f14d9af0c007cbce2472c0414f452b361d617e0dc1602
+
 importers:
 
   .:
@@ -272,7 +275,7 @@ importers:
         version: 0.14.0
       '@mintplex-labs/piper-tts-web':
         specifier: 1.0.5
-        version: 1.0.5(onnxruntime-web@1.23.2)
+        version: 1.0.5(patch_hash=ac50bd829590943fd82f14d9af0c007cbce2472c0414f452b361d617e0dc1602)(onnxruntime-web@1.23.2)
       '@tanstack/react-router':
         specifier: 1.170.35
         version: 1.170.35(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -2452,7 +2455,7 @@ snapshots:
 
   '@litertjs/wasm-utils@2.5.3': {}
 
-  '@mintplex-labs/piper-tts-web@1.0.5(onnxruntime-web@1.23.2)':
+  '@mintplex-labs/piper-tts-web@1.0.5(patch_hash=ac50bd829590943fd82f14d9af0c007cbce2472c0414f452b361d617e0dc1602)(onnxruntime-web@1.23.2)':
     dependencies:
       onnxruntime-web: 1.23.2
 

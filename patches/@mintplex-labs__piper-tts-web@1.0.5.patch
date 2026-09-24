@@ -1,0 +1,40 @@
+diff --git a/dist/piper-tts-web.js b/dist/piper-tts-web.js
+index 250fa0133830669eb6c0c215ae494cb9eb7db4bf..09909dc0f3b35b504053962ff172f8ca1303482d 100644
+--- a/dist/piper-tts-web.js
++++ b/dist/piper-tts-web.js
+@@ -309,7 +309,7 @@ const _TtsSession = class _TtsSession {
+       { executionProviders: ["wasm"] }
+     ));
+   }
+-  async predict(text) {
++  async predict(text, options = {}) {
+     var _a, _b, _c, _d, _e;
+     await this.waitReady;
+     const sampleRate = __privateGet(this, _modelConfig).audio.sample_rate;
+@@ -330,7 +330,7 @@ const _TtsSession = class _TtsSession {
+           total: chunks.length
+         });
+       }
+-      pcms.push(await __privateMethod(this, _TtsSession_instances, predictChunk_fn).call(this, chunks[i]));
++      pcms.push(await __privateMethod(this, _TtsSession_instances, predictChunk_fn).call(this, chunks[i], options));
+     }
+     if (chunks.length > 1) {
+       (_d = __privateGet(this, _logger)) == null ? void 0 : _d.call(this, "TTS inference: all chunks complete.");
+@@ -360,7 +360,7 @@ _progressCallback = new WeakMap();
+ _wasmPaths = new WeakMap();
+ _logger = new WeakMap();
+ _TtsSession_instances = new WeakSet();
+-predictChunk_fn = async function(text) {
++predictChunk_fn = async function(text, options = {}) {
+   const input = JSON.stringify([{ text: text.trim() }]);
+   const phonemeIds = await new Promise(async (resolve) => {
+     const module = await __privateGet(this, _createPiperPhonemize).call(this, {
+@@ -387,7 +387,7 @@ predictChunk_fn = async function(text) {
+   });
+   const speakerId = 0;
+   const noiseScale = __privateGet(this, _modelConfig).inference.noise_scale;
+-  const lengthScale = __privateGet(this, _modelConfig).inference.length_scale;
++  const lengthScale = __privateGet(this, _modelConfig).inference.length_scale * (options.lengthScale ?? 1);
+   const noiseW = __privateGet(this, _modelConfig).inference.noise_w;
+   const session = __privateGet(this, _ortSession);
+   const feeds = {
