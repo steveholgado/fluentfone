@@ -12,11 +12,18 @@ export interface ChatMessage {
 export interface SamplerParams {
   /** Higher = more random/creative, lower = more focused/deterministic. Try 0.6–1.0 for chat. */
   temperature?: number;
-  /** Only sample from the top K most likely tokens at each step. Try 20–64. */
+  /**
+   * Only sample from the top K most likely tokens at each step. Try 20–64; at
+   * most MAX_TOP_K, which the engine is created with.
+   */
   topK?: number;
   /** Nucleus sampling: only sample from tokens covering this cumulative probability. Try 0.9–0.97. */
   topP?: number;
-  /** Optional seed for reproducible sampling (omit for non-reproducible randomness). */
+  /**
+   * Optional seed for reproducible sampling. Omit it for a fresh random seed
+   * per conversation — the engine's own default is fixed, which would make
+   * every conversation sample the same way.
+   */
   randomSeed?: number;
 }
 

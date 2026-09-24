@@ -22,6 +22,12 @@ export const DEFAULT_CHAT_MODEL = CHAT_MODELS.e2b;
 /** Context window the engine is created with, and keyed by. */
 export const DEFAULT_MAX_TOKENS = 8192;
 
+/**
+ * The largest top-K any conversation can sample with. The engine is created
+ * with it, and rejects a sampler asking for more.
+ */
+export const MAX_TOP_K = 64;
+
 export const DEFAULT_SAMPLER_PARAMS: Required<
   Omit<SamplerParams, 'randomSeed'>
 > = {

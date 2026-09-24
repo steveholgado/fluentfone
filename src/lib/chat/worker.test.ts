@@ -14,6 +14,7 @@ const engineDelete = vi.fn();
 const getOrLoadGlobalLiteRtLm = vi.fn();
 
 vi.mock('@litert-lm/core', () => ({
+  Backend: { GPU_ARTISAN: 2 },
   Engine: { create: (...args: unknown[]) => engineCreate(...args) },
   LiteRtLm: { DEFAULT_WASM_PATH: 'https://cdn.example/@litert-lm/core/wasm' },
   getOrLoadGlobalLiteRtLm: () => getOrLoadGlobalLiteRtLm(),
@@ -190,19 +191,91 @@ describe('generate', () => {
     expect(chunks()).toEqual(['Hola']);
   });
 
-  it('leaves sampling to the engine', async () => {
-    // Anything above top-1 fails outright on the GPU_ARTISAN backend, which is
-    // created with max_top_k 1 — "Top-K value 40 must be <= 1".
+  it('passes the resolved sampler params through as a top-p session config', async () => {
+    // index.ts merges them over the defaults before posting; nothing on this
+    // side has a second copy of those defaults to disagree with. They go under
+    // `sessionConfig`, in the library's own names — at the top level, as they
+    // once were, the library ignored them.
     await post(
       generateRequest({
         prompt: 'hi',
-        samplerParams: { temperature: 0.1, topK: 40, topP: 0.95 },
+        samplerParams: {
+          temperature: 0.1,
+          topK: 40,
+          topP: 0.95,
+          randomSeed: 7,
+        },
       }),
     );
 
     const config = createConversation.mock.calls[0][0];
-    expect(config).not.toHaveProperty('sessionConfig');
+    expect(config.sessionConfig).toEqual({
+      samplerParams: { type: 2, k: 40, p: 0.95, temperature: 0.1, seed: 7 },
+    });
     expect(config).not.toHaveProperty('samplerParams');
+  });
+
+  it('draws a fresh seed for each conversation that isn’t given one', async () => {
+    // The engine's default seed is fixed, so without this every conversation
+    // would sample the same way — the same greeting on every visit.
+    vi.spyOn(crypto, 'getRandomValues')
+      .mockImplementationOnce((array) => {
+        (array as Uint32Array)[0] = 10;
+        return array;
+      })
+      .mockImplementationOnce((array) => {
+        (array as Uint32Array)[0] = 0xffffffff;
+        return array;
+      });
+
+    await post(generateRequest({ prompt: 'hi' }));
+    await post(generateRequest({ prompt: 'unrelated' }));
+
+    const seeds = createConversation.mock.calls.map(
+      ([config]) => config.sessionConfig.samplerParams.seed,
+    );
+    // 31 bits, to fit the engine's signed int.
+    expect(seeds).toEqual([5, 0x7fffffff]);
+  });
+
+  it('keeps reusing a conversation whose seed was drawn for it', async () => {
+    await post(generateRequest({ prompt: 'hi' }));
+    await post(
+      generateRequest({
+        prompt: 'next',
+        history: [
+          { role: 'user', content: 'hi' },
+          { role: 'model', content: 'a reply' },
+        ],
+      }),
+    );
+
+    expect(createConversation).toHaveBeenCalledTimes(1);
+  });
+
+  it('creates the engine able to sample from more than the top token', async () => {
+    // GPU_ARTISAN's max_top_k defaults to 1, and a sampler asking for more
+    // fails outright — "Top-K value 40 must be <= 1".
+    const { MAX_TOP_K } = await import('#/lib/chat/constants');
+
+    await post(generateRequest({ prompt: 'hi' }));
+
+    expect(engineCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        backend: 2,
+        mainExecutorSettings: expect.objectContaining({
+          maxNumTokens: 8192,
+          backendConfig: expect.objectContaining({ max_top_k: MAX_TOP_K }),
+        }),
+      }),
+    );
+  });
+
+  it('keeps the default top-K within what the engine allows', async () => {
+    const { DEFAULT_SAMPLER_PARAMS, MAX_TOP_K } =
+      await import('#/lib/chat/constants');
+
+    expect(DEFAULT_SAMPLER_PARAMS.topK).toBeLessThanOrEqual(MAX_TOP_K);
   });
 
   it('reuses the same engine for repeated calls with the same model/context size', async () => {

@@ -18,7 +18,11 @@
  * `navigator.gpu` in a dedicated worker is enough and no canvas is involved.
  */
 
-import type { Conversation, ConversationConfig } from '@litert-lm/core';
+import type {
+  Conversation,
+  ConversationConfig,
+  SamplerType,
+} from '@litert-lm/core';
 import {
   dispose,
   extractText,
@@ -41,6 +45,10 @@ const ctx = self as unknown as Worker;
 installClassicScriptLoader();
 
 type GenerateRequest = Extract<WorkerRequest, { mode: 'generate' }>;
+
+// `SamplerType.TOP_P`, written out so that this module doesn't load the
+// library at import time just to read an enum. Top-p here also applies `k`.
+const TOP_P = 2 satisfies SamplerType;
 
 /**
  * The conversation the last generate left behind, kept so the next turn can
@@ -93,6 +101,17 @@ async function dropActive(): Promise<void> {
   if (dropped) await deleteConversation(dropped.conversation);
 }
 
+/**
+ * A seed for a conversation that wasn't given one. The engine's own default
+ * is fixed, so without this every conversation samples the same way — the
+ * same input gives the same reply every time, just as greedy decoding did.
+ * Drawn per conversation rather than per call, so that it's no part of what a
+ * kept conversation is matched on. 31 bits, to fit the engine's signed int.
+ */
+function freshSeed(): number {
+  return crypto.getRandomValues(new Uint32Array(1))[0] >>> 1;
+}
+
 function conversationConfig(request: GenerateRequest): ConversationConfig {
   const messages: Array<{
     role: 'system' | ChatMessage['role'];
@@ -105,13 +124,23 @@ function conversationConfig(request: GenerateRequest): ConversationConfig {
     messages.push({ role: turn.role, content: turn.content });
   }
 
-  // No sampler settings: `request.samplerParams` stops here. The library only
-  // reads them from `sessionConfig.samplerParams`, and anything above top-1
-  // there fails outright — "Top-K value 40 must be <= 1" — because the WebGPU
-  // backend (GPU_ARTISAN) is created with `max_top_k` 1. So the engine decodes
-  // greedily, as it always has here: passed at the top level, as they once
-  // were, the library ignored them without a word.
-  return { preface: { messages } };
+  const { temperature, topK, topP, randomSeed } = request.samplerParams;
+  return {
+    preface: { messages },
+    // Under `sessionConfig`, in the library's own names. At the top level, as
+    // they once were, the library ignored them and decoded greedily. `k` can
+    // be at most the `max_top_k` the engine was created with — see
+    // GPU_ARTISAN_CONFIG in ./engine.ts.
+    sessionConfig: {
+      samplerParams: {
+        type: TOP_P,
+        k: topK,
+        p: topP,
+        temperature,
+        seed: randomSeed ?? freshSeed(),
+      },
+    },
+  };
 }
 
 async function generate(

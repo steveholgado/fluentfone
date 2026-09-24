@@ -12,7 +12,7 @@
  * The conversational API that uses all this lives in ./index.ts.
  */
 
-import type { Engine, EngineSettings } from '@litert-lm/core';
+import type { Engine, EngineSettings, GpuArtisanConfig } from '@litert-lm/core';
 // Keys the runtime marker written below, so a dependency bump misses the old
 // marker rather than matching it. ./index.ts reads that marker back and so
 // imports the same version the same way — from the package manifest, which the
@@ -22,7 +22,30 @@ import type { Engine, EngineSettings } from '@litert-lm/core';
 // `lib/cache/rules.ts` and which must therefore stay free of this package.
 import { version as LITERT_VERSION } from '@litert-lm/core/package.json';
 import { hasAsset, markStep } from '#/lib/cache/markers';
+import { MAX_TOP_K } from './constants';
 import type { GenerateStage } from './types';
+
+/**
+ * The WebGPU backend's (GPU_ARTISAN's) default config, as @litert-lm/core
+ * 0.14.0 creates it — read back from a live engine. Restated in full because
+ * the library replaces the whole config when given one, rather than merging.
+ *
+ * `max_top_k` is the reason for passing it at all. It defaults to 1, and a
+ * conversation whose sampler asks for a larger top-K fails outright ("Top-K
+ * value 40 must be <= 1") — so left at its default, decoding can only ever be
+ * greedy. Re-check these on a dependency bump.
+ */
+const GPU_ARTISAN_CONFIG: GpuArtisanConfig = {
+  num_output_candidates: 1,
+  wait_for_weight_uploads: false,
+  num_decode_steps_per_sync: 1,
+  sequence_batch_size: 0,
+  supported_lora_ranks: [],
+  max_top_k: MAX_TOP_K,
+  enable_decode_logits: false,
+  enable_external_embeddings: false,
+  use_submodel: false,
+};
 
 /**
  * The LiteRT-LM web SDK (early preview) doesn't persist a downloaded model
@@ -67,13 +90,19 @@ export function getEngine(
       // download misreported a disk read of several gigabytes as a fresh one.
       onStage?.((await hasAsset(modelUrl)) ? 'loading' : 'downloading');
 
-      const [modelBlob, { Engine: LiteRTEngine }] = await Promise.all([
+      const [modelBlob, { Backend, Engine: LiteRTEngine }] = await Promise.all([
         fetchModel(modelUrl),
         import('@litert-lm/core'),
       ]);
       const settings: EngineSettings = {
         model: modelBlob,
-        mainExecutorSettings: { maxNumTokens },
+        // Named rather than left to the library's default, since the config
+        // below only applies to this backend.
+        backend: Backend.GPU_ARTISAN,
+        mainExecutorSettings: {
+          maxNumTokens,
+          backendConfig: GPU_ARTISAN_CONFIG,
+        },
       };
       // Engine.create() loads the wasm runtime (already on disk if preload
       // ran), sets up the WebGPU device and compiles the model. Minutes of
