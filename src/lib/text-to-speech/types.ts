@@ -11,9 +11,8 @@ export interface SpeakOptions {
 /** Durations in milliseconds. */
 export interface SpeakTimings {
   /**
-   * Everything before synthesis: spawning the worker, loading its modules and
-   * creating the TtsSession. Paid on every call while each call gets a fresh
-   * worker.
+   * Everything but synthesis: waiting on the voice's session if it's still
+   * loading, and the messaging either side. Near zero once the voice is warm.
    */
   startup: number;
   /** The `predict()` call alone, inside the worker. */

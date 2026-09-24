@@ -37,21 +37,21 @@ afterEach(() => {
 });
 
 describe('worker onmessage', () => {
-  it('creates a session and reports done for a preload request', async () => {
+  it('creates a session and reports done for a load request', async () => {
     sessionCreate.mockResolvedValue({ predict: vi.fn() });
 
-    await post({ mode: 'preload', voiceId: 'voice-a' });
+    await post({ id: 0, mode: 'load', voiceId: 'voice-a' });
 
     expect(sessionCreate).toHaveBeenCalledWith(
       expect.objectContaining({ voiceId: 'voice-a' }),
     );
-    expect(postedMessages.at(-1)).toEqual({ type: 'done' });
+    expect(postedMessages).toEqual([{ id: 0, type: 'done' }]);
   });
 
   it('points the session at the self-hosted wasm rather than the CDN', async () => {
     sessionCreate.mockResolvedValue({ predict: vi.fn() });
 
-    await post({ mode: 'preload', voiceId: 'voice-a' });
+    await post({ id: 0, mode: 'load', voiceId: 'voice-a' });
 
     expect(sessionCreate).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -70,15 +70,58 @@ describe('worker onmessage', () => {
       predict: vi.fn().mockResolvedValue(wavBlob),
     });
 
-    await post({ mode: 'speak', voiceId: 'voice-a', text: 'hello' });
+    await post({ id: 3, mode: 'speak', voiceId: 'voice-a', text: 'hello' });
 
     expect(postedMessages).toHaveLength(1);
     const [message] = postedMessages as [
-      { type: string; buffer: ArrayBuffer; mimeType: string },
+      { id: number; type: string; buffer: ArrayBuffer; mimeType: string },
     ];
+    expect(message.id).toBe(3);
     expect(message.type).toBe('done');
     expect(message.mimeType).toBe('audio/wav');
     expect(new TextDecoder().decode(message.buffer)).toBe('wav bytes');
+  });
+
+  it('keeps one session for every request, loaded once', async () => {
+    const predict = vi.fn().mockResolvedValue(new Blob(['wav']));
+    sessionCreate.mockResolvedValue({ predict });
+
+    await post({ id: 0, mode: 'load', voiceId: 'voice-a' });
+    await post({ id: 1, mode: 'speak', voiceId: 'voice-a', text: 'uno' });
+    await post({ id: 2, mode: 'speak', voiceId: 'voice-a', text: 'dos' });
+
+    expect(sessionCreate).toHaveBeenCalledTimes(1);
+    expect(predict).toHaveBeenCalledTimes(2);
+  });
+
+  it('refuses a second voice rather than speaking with the first', async () => {
+    // piper-tts-web's singleton would hand back voice-a's session relabelled.
+    sessionCreate.mockResolvedValue({ predict: vi.fn() });
+    await post({ id: 0, mode: 'load', voiceId: 'voice-a' });
+
+    await post({ id: 1, mode: 'speak', voiceId: 'voice-b', text: 'hola' });
+
+    expect(sessionCreate).toHaveBeenCalledTimes(1);
+    expect(postedMessages.at(-1)).toEqual({
+      id: 1,
+      type: 'error',
+      message: expect.stringContaining('voice-b needs a worker of its own'),
+    });
+  });
+
+  it('keeps a failed load failed rather than retrying it', async () => {
+    // Piper keeps the broken instance as its singleton, so a retry would only
+    // be handed it back. The main thread replaces the worker instead.
+    sessionCreate.mockRejectedValueOnce(new Error('boom'));
+
+    await post({ id: 0, mode: 'load', voiceId: 'voice-a' });
+    await post({ id: 1, mode: 'speak', voiceId: 'voice-a', text: 'hi' });
+
+    expect(sessionCreate).toHaveBeenCalledTimes(1);
+    expect(postedMessages).toEqual([
+      { id: 0, type: 'error', message: 'boom' },
+      { id: 1, type: 'error', message: 'boom' },
+    ]);
   });
 
   it('reports how long predict took', async () => {
@@ -90,7 +133,7 @@ describe('worker onmessage', () => {
       .mockReturnValueOnce(200)
       .mockReturnValueOnce(1700);
 
-    await post({ mode: 'speak', voiceId: 'voice-a', text: 'hello' });
+    await post({ id: 0, mode: 'speak', voiceId: 'voice-a', text: 'hello' });
 
     expect(postedMessages[0]).toMatchObject({ synthesisMs: 1500 });
     now.mockRestore();
@@ -101,6 +144,7 @@ describe('worker onmessage', () => {
     sessionCreate.mockResolvedValue({ predict });
 
     await post({
+      id: 0,
       mode: 'speak',
       voiceId: 'voice-a',
       text: 'hello',
@@ -114,26 +158,30 @@ describe('worker onmessage', () => {
     const predict = vi.fn().mockResolvedValue(new Blob(['wav']));
     sessionCreate.mockResolvedValue({ predict });
 
-    await post({ mode: 'speak', voiceId: 'voice-a', text: 'hello' });
+    await post({ id: 0, mode: 'speak', voiceId: 'voice-a', text: 'hello' });
 
     expect(predict).toHaveBeenCalledWith('hello', { lengthScale: undefined });
   });
 
-  it('posts an error message when session creation throws', async () => {
-    sessionCreate.mockRejectedValue(new Error('boom'));
+  it('posts an error message when predict throws', async () => {
+    sessionCreate.mockResolvedValue({
+      predict: vi.fn().mockRejectedValue(new Error('synth failed')),
+    });
 
-    await post({ mode: 'speak', voiceId: 'voice-a', text: 'hi' });
+    await post({ id: 4, mode: 'speak', voiceId: 'voice-a', text: 'hi' });
 
-    expect(postedMessages).toEqual([{ type: 'error', message: 'boom' }]);
+    expect(postedMessages).toEqual([
+      { id: 4, type: 'error', message: 'synth failed' },
+    ]);
   });
 
   it('stringifies non-Error throwables', async () => {
     sessionCreate.mockRejectedValue('plain string failure');
 
-    await post({ mode: 'speak', voiceId: 'voice-a', text: 'hi' });
+    await post({ id: 5, mode: 'speak', voiceId: 'voice-a', text: 'hi' });
 
     expect(postedMessages).toEqual([
-      { type: 'error', message: 'plain string failure' },
+      { id: 5, type: 'error', message: 'plain string failure' },
     ]);
   });
 });

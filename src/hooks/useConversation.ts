@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
   AudioRecorder,
@@ -13,7 +13,7 @@ import {
   type ChatMessage,
   type GenerateStage,
 } from '#/lib/chat';
-import { speak, type SpeakTimings } from '#/lib/text-to-speech';
+import { openVoice, type SpeakTimings, type Voice } from '#/lib/text-to-speech';
 import { formatProgress } from '#/utils/formatProgress';
 import { formatTurnTimings } from '#/lib/utils/formatTurnTimings';
 import { LANGUAGE, SYSTEM_INSTRUCTION, VOICE_ID } from '#/config';
@@ -43,6 +43,25 @@ export function useConversation() {
   const historyRef = useRef<ChatMessage[]>([]);
   const preparingGreetingRef = useRef(false);
   const greetingRef = useRef<{ text: string; audio: Blob } | null>(null);
+  const voiceRef = useRef<Voice | null>(null);
+
+  // One voice for the whole conversation, so its session loads once rather
+  // than on every line. Opened on first use and closed with the conversation.
+  const getVoice = useCallback(
+    () =>
+      (voiceRef.current ??= openVoice(VOICE_ID, (p) =>
+        setStatus(`Downloading voice model… ${formatProgress(p.progress)}`),
+      )),
+    [],
+  );
+
+  useEffect(
+    () => () => {
+      voiceRef.current?.close();
+      voiceRef.current = null;
+    },
+    [],
+  );
 
   // Both playback sites go through here so the flag clears even when playback
   // rejects — the callers turn that into a status message and carry on.
@@ -62,36 +81,30 @@ export function useConversation() {
     ) => {
       setStatus('Speaking…');
       let timings: SpeakTimings | undefined;
-      const audio = await speak(
-        VOICE_ID,
-        text,
-        (p) =>
-          setStatus(`Downloading voice model… ${formatProgress(p.progress)}`),
-        { slow: true, onTimings: (t) => (timings = t) },
-      );
+      const audio = await getVoice().speak(text, {
+        slow: true,
+        onTimings: (t) => (timings = t),
+      });
       onSynthesised?.(timings);
       await playVoice(audio);
       setStatus('');
     },
-    [playVoice],
+    [getVoice, playVoice],
   );
 
   const prepareGreeting = useCallback(async () => {
     if (preparingGreetingRef.current || greetingRef.current) return;
     preparingGreetingRef.current = true;
     try {
+      // Opened now so the voice's session is built — wasm compiled, voice read
+      // back from OPFS — while the greeting is generated.
+      getVoice();
       setStatus(STAGE_STATUS.compiling);
       const opening = await generateMessage({
         systemInstruction: SYSTEM_INSTRUCTION,
         onStage: (stage) => setStatus(STAGE_STATUS[stage]),
       });
-      const audio = await speak(
-        VOICE_ID,
-        opening,
-        (p) =>
-          setStatus(`Downloading voice model… ${formatProgress(p.progress)}`),
-        { slow: true },
-      );
+      const audio = await getVoice().speak(opening, { slow: true });
       greetingRef.current = { text: opening, audio };
       setStatus('');
       setIsGreetingReady(true);
@@ -101,7 +114,7 @@ export function useConversation() {
     } finally {
       preparingGreetingRef.current = false;
     }
-  }, []);
+  }, [getVoice]);
 
   const greet = useCallback(async () => {
     // Synchronously, before any await: the audio context can only start from

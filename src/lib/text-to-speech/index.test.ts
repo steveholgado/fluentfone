@@ -8,8 +8,8 @@ import {
   isCached,
   isRuntimeCached,
   preload,
+  openVoice,
   preloadRuntime,
-  speak,
   VOICES,
 } from '#/lib/text-to-speech/index';
 import {
@@ -68,60 +68,95 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe('speak', () => {
-  it('sends a speak request and resolves with the returned audio blob', async () => {
-    const buffer = new TextEncoder().encode('audio bytes').buffer;
-    const promise = speak(VOICES.en, 'hello');
+const AUDIO = { buffer: new ArrayBuffer(1), mimeType: 'audio/wav' };
 
+describe('openVoice', () => {
+  it('starts loading the voice in a worker straight away', () => {
+    openVoice(VOICES.es);
+
+    expect(FakeWorker.instances).toHaveLength(1);
+    expect(FakeWorker.instances[0].postedMessages).toEqual([
+      { id: 0, mode: 'load', voiceId: VOICES.es },
+    ]);
+  });
+
+  it('settles ready once the session has loaded', async () => {
+    const voice = openVoice(VOICES.es);
+
+    FakeWorker.instances[0].emit({ id: 0, type: 'done' });
+
+    await expect(voice.ready).resolves.toBeUndefined();
+  });
+
+  it('speaks a line and resolves with the returned audio blob', async () => {
+    const voice = openVoice(VOICES.en);
     const worker = FakeWorker.instances[0];
-    expect(worker.postedMessages[0]).toEqual({
+    const buffer = new TextEncoder().encode('audio bytes').buffer;
+
+    const promise = voice.speak('hello');
+    expect(worker.postedMessages[1]).toEqual({
+      id: 1,
       mode: 'speak',
       voiceId: VOICES.en,
       text: 'hello',
     });
-
-    worker.emit({ type: 'done', buffer, mimeType: 'audio/wav' });
+    worker.emit({ id: 1, type: 'done', buffer, mimeType: 'audio/wav' });
 
     const result = await promise;
-
     expect(result).toBeInstanceOf(Blob);
     expect(result.type).toBe('audio/wav');
-    expect(worker.terminate).toHaveBeenCalled();
+    expect(worker.terminate).not.toHaveBeenCalled();
   });
 
-  it('reports startup as the round trip less the worker’s synthesis time', async () => {
-    const now = vi
-      .spyOn(performance, 'now')
-      .mockReturnValueOnce(1000)
-      .mockReturnValueOnce(3500);
-    const onTimings = vi.fn();
-    const promise = speak(VOICES.en, 'hello', undefined, { onTimings });
+  it('keeps one worker for every line', async () => {
+    const voice = openVoice(VOICES.en);
+    const worker = FakeWorker.instances[0];
 
-    FakeWorker.instances[0].emit({
+    const first = voice.speak('uno');
+    worker.emit({ id: 1, type: 'done', ...AUDIO });
+    await first;
+    const second = voice.speak('dos');
+    worker.emit({ id: 2, type: 'done', ...AUDIO });
+    await second;
+
+    expect(FakeWorker.instances).toHaveLength(1);
+    expect(worker.postedMessages.map((m) => m.mode)).toEqual([
+      'load',
+      'speak',
+      'speak',
+    ]);
+  });
+
+  it('matches replies to lines by id', async () => {
+    const voice = openVoice(VOICES.en);
+    const worker = FakeWorker.instances[0];
+
+    const first = voice.speak('uno');
+    const second = voice.speak('dos');
+    worker.emit({
+      id: 2,
+      type: 'done',
+      buffer: new ArrayBuffer(2),
+      mimeType: 'audio/b',
+    });
+    worker.emit({
+      id: 1,
       type: 'done',
       buffer: new ArrayBuffer(1),
-      mimeType: 'audio/wav',
-      synthesisMs: 1500,
+      mimeType: 'audio/a',
     });
-    await promise;
 
-    expect(onTimings).toHaveBeenCalledWith({ startup: 1000, synthesis: 1500 });
-    now.mockRestore();
-  });
-
-  it('keeps the timings callback out of the worker request', () => {
-    // A function can't be structured-cloned; posting one would throw.
-    void speak(VOICES.en, 'hello', undefined, { onTimings: vi.fn() });
-
-    expect(FakeWorker.instances[0].postedMessages[0]).not.toHaveProperty(
-      'onTimings',
-    );
+    await expect(first).resolves.toHaveProperty('type', 'audio/a');
+    await expect(second).resolves.toHaveProperty('type', 'audio/b');
   });
 
   it('asks for a longer length scale when slow', () => {
-    void speak(VOICES.en, 'hello', undefined, { slow: true });
+    const voice = openVoice(VOICES.en);
 
-    expect(FakeWorker.instances[0].postedMessages[0]).toEqual({
+    void voice.speak('hello', { slow: true });
+
+    expect(FakeWorker.instances[0].postedMessages[1]).toEqual({
+      id: 1,
       mode: 'speak',
       voiceId: VOICES.en,
       text: 'hello',
@@ -129,41 +164,112 @@ describe('speak', () => {
     });
   });
 
-  it('rejects and terminates the worker when it reports an error', async () => {
-    const promise = speak(VOICES.en, 'hello');
-    const worker = FakeWorker.instances[0];
+  it('reports startup as the round trip less the worker’s synthesis time', async () => {
+    const voice = openVoice(VOICES.en);
+    const now = vi
+      .spyOn(performance, 'now')
+      .mockReturnValueOnce(1000)
+      .mockReturnValueOnce(2600);
+    const onTimings = vi.fn();
 
-    worker.emit({ type: 'error', message: 'synth failed' });
+    const promise = voice.speak('hello', { onTimings });
+    FakeWorker.instances[0].emit({
+      id: 1,
+      type: 'done',
+      ...AUDIO,
+      synthesisMs: 1500,
+    });
+    await promise;
 
-    await expect(promise).rejects.toThrow('synth failed');
-    expect(worker.terminate).toHaveBeenCalled();
+    expect(onTimings).toHaveBeenCalledWith({ startup: 100, synthesis: 1500 });
+    now.mockRestore();
   });
 
-  it('rejects when the worker itself errors', async () => {
-    const promise = speak(VOICES.en, 'hello');
+  it('keeps the timings callback out of the worker request', () => {
+    // A function can't be structured-cloned; posting one would throw.
+    const voice = openVoice(VOICES.en);
+
+    void voice.speak('hello', { onTimings: vi.fn() });
+
+    expect(FakeWorker.instances[0].postedMessages[1]).not.toHaveProperty(
+      'onTimings',
+    );
+  });
+
+  it('rejects a line the worker reports an error for, and keeps the worker', async () => {
+    const voice = openVoice(VOICES.en);
     const worker = FakeWorker.instances[0];
+    worker.emit({ id: 0, type: 'done' });
 
-    worker.onerror?.(new Error('worker crashed'));
+    const promise = voice.speak('hello');
+    worker.emit({ id: 1, type: 'error', message: 'synth failed' });
 
-    await expect(promise).rejects.toBeTruthy();
-    expect(worker.terminate).toHaveBeenCalled();
+    await expect(promise).rejects.toThrow('synth failed');
+    expect(worker.terminate).not.toHaveBeenCalled();
   });
 
   it('rejects when done arrives without audio data', async () => {
-    const promise = speak(VOICES.en, 'hello');
-    const worker = FakeWorker.instances[0];
+    const voice = openVoice(VOICES.en);
 
-    worker.emit({ type: 'done' });
+    const promise = voice.speak('hello');
+    FakeWorker.instances[0].emit({ id: 1, type: 'done' });
 
     await expect(promise).rejects.toThrow('Worker returned no audio data.');
   });
 
-  it('reports voice bytes streaming past the service worker', async () => {
+  it('replaces a worker whose voice failed to load', async () => {
+    // Piper keeps the failed session as its singleton, so that worker can
+    // never load one now.
+    const voice = openVoice(VOICES.en);
+    const failed = FakeWorker.instances[0];
+    const line = voice.speak('hello');
+
+    failed.emit({ id: 0, type: 'error', message: 'voice missing' });
+
+    await expect(voice.ready).rejects.toThrow('voice missing');
+    await expect(line).rejects.toThrow('voice missing');
+    expect(failed.terminate).toHaveBeenCalled();
+
+    void voice.speak('again');
+    expect(FakeWorker.instances).toHaveLength(2);
+    expect(FakeWorker.instances[1].postedMessages.map((m) => m.mode)).toEqual([
+      'load',
+      'speak',
+    ]);
+  });
+
+  it('replaces a worker that crashed', async () => {
+    const voice = openVoice(VOICES.en);
+    const crashed = FakeWorker.instances[0];
+    const line = voice.speak('hello');
+
+    crashed.onerror?.(new Error('worker crashed'));
+
+    await expect(line).rejects.toThrow('worker crashed');
+    expect(crashed.terminate).toHaveBeenCalled();
+
+    void voice.speak('again');
+    expect(FakeWorker.instances).toHaveLength(2);
+  });
+
+  it('terminates the worker and refuses further lines once closed', async () => {
+    const voice = openVoice(VOICES.en);
+    const worker = FakeWorker.instances[0];
+    const inFlight = voice.speak('hello');
+
+    voice.close();
+
+    expect(worker.terminate).toHaveBeenCalled();
+    await expect(inFlight).rejects.toThrow('closed');
+    await expect(voice.speak('again')).rejects.toThrow('closed');
+    expect(FakeWorker.instances).toHaveLength(1);
+  });
+
+  it('reports voice bytes streaming past the service worker while loading', async () => {
     // Normally silent — after preload the voice is in OPFS. This is the path
     // where the conversation was reached without one, or it has been evicted.
     const onProgress = vi.fn();
-    const promise = speak(VOICES.en, 'hello', onProgress);
-    const worker = FakeWorker.instances[0];
+    const voice = openVoice(VOICES.en, onProgress);
 
     await report({
       step: 'text-to-speech',
@@ -171,29 +277,20 @@ describe('speak', () => {
       loaded: 5,
       total: 10,
     });
-
-    worker.emit({
-      type: 'done',
-      buffer: new ArrayBuffer(1),
-      mimeType: 'audio/wav',
-    });
-    await promise;
+    FakeWorker.instances[0].emit({ id: 0, type: 'done' });
+    await voice.ready;
 
     expect(onProgress).toHaveBeenCalledWith(
       expect.objectContaining({ loaded: 5 }),
     );
   });
 
-  it('stops listening once the call is over', async () => {
+  it('stops listening once the voice has loaded', async () => {
     const onProgress = vi.fn();
-    const promise = speak(VOICES.en, 'hello', onProgress);
+    const voice = openVoice(VOICES.en, onProgress);
 
-    FakeWorker.instances[0].emit({
-      type: 'done',
-      buffer: new ArrayBuffer(1),
-      mimeType: 'audio/wav',
-    });
-    await promise;
+    FakeWorker.instances[0].emit({ id: 0, type: 'done' });
+    await voice.ready;
     onProgress.mockClear();
 
     await report({
@@ -208,18 +305,28 @@ describe('speak', () => {
 });
 
 describe('preload', () => {
-  it('sends a preload request for the given voice', async () => {
+  it('loads the voice once and closes the worker', async () => {
     const promise = preload(VOICES.es);
     const worker = FakeWorker.instances[0];
 
-    expect(worker.postedMessages[0]).toEqual({
-      mode: 'preload',
-      voiceId: VOICES.es,
-    });
+    expect(worker.postedMessages).toEqual([
+      { id: 0, mode: 'load', voiceId: VOICES.es },
+    ]);
 
-    worker.emit({ type: 'done' });
+    worker.emit({ id: 0, type: 'done' });
 
     await expect(promise).resolves.toBeUndefined();
+    expect(worker.terminate).toHaveBeenCalled();
+  });
+
+  it('rejects, and still closes the worker, when the voice fails to load', async () => {
+    const promise = preload(VOICES.es);
+    const worker = FakeWorker.instances[0];
+
+    worker.emit({ id: 0, type: 'error', message: 'download failed' });
+
+    await expect(promise).rejects.toThrow('download failed');
+    expect(worker.terminate).toHaveBeenCalled();
   });
 });
 
