@@ -55,8 +55,8 @@ const flush = () => Promise.resolve();
 
 // Literal rather than read from constants.ts, whose MODEL_KEY is fixed by
 // whichever backend the module saw when it loaded.
-const Q8_KEY = 'onnx-community/whisper-base:q8';
-const WEBGPU_KEY = 'onnx-community/whisper-base:fp32+q4';
+const Q8_KEY = 'onnx-community/whisper-small:q8';
+const WEBGPU_KEY = 'onnx-community/whisper-small:fp32+q4';
 
 beforeEach(() => {
   FakeWorker.instances = [];
@@ -246,8 +246,6 @@ describe('isCached', () => {
   });
 
   it('is true when the q8 marker is present on the wasm path', async () => {
-    // The same key q8 had before the per-device split, so a marker written
-    // then still counts.
     stubCacheStorage();
     const { markStep } = await import('#/lib/cache/markers');
     await markStep('speech-to-text', Q8_KEY);
@@ -269,9 +267,9 @@ describe('isCached', () => {
   });
 
   it('does not let a q8 marker vouch for the WebGPU weights', async () => {
-    // An install from before the split has q8 on disk, not fp32+q4. Counting
-    // its marker would skip preload and leave the first transcription to
-    // download ~206 MB mid-conversation.
+    // A q8 install has different files on disk. Counting its marker would
+    // skip preload and leave the first transcription to download the WebGPU
+    // weights mid-conversation.
     vi.stubGlobal('navigator', { gpu: {} });
     stubCacheStorage();
     const { markStep } = await import('#/lib/cache/markers');
