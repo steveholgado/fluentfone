@@ -16,6 +16,7 @@ import {
 import { openVoice, type SpeakTimings, type Voice } from '#/lib/text-to-speech';
 import { formatProgress } from '#/utils/formatProgress';
 import { formatTurnTimings } from '#/lib/utils/formatTurnTimings';
+import { createSentenceSplitter } from '#/lib/utils/sentenceSplitter';
 import { LANGUAGE, SYSTEM_INSTRUCTION, VOICE_ID } from '#/config';
 
 // 'loading' is the everyday one: preload put the model on disk, and this is
@@ -73,24 +74,6 @@ export function useConversation() {
       setIsSpeaking(false);
     }
   }, []);
-
-  const speakReply = useCallback(
-    async (
-      text: string,
-      onSynthesised?: (timings: SpeakTimings | undefined) => void,
-    ) => {
-      setStatus('Speaking…');
-      let timings: SpeakTimings | undefined;
-      const audio = await getVoice().speak(text, {
-        slow: true,
-        onTimings: (t) => (timings = t),
-      });
-      onSynthesised?.(timings);
-      await playVoice(audio);
-      setStatus('');
-    },
-    [getVoice, playVoice],
-  );
 
   const prepareGreeting = useCallback(async () => {
     if (preparingGreetingRef.current || greetingRef.current) return;
@@ -176,44 +159,100 @@ export function useConversation() {
       const transcribed = performance.now();
       historyRef.current.push({ role: 'user', content: text });
 
+      // The reply is spoken a sentence at a time as it's generated: each
+      // sentence goes to the voice the moment it's complete, and plays once
+      // its audio is back and the one before has finished. So the first
+      // sentence plays while the rest is still being generated and
+      // synthesised, rather than after all of it.
       setStatus(STAGE_STATUS.generating);
+      const voice = getVoice();
       let generating: number | undefined;
-      const reply = await generateMessage({
-        prompt: text,
-        systemInstruction: SYSTEM_INSTRUCTION,
-        history: historyRef.current.slice(0, -1),
-        onStage: (stage) => {
-          if (stage === 'generating') generating = performance.now();
-          setStatus(STAGE_STATUS[stage]);
-        },
-      });
-      const generated = performance.now();
-      historyRef.current.push({ role: 'model', content: reply });
+      let firstSentence: number | undefined;
+      let synthesised: number | undefined;
+      let ttsTimings: SpeakTimings | undefined;
+      let sentenceCount = 0;
+      let playback = Promise.resolve();
 
-      await speakReply(reply, (ttsTimings) => {
-        if (!import.meta.env.DEV) return;
+      const sentences = createSentenceSplitter((sentence) => {
+        const isFirst = sentenceCount++ === 0;
+        if (isFirst) firstSentence = performance.now();
+
+        let timings: SpeakTimings | undefined;
+        const audio = voice.speak(sentence, {
+          slow: true,
+          onTimings: (t) => (timings = t),
+        });
+        // Its failure surfaces through `playback`, which awaits it in turn.
+        audio.catch(() => {});
+
+        playback = playback.then(async () => {
+          const clip = await audio;
+          if (isFirst) {
+            synthesised = performance.now();
+            ttsTimings = timings;
+            setStatus('Speaking…');
+          }
+          await playVoice(clip);
+        });
+        // Awaited below, once generation is over; until then a failure would
+        // otherwise be reported as unhandled.
+        playback.catch(() => {});
+      });
+
+      let reply: string;
+      try {
+        reply = await generateMessage({
+          prompt: text,
+          systemInstruction: SYSTEM_INSTRUCTION,
+          history: historyRef.current.slice(0, -1),
+          onStage: (stage) => {
+            if (stage === 'generating') generating = performance.now();
+            setStatus(STAGE_STATUS[stage]);
+          },
+          onChunk: (chunk) => sentences.push(chunk),
+        });
+      } catch (err) {
+        // Whatever has started speaking finishes before the failure shows.
+        await playback.catch(() => {});
+        throw err;
+      }
+      const generated = performance.now();
+      sentences.end();
+      historyRef.current.push({ role: 'model', content: reply });
+      console.log(historyRef.current);
+
+      await playback;
+      setStatus('');
+
+      if (
+        import.meta.env.DEV &&
+        firstSentence !== undefined &&
+        synthesised !== undefined
+      ) {
         const timings = formatTurnTimings(
           {
             start,
             stopped,
             transcribed,
             generating,
+            firstSentence,
             generated,
-            synthesised: performance.now(),
+            synthesised,
             stt: sttTimings,
             tts: ttsTimings,
           },
           reply.length,
+          sentenceCount,
         );
         console.info(`[turn] ${timings}`);
-      });
+      }
     } catch (err) {
       console.error(err);
       setStatus('Something went wrong');
     } finally {
       busyRef.current = false;
     }
-  }, [speakReply]);
+  }, [getVoice, playVoice]);
 
   const toggleRecording = useCallback(() => {
     unlock();

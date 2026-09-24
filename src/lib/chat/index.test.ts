@@ -135,6 +135,32 @@ describe('generateMessage', () => {
     expect(stages).toEqual(['loading', 'compiling', 'generating']);
   });
 
+  it('passes each chunk to onChunk, and still resolves with the whole reply', async () => {
+    const { generateMessage } = await import('#/lib/chat/index');
+    const chunks: string[] = [];
+
+    const promise = generateMessage({
+      prompt: 'hi',
+      onChunk: (text) => chunks.push(text),
+    });
+    only().emit({ id: 0, type: 'chunk', text: 'Me gusta. ' });
+    only().emit({ id: 0, type: 'chunk', text: '¿Y a ti?' });
+    only().emit({ id: 0, type: 'done', text: 'Me gusta. ¿Y a ti?' });
+
+    await expect(promise).resolves.toBe('Me gusta. ¿Y a ti?');
+    expect(chunks).toEqual(['Me gusta. ', '¿Y a ti?']);
+  });
+
+  it('keeps callbacks out of the worker request', async () => {
+    // A function can't be structured-cloned; posting one would throw.
+    const { generateMessage } = await import('#/lib/chat/index');
+
+    void generateMessage({ prompt: 'hi', onStage: vi.fn(), onChunk: vi.fn() });
+
+    expect(only().postedMessages[0]).not.toHaveProperty('onStage');
+    expect(only().postedMessages[0]).not.toHaveProperty('onChunk');
+  });
+
   it('rejects when the worker reports an error', async () => {
     const { generateMessage } = await import('#/lib/chat/index');
 

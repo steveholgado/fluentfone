@@ -47,6 +47,43 @@ function mockRecorderImpl(overrides?: {
   return { start, stop };
 }
 
+/**
+ * A `generateMessage` that behaves like the real one: `chunks` go to
+ * `onChunk` one at a time (after the 'generating' stage), then the whole
+ * reply resolves.
+ */
+function streamed(...chunks: string[]): typeof generateMessage {
+  return async (options) => {
+    options?.onStage?.('generating');
+    for (const chunk of chunks) options?.onChunk?.(chunk);
+    return chunks.join('');
+  };
+}
+
+/** Records, then stops, which starts a turn; resolves when the turn is over. */
+async function takeTurn(result: {
+  current: ReturnType<typeof useConversation>;
+}) {
+  await act(async () => {
+    result.current.toggleRecording();
+  });
+  await waitFor(() => expect(result.current.isRecording).toBe(true));
+  await act(async () => {
+    result.current.toggleRecording();
+  });
+}
+
+/** A promise with its settle functions pulled out, to control ordering. */
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (err: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(openVoice).mockReturnValue({
@@ -77,7 +114,7 @@ describe('useConversation', () => {
   describe('voice', () => {
     it('opens one voice for the conversation and speaks every line with it', async () => {
       mockRecorderImpl();
-      vi.mocked(generateMessage).mockResolvedValue('¡Hola!');
+      vi.mocked(generateMessage).mockImplementation(streamed('¡Hola!'));
       vi.mocked(transcribe).mockResolvedValue('Hola');
 
       const { result } = renderHook(() => useConversation());
@@ -276,7 +313,9 @@ describe('useConversation', () => {
     it('stops recording, transcribes, generates a reply, and speaks it', async () => {
       mockRecorderImpl();
       vi.mocked(transcribe).mockResolvedValue('Hola, ¿cómo estás?');
-      vi.mocked(generateMessage).mockResolvedValue('¡Muy bien, gracias!');
+      vi.mocked(generateMessage).mockImplementation(
+        streamed('¡Muy bien, gracias!'),
+      );
       speak.mockResolvedValue(GREETING_AUDIO);
 
       const { result } = renderHook(() => useConversation());
@@ -300,6 +339,7 @@ describe('useConversation', () => {
         systemInstruction: SYSTEM_INSTRUCTION,
         history: [],
         onStage: expect.any(Function),
+        onChunk: expect.any(Function),
       });
       expect(speak).toHaveBeenCalledWith('¡Muy bien, gracias!', {
         slow: true,
@@ -309,23 +349,16 @@ describe('useConversation', () => {
       expect(result.current.status).toBe('');
     });
 
-    it('logs stage timings once the reply is ready to play, in dev', async () => {
+    it('logs stage timings once the reply has been spoken, in dev', async () => {
       mockRecorderImpl();
       vi.mocked(transcribe).mockImplementation(async (_audio, options) => {
         options?.onTimings?.({ decode: 40, inference: 3300, device: 'webgpu' });
         return 'Hola';
       });
-      vi.mocked(generateMessage).mockImplementation(async (options) => {
-        options?.onStage?.('generating');
-        return '¡Hola!';
-      });
+      vi.mocked(generateMessage).mockImplementation(streamed('¡Hola!'));
       speak.mockImplementation(async (_text, opts) => {
         opts?.onTimings?.({ startup: 900, synthesis: 1500 });
         return GREETING_AUDIO;
-      });
-      let loggedBeforePlay = false;
-      vi.mocked(play).mockImplementation(async () => {
-        loggedBeforePlay = vi.mocked(console.info).mock.calls.length === 1;
       });
 
       const { result } = renderHook(() => useConversation());
@@ -338,10 +371,11 @@ describe('useConversation', () => {
         result.current.toggleRecording();
       });
 
-      expect(loggedBeforePlay).toBe(true);
+      expect(play).toHaveBeenCalled();
+      expect(console.info).toHaveBeenCalledTimes(1);
       expect(console.info).toHaveBeenCalledWith(
         expect.stringMatching(
-          /^\[turn\] stop \d+ · stt \d+ \(decode 40, whisper 3300 on webgpu\) · gen \d+ \(setup \d+\) · tts \d+ \(startup 900, synthesis 1500\) · first audio \d+ms · reply 6 chars$/,
+          /^\[turn\] stop \d+ · stt \d+ \(decode 40, whisper 3300 on webgpu\) · gen \d+ \(setup \d+, whole reply \d+\) · tts \d+ \(startup 900, synthesis 1500\) · first audio \d+ms · reply 6 chars in 1 sentence$/,
         ),
       );
     });
@@ -350,7 +384,7 @@ describe('useConversation', () => {
       vi.stubEnv('DEV', false);
       mockRecorderImpl();
       vi.mocked(transcribe).mockResolvedValue('Hola');
-      vi.mocked(generateMessage).mockResolvedValue('¡Hola!');
+      vi.mocked(generateMessage).mockImplementation(streamed('¡Hola!'));
 
       const { result } = renderHook(() => useConversation());
 
@@ -372,8 +406,8 @@ describe('useConversation', () => {
         .mockResolvedValueOnce('Hola')
         .mockResolvedValueOnce('Adiós');
       vi.mocked(generateMessage)
-        .mockResolvedValueOnce('¡Hola!')
-        .mockResolvedValueOnce('¡Hasta luego!');
+        .mockImplementationOnce(streamed('¡Hola!'))
+        .mockImplementationOnce(streamed('¡Hasta luego!'));
       speak.mockResolvedValue(GREETING_AUDIO);
 
       const { result } = renderHook(() => useConversation());
@@ -402,7 +436,130 @@ describe('useConversation', () => {
           { role: 'model', content: '¡Hola!' },
         ],
         onStage: expect.any(Function),
+        onChunk: expect.any(Function),
       });
+    });
+
+    it('speaks each sentence as soon as it is generated', async () => {
+      mockRecorderImpl();
+      vi.mocked(transcribe).mockResolvedValue('Hola');
+      let spokenBeforeEnd: string[] = [];
+      vi.mocked(generateMessage).mockImplementation(async (options) => {
+        options?.onChunk?.('Me gusta ');
+        options?.onChunk?.('el café. ¿Y a');
+        spokenBeforeEnd = speak.mock.calls.map(([text]) => text);
+        options?.onChunk?.(' ti?');
+        return 'Me gusta el café. ¿Y a ti?';
+      });
+
+      const { result } = renderHook(() => useConversation());
+      await takeTurn(result);
+
+      // The first sentence went to be spoken while the reply was unfinished.
+      expect(spokenBeforeEnd).toEqual(['Me gusta el café.']);
+      expect(speak.mock.calls.map(([text]) => text)).toEqual([
+        'Me gusta el café.',
+        '¿Y a ti?',
+      ]);
+      expect(result.current.status).toBe('');
+    });
+
+    it('stores the whole reply in history, not its sentences', async () => {
+      mockRecorderImpl();
+      vi.mocked(transcribe)
+        .mockResolvedValueOnce('Hola')
+        .mockResolvedValueOnce('Bien');
+      vi.mocked(generateMessage)
+        .mockImplementationOnce(streamed('Me gusta. ', '¿Y a ti?'))
+        .mockImplementationOnce(streamed('Vale.'));
+
+      const { result } = renderHook(() => useConversation());
+      await takeTurn(result);
+      await takeTurn(result);
+
+      expect(generateMessage).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          history: [
+            { role: 'user', content: 'Hola' },
+            { role: 'model', content: 'Me gusta. ¿Y a ti?' },
+          ],
+        }),
+      );
+    });
+
+    it('plays sentences in order, even when a later one is synthesised first', async () => {
+      mockRecorderImpl();
+      vi.mocked(transcribe).mockResolvedValue('Hola');
+      vi.mocked(generateMessage).mockImplementation(streamed('Uno. ', 'Dos.'));
+      const first = deferred<Blob>();
+      const second = deferred<Blob>();
+      const firstClip = new Blob(['uno']);
+      const secondClip = new Blob(['dos']);
+      speak
+        .mockReturnValueOnce(first.promise)
+        .mockReturnValueOnce(second.promise);
+
+      const { result } = renderHook(() => useConversation());
+      await act(async () => {
+        result.current.toggleRecording();
+      });
+      await waitFor(() => expect(result.current.isRecording).toBe(true));
+      await act(async () => {
+        result.current.toggleRecording();
+      });
+      await waitFor(() => expect(speak).toHaveBeenCalledTimes(2));
+
+      await act(async () => {
+        second.resolve(secondClip);
+      });
+      expect(play).not.toHaveBeenCalled();
+
+      await act(async () => {
+        first.resolve(firstClip);
+      });
+      await waitFor(() => expect(play).toHaveBeenCalledTimes(2));
+      expect(vi.mocked(play).mock.calls).toEqual([[firstClip], [secondClip]]);
+    });
+
+    it('stops speaking the reply once a sentence fails', async () => {
+      mockRecorderImpl();
+      vi.mocked(transcribe).mockResolvedValue('Hola');
+      vi.mocked(generateMessage).mockImplementation(
+        streamed('Uno. ', 'Dos. ', 'Tres.'),
+      );
+      speak
+        .mockResolvedValueOnce(new Blob(['uno']))
+        .mockRejectedValueOnce(new Error('synth failed'))
+        .mockResolvedValueOnce(new Blob(['tres']));
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      const { result } = renderHook(() => useConversation());
+      await takeTurn(result);
+
+      expect(play).toHaveBeenCalledTimes(1);
+      expect(result.current.status).toBe('Something went wrong');
+      expect(errorSpy).toHaveBeenCalled();
+
+      errorSpy.mockRestore();
+    });
+
+    it('lets a sentence already speaking finish when generation then fails', async () => {
+      mockRecorderImpl();
+      vi.mocked(transcribe).mockResolvedValue('Hola');
+      vi.mocked(generateMessage).mockImplementation(async (options) => {
+        options?.onChunk?.('Me gusta. ¿Y');
+        throw new Error('generation failed');
+      });
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      const { result } = renderHook(() => useConversation());
+      await takeTurn(result);
+
+      expect(speak).toHaveBeenCalledWith('Me gusta.', expect.anything());
+      expect(play).toHaveBeenCalledTimes(1);
+      expect(result.current.status).toBe('Something went wrong');
+
+      errorSpy.mockRestore();
     });
 
     it('sets an error status and logs when transcription fails', async () => {

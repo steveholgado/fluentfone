@@ -12,7 +12,8 @@ export interface SpeakOptions {
 export interface SpeakTimings {
   /**
    * Everything but synthesis: waiting on the voice's session if it's still
-   * loading, and the messaging either side. Near zero once the voice is warm.
+   * loading, waiting behind lines sent before this one, and the messaging
+   * either side. Near zero for a first line once the voice is warm.
    */
   startup: number;
   /** The `predict()` call alone, inside the worker. */

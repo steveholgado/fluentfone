@@ -94,6 +94,55 @@ describe('worker onmessage', () => {
     expect(predict).toHaveBeenCalledTimes(2);
   });
 
+  it('synthesises one line at a time, in the order they arrived', async () => {
+    // A reply's next sentence is sent while the last is still synthesising,
+    // and ORT won't run one session twice at once.
+    let finishFirst!: (wav: Blob) => void;
+    const predict = vi
+      .fn()
+      .mockReturnValueOnce(new Promise<Blob>((res) => (finishFirst = res)))
+      .mockResolvedValueOnce(new Blob(['dos']));
+    sessionCreate.mockResolvedValue({ predict });
+
+    const first = post({
+      id: 0,
+      mode: 'speak',
+      voiceId: 'voice-a',
+      text: 'uno',
+    });
+    const second = post({
+      id: 1,
+      mode: 'speak',
+      voiceId: 'voice-a',
+      text: 'dos',
+    });
+    await vi.waitFor(() => expect(predict).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(predict).toHaveBeenCalledTimes(1);
+
+    finishFirst(new Blob(['uno']));
+    await Promise.all([first, second]);
+
+    expect(predict.mock.calls.map(([text]) => text)).toEqual(['uno', 'dos']);
+    expect(postedMessages.map((m) => (m as { id: number }).id)).toEqual([0, 1]);
+  });
+
+  it('keeps going after a line fails', async () => {
+    const predict = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('synth failed'))
+      .mockResolvedValueOnce(new Blob(['dos']));
+    sessionCreate.mockResolvedValue({ predict });
+
+    await post({ id: 0, mode: 'speak', voiceId: 'voice-a', text: 'uno' });
+    await post({ id: 1, mode: 'speak', voiceId: 'voice-a', text: 'dos' });
+
+    expect(postedMessages).toEqual([
+      { id: 0, type: 'error', message: 'synth failed' },
+      expect.objectContaining({ id: 1, type: 'done' }),
+    ]);
+  });
+
   it('refuses a second voice rather than speaking with the first', async () => {
     // piper-tts-web's singleton would hand back voice-a's session relabelled.
     sessionCreate.mockResolvedValue({ predict: vi.fn() });

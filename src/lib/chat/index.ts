@@ -74,6 +74,7 @@ export async function generateMessage({
   maxNumTokens = DEFAULT_MAX_TOKENS,
   samplerParams,
   onStage,
+  onChunk,
 }: GenerateMessageOptions = {}): Promise<string> {
   const text = await send(
     {
@@ -85,7 +86,7 @@ export async function generateMessage({
       maxNumTokens,
       samplerParams: { ...DEFAULT_SAMPLER_PARAMS, ...samplerParams },
     },
-    onStage,
+    { onStage, onChunk },
   );
 
   liveEngineKeys.add(engineKey(modelUrl, maxNumTokens));

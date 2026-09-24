@@ -11,14 +11,19 @@
 import type { ChatRequest, WorkerRequest, WorkerResponse } from './messages';
 import type { GenerateStage } from './types';
 
-interface PendingRequest {
+/**
+ * Held here rather than posted. A function can't be structured-cloned, so the
+ * worker reports stages and chunks by id and this is where they are routed
+ * back to.
+ */
+export interface RequestCallbacks {
+  onStage?: (stage: GenerateStage) => void;
+  onChunk?: (text: string) => void;
+}
+
+interface PendingRequest extends RequestCallbacks {
   resolve: (text: string) => void;
   reject: (err: Error) => void;
-  /**
-   * Held here rather than posted. A function can't be structured-cloned, so
-   * the worker reports stages by id and this is where they are routed back to.
-   */
-  onStage?: (stage: GenerateStage) => void;
 }
 
 // Created lazily (not at module scope) since this module is also evaluated
@@ -40,10 +45,12 @@ function getWorker(): Worker {
         const request = pending.get(message.id);
         if (!request) return;
 
+        // Stages and chunks aren't terminal: more (and eventually a 'done')
+        // follow, so the pending entry stays put.
         if (message.type === 'stage') {
-          // Not terminal: more stages (and eventually a 'done') follow, so the
-          // pending entry stays put.
           request.onStage?.(message.stage);
+        } else if (message.type === 'chunk') {
+          request.onChunk?.(message.text);
         } else if (message.type === 'done') {
           pending.delete(message.id);
           request.resolve(message.text ?? '');
@@ -70,11 +77,11 @@ function getWorker(): Worker {
  */
 export function send(
   request: ChatRequest,
-  onStage?: (stage: GenerateStage) => void,
+  callbacks: RequestCallbacks = {},
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const id = nextRequestId++;
-    pending.set(id, { resolve, reject, onStage });
+    pending.set(id, { resolve, reject, ...callbacks });
     getWorker().postMessage({ ...request, id } as WorkerRequest);
   });
 }

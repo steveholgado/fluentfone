@@ -3,7 +3,8 @@ import type { SpeakTimings } from '#/lib/text-to-speech';
 
 /**
  * `performance.now()` readings taken across one conversational turn, from the
- * moment the user stops recording to the moment the reply is ready to play.
+ * moment the user stops recording to the moment the reply has been generated
+ * and its first sentence is ready to play.
  */
 export interface TurnTimings {
   start: number;
@@ -15,25 +16,38 @@ export interface TurnTimings {
    * the engine on a cold turn. Absent if the 'generating' stage never arrived.
    */
   generating?: number;
+  /** When the reply's first sentence was complete, and went to be spoken. */
+  firstSentence: number;
+  /** When the whole reply was. Can fall after `synthesised`. */
   generated: number;
+  /** When the first sentence's audio was ready to play. */
   synthesised: number;
   /** How transcription's time divided up, as reported by the library. */
   stt?: TranscribeTimings;
-  /** How synthesis's time divided up, as reported by the library. */
+  /** How the first sentence's synthesis divided up, as reported by the library. */
   tts?: SpeakTimings;
 }
 
 /**
  * One line saying where the wait between releasing the button and hearing the
  * reply went, e.g.
- * `stop 6 · stt 3356 (decode 40, whisper 3290 on webgpu) · gen 861 (setup 6) · tts 2466 (startup 900, synthesis 1540) · first audio 6691ms · reply 62 chars`.
+ * `stop 7 · stt 459 (decode 44, whisper 414 on webgpu) · gen 640 (setup 3, whole reply 1307) · tts 600 (startup 9, synthesis 590) · first audio 1706ms · reply 51 chars in 2 sentences`.
+ *
+ * `gen` and `tts` follow the first sentence, since the reply starts playing as
+ * soon as that is spoken and the rest is generated and synthesised meanwhile —
+ * so the four stages add up to `first audio`. `whole reply` is how long all of
+ * generation took, for comparing against turns before replies were pipelined.
  *
  * Each breakdown can fall short of its stage's total; the gap is messaging
  * between threads and whatever else sits between the timed calls. The reply's
- * length is there because generation and synthesis both scale with it, so
- * turns can be compared.
+ * size is there because generation and synthesis both scale with it, so turns
+ * can be compared.
  */
-export function formatTurnTimings(t: TurnTimings, replyLength: number): string {
+export function formatTurnTimings(
+  t: TurnTimings,
+  replyLength: number,
+  sentenceCount: number,
+): string {
   const ms = (from: number, to: number) => Math.round(to - from);
   const round = Math.round;
 
@@ -43,7 +57,7 @@ export function formatTurnTimings(t: TurnTimings, replyLength: number): string {
   const setup =
     t.generating === undefined
       ? ''
-      : ` (setup ${ms(t.transcribed, t.generating)})`;
+      : `setup ${ms(t.transcribed, t.generating)}, `;
   const tts = t.tts
     ? ` (startup ${round(t.tts.startup)}, synthesis ${round(t.tts.synthesis)})`
     : '';
@@ -51,9 +65,9 @@ export function formatTurnTimings(t: TurnTimings, replyLength: number): string {
   return [
     `stop ${ms(t.start, t.stopped)}`,
     `stt ${ms(t.stopped, t.transcribed)}${stt}`,
-    `gen ${ms(t.transcribed, t.generated)}${setup}`,
-    `tts ${ms(t.generated, t.synthesised)}${tts}`,
+    `gen ${ms(t.transcribed, t.firstSentence)} (${setup}whole reply ${ms(t.transcribed, t.generated)})`,
+    `tts ${ms(t.firstSentence, t.synthesised)}${tts}`,
     `first audio ${ms(t.start, t.synthesised)}ms`,
-    `reply ${replyLength} chars`,
+    `reply ${replyLength} chars in ${sentenceCount} ${sentenceCount === 1 ? 'sentence' : 'sentences'}`,
   ].join(' · ');
 }

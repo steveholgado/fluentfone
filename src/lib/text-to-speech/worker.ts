@@ -62,6 +62,17 @@ function getSession(voiceId: string): Promise<PatchedSession> {
   return session;
 }
 
+// Lines are synthesised one at a time, in the order they arrived. A caller can
+// send the next line before the last has finished — a reply is spoken sentence
+// by sentence as it's generated — and ORT won't run one session twice at once.
+let queue: Promise<unknown> = Promise.resolve();
+
+function inTurn<T>(task: () => Promise<T>): Promise<T> {
+  const result = queue.then(task);
+  queue = result.catch(() => {});
+  return result;
+}
+
 ctx.onmessage = async (event: MessageEvent<WorkerRequest>) => {
   const request = event.data;
   const { id } = request;
@@ -74,11 +85,13 @@ ctx.onmessage = async (event: MessageEvent<WorkerRequest>) => {
       return;
     }
 
-    const synthesisStart = performance.now();
-    const wav = await voice.predict(request.text, {
-      lengthScale: request.lengthScale,
+    const { wav, synthesisMs } = await inTurn(async () => {
+      const synthesisStart = performance.now();
+      const wav = await voice.predict(request.text, {
+        lengthScale: request.lengthScale,
+      });
+      return { wav, synthesisMs: performance.now() - synthesisStart };
     });
-    const synthesisMs = performance.now() - synthesisStart;
 
     // Transfer the underlying bytes rather than copying them.
     const buffer = await wav.arrayBuffer();

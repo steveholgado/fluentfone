@@ -56,6 +56,12 @@ export interface GenerateMessageOptions {
    * a browser that has evicted them since.
    */
   onStage?: (stage: GenerateStage) => void;
+  /**
+   * Called with each new piece of the reply as it's decoded — new text only,
+   * not the reply so far — so a caller can act on the start of a reply before
+   * the end exists. The returned promise still resolves with the whole reply.
+   */
+  onChunk?: (text: string) => void;
 }
 
 export type GenerateStage =

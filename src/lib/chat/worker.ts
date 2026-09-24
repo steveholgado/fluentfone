@@ -45,6 +45,7 @@ type GenerateRequest = Extract<WorkerRequest, { mode: 'generate' }>;
 async function generate(
   request: GenerateRequest,
   onStage: (stage: GenerateStage) => void,
+  onChunk: (text: string) => void,
 ): Promise<string> {
   const engine = await getEngine(
     request.modelUrl,
@@ -86,11 +87,21 @@ async function generate(
     // omitted (the opening-message case), we send an empty trigger turn; the
     // system instruction should describe what that first message should say.
     // This trigger is NOT part of `history` — don't store it as a real turn.
-    const response = await conversation.sendMessage({
-      role: 'user',
-      content: request.prompt ?? '',
-    });
-    return extractText(response);
+    //
+    // Streamed, so the reply can be passed on a piece at a time while the rest
+    // is still decoding. Each chunk is new text only, not the reply so far.
+    const reader = conversation
+      .sendMessageStreaming({ role: 'user', content: request.prompt ?? '' })
+      .getReader();
+    let text = '';
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) return text;
+      const piece = extractText(value);
+      if (!piece) continue;
+      text += piece;
+      onChunk(piece);
+    }
   } finally {
     const maybeDeletable = conversation as unknown as {
       delete?: () => Promise<void> | void;
@@ -108,13 +119,23 @@ ctx.onmessage = async (event: MessageEvent<WorkerRequest>) => {
   try {
     switch (request.mode) {
       case 'generate': {
-        const text = await generate(request, (stage) => {
-          ctx.postMessage({
-            id,
-            type: 'stage',
-            stage,
-          } satisfies WorkerResponse);
-        });
+        const text = await generate(
+          request,
+          (stage) => {
+            ctx.postMessage({
+              id,
+              type: 'stage',
+              stage,
+            } satisfies WorkerResponse);
+          },
+          (chunk) => {
+            ctx.postMessage({
+              id,
+              type: 'chunk',
+              text: chunk,
+            } satisfies WorkerResponse);
+          },
+        );
         ctx.postMessage({ id, type: 'done', text } satisfies WorkerResponse);
         return;
       }

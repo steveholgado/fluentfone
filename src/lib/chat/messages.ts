@@ -37,5 +37,7 @@ export type WorkerRequest = ChatRequest & { id: number };
 
 export type WorkerResponse =
   | { id: number; type: 'stage'; stage: GenerateStage }
+  /** Generate only: the next piece of the reply, as it's decoded. */
+  | { id: number; type: 'chunk'; text: string }
   | { id: number; type: 'done'; text?: string }
   | { id: number; type: 'error'; message: string };

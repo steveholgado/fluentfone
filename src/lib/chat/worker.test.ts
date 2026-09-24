@@ -6,7 +6,7 @@ import { stubCacheStorage } from '#/test-utils';
 import { DEFAULT_CHAT_MODEL } from '#/lib/chat/constants';
 import type { ChatRequest, WorkerResponse } from '#/lib/chat/messages';
 
-const sendMessage = vi.fn();
+const sendMessageStreaming = vi.fn();
 const createConversation = vi.fn();
 const engineCreate = vi.fn();
 const engineDelete = vi.fn();
@@ -18,6 +18,16 @@ vi.mock('@litert-lm/core', () => ({
   LiteRtLm: { DEFAULT_WASM_PATH: 'https://cdn.example/@litert-lm/core/wasm' },
   getOrLoadGlobalLiteRtLm: () => getOrLoadGlobalLiteRtLm(),
 }));
+
+/** A reply as the SDK streams it: one message per chunk, new text only. */
+function streamOf(...chunks: unknown[]): ReadableStream<unknown> {
+  return new ReadableStream({
+    start(controller) {
+      for (const chunk of chunks) controller.enqueue(chunk);
+      controller.close();
+    },
+  });
+}
 
 let postedMessages: WorkerResponse[] = [];
 let onmessage:
@@ -55,6 +65,14 @@ const stages = () =>
     )
     .map((m) => m.stage);
 
+const chunks = () =>
+  postedMessages
+    .filter(
+      (m): m is Extract<WorkerResponse, { type: 'chunk' }> =>
+        m.type === 'chunk',
+    )
+    .map((m) => m.text);
+
 const replies = () =>
   postedMessages.filter((m) => m.type === 'done' || m.type === 'error');
 
@@ -75,8 +93,8 @@ beforeEach(async () => {
   });
 
   getOrLoadGlobalLiteRtLm.mockResolvedValue(undefined);
-  createConversation.mockResolvedValue({ sendMessage });
-  sendMessage.mockResolvedValue('a reply');
+  createConversation.mockResolvedValue({ sendMessageStreaming });
+  sendMessageStreaming.mockImplementation(() => streamOf('a reply'));
   engineCreate.mockResolvedValue({
     createConversation,
     delete: engineDelete,
@@ -114,7 +132,7 @@ describe('generate', () => {
         },
       }),
     );
-    expect(sendMessage).toHaveBeenCalledWith({
+    expect(sendMessageStreaming).toHaveBeenCalledWith({
       role: 'user',
       content: 'hi there',
     });
@@ -123,29 +141,53 @@ describe('generate', () => {
   it('sends an empty trigger message when no prompt is given', async () => {
     await post(generateRequest({ systemInstruction: 'open with a greeting' }));
 
-    expect(sendMessage).toHaveBeenCalledWith({ role: 'user', content: '' });
-  });
-
-  it('posts the extracted text back against the request id', async () => {
-    sendMessage.mockResolvedValue({ text: 'plain text field' });
-
-    await post(generateRequest({ prompt: 'hi' }));
-
-    expect(replies()).toEqual([
-      { id: 0, type: 'done', text: 'plain text field' },
-    ]);
-  });
-
-  it('extracts text from a content-parts array response', async () => {
-    sendMessage.mockResolvedValue({
-      content: [{ text: 'part one ' }, { text: 'part two' }],
+    expect(sendMessageStreaming).toHaveBeenCalledWith({
+      role: 'user',
+      content: '',
     });
+  });
+
+  it('posts each chunk as it arrives, then the whole reply', async () => {
+    sendMessageStreaming.mockImplementation(() =>
+      streamOf(
+        { content: [{ type: 'text', text: 'Me gusta. ' }] },
+        { content: [{ type: 'text', text: '¿Y a ti?' }] },
+      ),
+    );
+
+    await post(generateRequest({ prompt: 'hi' }));
+
+    expect(chunks()).toEqual(['Me gusta. ', '¿Y a ti?']);
+    expect(replies()).toEqual([
+      { id: 0, type: 'done', text: 'Me gusta. ¿Y a ti?' },
+    ]);
+    // Chunks come before the reply that ends the request.
+    expect(postedMessages.at(-1)?.type).toBe('done');
+  });
+
+  it('extracts text from each chunk’s shape', async () => {
+    sendMessageStreaming.mockImplementation(() =>
+      streamOf(
+        { text: 'plain text field ' },
+        { content: [{ text: 'part one ' }, { text: 'part two' }] },
+      ),
+    );
 
     await post(generateRequest({ prompt: 'hi' }));
 
     expect(replies()).toEqual([
-      { id: 0, type: 'done', text: 'part one part two' },
+      { id: 0, type: 'done', text: 'plain text field part one part two' },
     ]);
+  });
+
+  it('skips chunks that carry no text', async () => {
+    sendMessageStreaming.mockImplementation(() =>
+      streamOf({ content: [] }, 'Hola'),
+    );
+
+    await post(generateRequest({ prompt: 'hi' }));
+
+    expect(chunks()).toEqual(['Hola']);
   });
 
   it('passes the resolved sampler params straight through', async () => {
@@ -168,7 +210,7 @@ describe('generate', () => {
   it('deletes the conversation after use when supported', async () => {
     const conversationDelete = vi.fn();
     createConversation.mockResolvedValue({
-      sendMessage,
+      sendMessageStreaming,
       delete: conversationDelete,
     });
 
@@ -191,12 +233,37 @@ describe('generate', () => {
     expect(engineCreate).toHaveBeenCalledTimes(2);
   });
 
-  it('posts an error message when generation throws', async () => {
-    sendMessage.mockRejectedValue(new Error('boom'));
+  it('posts an error message when generation fails mid-stream', async () => {
+    sendMessageStreaming.mockImplementation(
+      () =>
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue('Hola');
+            controller.error(new Error('boom'));
+          },
+        }),
+    );
 
     await post(generateRequest({ prompt: 'hi' }));
 
     expect(replies()).toEqual([{ id: 0, type: 'error', message: 'boom' }]);
+  });
+
+  it('deletes the conversation even when generation fails', async () => {
+    const conversationDelete = vi.fn();
+    createConversation.mockResolvedValue({
+      sendMessageStreaming: () =>
+        new ReadableStream({
+          start(controller) {
+            controller.error(new Error('boom'));
+          },
+        }),
+      delete: conversationDelete,
+    });
+
+    await post(generateRequest({ prompt: 'hi' }));
+
+    expect(conversationDelete).toHaveBeenCalled();
   });
 
   it('stringifies non-Error throwables', async () => {
