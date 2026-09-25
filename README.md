@@ -77,7 +77,8 @@ place cache policy is written:
 - **`rules.ts`** — which URLs belong to which preload step, whether the worker
   stores them, and roughly how big they are
 - **`markers.ts`** — reading and writing the markers that record a step as done
-- **`channel.ts`** — the byte-count message the worker broadcasts
+- **`channel.ts`** — the byte-count message the worker broadcasts, and the
+  page's request that a waiting update take over
 
 `src/lib/cache/` is the bottom of the import graph: both `sw.ts` and the page
 import from it, so every file in it imports only dependency-free leaves
@@ -86,8 +87,9 @@ library, a worker, or the DOM.
 
 Two buckets, because they have opposite lifecycles:
 
-- **`shell-<build id>`** — the app shell, precached on install so the app boots
-  offline. Replaced wholesale on each deploy; the old one is purged on activate.
+- **`shell-<build id>`** — the app shell: the `/app` document and the files it
+  loads, precached on install so the app boots offline. No other page is
+  cached. Replaced wholesale on each deploy; the old one is purged on activate.
 - **`models-v1`** — runtimes, weights, and the step markers that vouch for them.
   Cached on first fetch during the preload the user agreed to, and never purged.
 
@@ -125,10 +127,9 @@ fetch
  │
  ├─ SHELL_ENABLED == false  (dev: empty precache list) ───▶ network / dev server
  │
- ├─ navigation  ('/', '/app') ────────────────────────────▶ shell-<build id>
+ ├─ path in PRECACHE_URLS  ('/app' + what it loads) ──────▶ shell-<build id>
  │                                                            else network
- └─ path in PRECACHE_URLS ────────────────────────────────▶ shell-<build id>
-                                                              else network
+ └─ anything else  (every other page, and its code) ──────▶ network
 ```
 
 ### First ever visit
@@ -140,7 +141,7 @@ JS / CSS                     ← network
   ▼  page boots, ensureController()
 register /sw.js
   │
-  ├─ install   → cache.addAll(PRECACHE_URLS) → shell-<build id>  [14 files, ~1 MB]
+  ├─ install   → cache.addAll(PRECACHE_URLS) → shell-<build id>  [12 files, ~1 MB]
   │             → skipWaiting()                   (first install only)
   └─ activate  → purge other shell-* buckets
                 → clients.claim()     ← now controls the page AND both web workers
@@ -172,7 +173,8 @@ GET /app                     ← shell-<build id>  ┐
 JS / CSS / worker chunks     ← shell-<build id>  ┘ worker controls from byte one
                                                    → boots with no network at all
   │
-  ▼  ensureController()      ← already controlling, returns immediately
+  ▼  ensureController()      ← already controlling; applies a new deploy if
+  │                            one is waiting (see Updates), else returns
   ▼  checkPreloaded()        ← 4 markers hit + voice found in OPFS
   │
   ▼
@@ -230,8 +232,113 @@ The offline path only exists in a real build. Test that with `pnpm preview`
 
 ### Updates
 
-A new deploy installs alongside the old worker and activates on the next
-navigation, so a reload picks it up. `models-v1` survives that untouched.
+A new deploy's worker installs as soon as the browser sees the new `sw.js` (it
+checks on every navigation), and precaches its shell alongside the old one. On
+its own it would then wait until every tab running the old worker has closed. A
+refresh doesn't count, because the old worker serves the refreshed page before
+the old page has gone, so someone who keeps the app in a pinned tab would never
+get the update.
 
-Production serves the vendored files `immutable`, and `/sw.js` as `no-cache` so
-an update is never masked by the HTTP cache (see `public/_headers`).
+So `/app` applies an update that is already waiting when it starts
+(`applyUpdate` in `src/lib/sw-client.ts`). A deploy therefore takes two loads:
+
+```
+load after the deploy
+  /app from the old shell ─▶ app starts as normal, nothing waits on it
+  meanwhile, the browser's own navigation check:
+    new sw.js ─▶ install ─▶ precache the new shell ─▶ waiting
+
+next load
+  /app from the old shell
+    │
+    ▼  ensureController()  ─  registration.waiting?
+    │
+    ├─ no ───────────────────────────────────────────▶ start the app
+    │
+    └─ yes ─▶ post TAKE_OVER
+               │
+               ├─ another tab is running /app ───────▶ declined: start the
+               │                                        app; the update waits
+               │
+               └─ accepted ─▶ skipWaiting() ─▶ activate: purge the old shell
+                                                │
+                                                ▼
+                              controllerchange ─▶ location.reload()
+                                                │
+                                                ▼
+                              /app from the new shell
+```
+
+The page never checks for an update itself or waits on one installing.
+Checking is the browser's job, done in the background on navigation, so
+startup never waits on the network. That holds on a slow or hanging connection
+too, and offline there's simply nothing waiting. Applying an update that's
+already installed only takes messages between the page and the worker, so
+the reload follows within a moment. If the worker doesn't answer within 3
+seconds, the app starts anyway and the update waits for a later load.
+
+It runs on the check screen, before the app has done anything, so the reload
+never interrupts a conversation. It shows as a brief flicker of that screen,
+once per deploy. A deploy that lands while a tab is open waits until that tab
+is next loaded. The reload matters as much as the switch: the page came from
+the previous build, and the new shell no longer has that build's chunks.
+
+The worker declines while another tab is running `/app`, because switching
+would move that tab onto the new shell mid-session, and the old chunks it
+requests next may already be gone from the server. Tabs on other pages don't
+count, since nothing they load comes from the shell. `models-v1` survives all
+of this untouched.
+
+Production serves the vendored files and the hashed `/assets/*` `immutable`,
+and `/sw.js` as `no-cache` so an update is never masked by the HTTP cache (see
+`public/_headers`).
+
+#### How the shell is versioned
+
+`src/sw.ts` imports its precache list and build id from `src/sw-precache.ts`.
+The checked-in values there are dev/test defaults; in a build,
+`vite-plugin-service-worker.ts` substitutes the module with the real list —
+`/app` and the files it loads — once prerender has written the document. It's a
+module rather than a `define` so that `src/sw.test.ts` can import `sw.ts` and
+`vi.mock` the list.
+
+Only `/app` is precached (`APP_URL` in the plugin). Every other page, the home
+page included, goes to the network whether the worker is installed or not, so
+it doesn't work offline and is never served stale.
+
+The files are found by walking the bundle from what the prerendered `/app`
+document references:
+
+- **Chunk imports**, static and dynamic, and the CSS and assets Vite records
+  against each chunk.
+- **Web worker scripts.** Vite builds these separately and emits them as plain
+  assets, so the chunk graph has no edge to them. The walk looks for their file
+  names in the code that spawns them, and in each other's code for their own
+  imports.
+- **Never another route's chunks.** The entry chunk lazily imports every
+  route's, so the walk only takes chunks split from `/app`'s own route file
+  (TanStack's `?tsr-split=` chunks), including splits the document doesn't
+  reference, like an error component.
+
+So a new route's code stays out of the shell automatically. The exception is
+CSS a route imports: TanStack Start attaches it to the root route, so every
+page, `/app` included, links it, and it is precached along with the rest. The
+build fails if `/app` wasn't prerendered or references nothing in the bundle.
+
+The build id is a hash of that URL list plus the `/app` document.
+Hashed assets change name when they change bytes, so the URLs cover them; the
+document lives at a fixed URL, so its contents go in too, minus the render
+timestamp TanStack Router embeds (without that, no two builds would ever match).
+The id is baked into `sw.js`, so:
+
+- **Nothing in the shell changed** — same id, and usually a byte-identical
+  `sw.js`, so browsers don't install anything.
+- **Anything changed** — new `shell-<build id>` bucket. Install re-fetches the
+  whole list into it, including files that didn't change; those are served
+  `immutable` at the same URL, so they come out of the HTTP cache rather than
+  the network. Activate then drops the old bucket. The shell is never a mix of
+  two deploys.
+
+Anything other than the document that affects the shell without changing a
+filename would slip past the id. Nothing does today; if you add one (say, a
+same-origin file served from a fixed path), put it in the hash too.

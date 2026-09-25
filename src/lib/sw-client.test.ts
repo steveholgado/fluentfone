@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
  * The module memoizes its answer, so every test imports it fresh.
@@ -15,15 +15,34 @@ interface FakeContainer {
   removeEventListener: ReturnType<typeof vi.fn>;
 }
 
+interface FakeRegistration {
+  update: ReturnType<typeof vi.fn>;
+  waiting: FakeWorker | null;
+  installing: FakeWorker | null;
+}
+
+interface FakeWorker {
+  state: string;
+  addEventListener: ReturnType<typeof vi.fn>;
+  postMessage: ReturnType<typeof vi.fn>;
+}
+
 let container: FakeContainer;
+let registration: FakeRegistration;
 let listeners: Map<string, () => void>;
 
 function stubServiceWorker(overrides: Partial<FakeContainer> = {}) {
   listeners = new Map();
 
+  registration = {
+    update: vi.fn().mockResolvedValue(undefined),
+    waiting: null,
+    installing: null,
+  };
+
   container = {
     controller: null,
-    register: vi.fn().mockResolvedValue({}),
+    register: vi.fn().mockResolvedValue(registration),
     ready: Promise.resolve({}),
     addEventListener: vi.fn((type: string, handler: () => void) =>
       listeners.set(type, handler),
@@ -121,5 +140,97 @@ describe('ensureController', () => {
 
     await expect(ensureController()).resolves.toBe(true);
     expect(container.register).toHaveBeenCalledWith('/sw.js');
+  });
+});
+
+describe('applying a new deploy at startup', () => {
+  let reload: ReturnType<typeof vi.fn>;
+
+  /** A worker that answers TAKE_OVER with `answer` over the port it's sent. */
+  function fakeWorker(state: string, answer: boolean): FakeWorker {
+    return {
+      state,
+      addEventListener: vi.fn(),
+      postMessage: vi.fn((_message: unknown, [port]: MessagePort[]) =>
+        port.postMessage(answer),
+      ),
+    };
+  }
+
+  /** Whether `promise` is still pending once everything queued has run. */
+  async function isPending(promise: Promise<unknown>) {
+    const pending = Symbol('pending');
+    const settled = await Promise.race([
+      promise,
+      new Promise((resolve) => setTimeout(() => resolve(pending), 50)),
+    ]);
+    return settled === pending;
+  }
+
+  beforeEach(() => {
+    reload = vi.fn();
+    vi.stubGlobal('location', { reload });
+    stubServiceWorker({ controller: {} });
+  });
+
+  it('asks a waiting update to take over, and reloads into it', async () => {
+    const worker = fakeWorker('installed', true);
+    registration.waiting = worker;
+
+    const { ensureController } = await load();
+    const pending = ensureController();
+
+    await vi.waitFor(() => expect(worker.postMessage).toHaveBeenCalled());
+    listeners.get('controllerchange')?.();
+
+    expect(reload).toHaveBeenCalled();
+    // Held, so the app doesn't start on a page that's about to go.
+    expect(await isPending(pending)).toBe(true);
+  });
+
+  it('starts straight away when nothing is waiting, without touching the network', async () => {
+    // Checking for a deploy is the browser's job, done in the background on
+    // navigation. Asking here would hold every startup on a round trip — or,
+    // on a connection that hangs, on the timeout.
+    const { ensureController } = await load();
+
+    await expect(ensureController()).resolves.toBe(true);
+    expect(registration.update).not.toHaveBeenCalled();
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it('leaves an update that is still installing for the next load', async () => {
+    const worker = fakeWorker('installing', true);
+    registration.installing = worker;
+
+    const { ensureController } = await load();
+
+    await expect(ensureController()).resolves.toBe(true);
+    expect(worker.postMessage).not.toHaveBeenCalled();
+  });
+
+  it('starts on the current build while another tab is running the app', async () => {
+    registration.waiting = fakeWorker('installed', false);
+
+    const { ensureController } = await load();
+
+    await expect(ensureController()).resolves.toBe(true);
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it('starts on the current build if the worker never answers', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const worker = fakeWorker('installed', true);
+    worker.postMessage.mockImplementation(() => {});
+    registration.waiting = worker;
+
+    const { ensureController } = await load();
+    const pending = ensureController();
+
+    await vi.advanceTimersByTimeAsync(3_000);
+
+    await expect(pending).resolves.toBe(true);
+    expect(reload).not.toHaveBeenCalled();
+    vi.useRealTimers();
   });
 });

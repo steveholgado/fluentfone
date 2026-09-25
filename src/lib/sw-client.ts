@@ -9,15 +9,26 @@
  * on a first install to take control early, and this resolves once that has
  * landed.
  *
+ * It is also where a new deploy is picked up: see `applyUpdate`.
+ *
  * Runs in dev as well as production. The dev worker is the same code with an
  * empty precache list, which switches off everything that touches the app
  * shell and leaves only the model tier — so there is nothing left to go stale.
  */
 
+import { TAKE_OVER } from '#/lib/cache/channel';
+
 const SW_URL = '/sw.js';
 
 /** How long to wait for the worker to claim this page before giving up. */
 const CLAIM_TIMEOUT_MS = 10_000;
+
+/**
+ * How long each step of applying an update may take before the app starts
+ * without it. Both are local round trips to the worker, so anything near this
+ * means something is wrong; the update isn't lost, just left for a later load.
+ */
+const UPDATE_TIMEOUT_MS = 3_000;
 
 let controllerPromise: Promise<boolean> | null = null;
 
@@ -50,10 +61,13 @@ async function resolveController(): Promise<boolean> {
   // exercise either locally, are not.
   //
   // Unconditional rather than skipped when a controller is already present:
-  // this doubles as the update check, which is what picks up an edit to sw.ts.
-  await navigator.serviceWorker.register(SW_URL);
+  // the registration is where `applyUpdate` finds a waiting deploy.
+  const registration = await navigator.serviceWorker.register(SW_URL);
 
-  if (navigator.serviceWorker.controller) return true;
+  if (navigator.serviceWorker.controller) {
+    await applyUpdate(registration);
+    return true;
+  }
 
   await navigator.serviceWorker.ready;
 
@@ -62,6 +76,83 @@ async function resolveController(): Promise<boolean> {
   if (navigator.serviceWorker.controller) return true;
 
   return waitForControllerChange();
+}
+
+/**
+ * Moves this page onto a newer deploy before the app starts, if one is already
+ * installed and waiting.
+ *
+ * The browser checks for a new `sw.js` on every navigation and installs it in
+ * the background, but the new worker then waits until every tab running the
+ * old one has closed. A refresh isn't enough: the refreshed page is served by
+ * the old worker before the old page is gone. Someone who keeps the app in a
+ * pinned tab would never see a deploy. So at startup — and only then, when
+ * there is nothing running that a reload could interrupt — a waiting worker is
+ * asked to take over, and the page reloads into it. The reload is the point,
+ * not just the switch: this page came from the previous build, whose chunks
+ * the new shell doesn't have.
+ *
+ * Only a worker that is already waiting. This never checks for or waits on an
+ * update itself, so startup never waits on the network: a deploy installs
+ * during one load and is applied at the start of the next, where it costs one
+ * quick reload.
+ *
+ * Resolves when there's nothing to apply: nothing waiting, the worker declined
+ * because another tab is running the app, or it didn't answer in time. Each
+ * of those leaves the update for a later load. When the update goes ahead it
+ * never resolves, so the app doesn't start on a page that's about to go.
+ */
+async function applyUpdate(
+  registration: ServiceWorkerRegistration,
+): Promise<void> {
+  const worker = registration.waiting;
+  if (!worker) return;
+
+  // Listening before asking, so the switch can't be missed. Kept however the
+  // ask turns out: once asked, the worker may take over at any point, and this
+  // page must not go on running one build under another's worker.
+  const switched = new Promise<true>((resolve) => {
+    navigator.serviceWorker.addEventListener(
+      'controllerchange',
+      () => {
+        location.reload();
+        resolve(true);
+      },
+      { once: true },
+    );
+  });
+
+  const accepted = await withTimeout(askToTakeOver(worker), false);
+  if (!accepted) return;
+
+  if (await withTimeout(switched, false)) {
+    await new Promise<never>(() => {});
+  }
+}
+
+/** Resolves with the worker's answer; see `TAKE_OVER`. */
+function askToTakeOver(worker: ServiceWorker): Promise<boolean> {
+  return new Promise((resolve) => {
+    const channel = new MessageChannel();
+    channel.port1.onmessage = (event) => resolve(event.data === true);
+    worker.postMessage(TAKE_OVER, [channel.port2]);
+  });
+}
+
+/**
+ * Settles with `fallback` if `promise` hasn't within UPDATE_TIMEOUT_MS, or if
+ * it rejects — as posting to a worker that has just gone redundant does.
+ */
+function withTimeout<T>(promise: Promise<T>, fallback: T): Promise<T> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(fallback), UPDATE_TIMEOUT_MS);
+    const settle = (value: T) => {
+      clearTimeout(timer);
+      resolve(value);
+    };
+
+    promise.then(settle, () => settle(fallback));
+  });
 }
 
 function waitForControllerChange(): Promise<boolean> {

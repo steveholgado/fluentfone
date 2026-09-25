@@ -4,6 +4,12 @@
 /vendor/*
   Cache-Control: public, max-age=31536000, immutable
 
+# Vite content-hashes everything it emits here, so a changed file gets a new
+# URL. Immutable lets the worker's install-time precache take files a new deploy
+# didn't change straight from the HTTP cache, without a revalidation round trip.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
 # The worker script decides when every other asset is refreshed, so it must not
 # be served from cache itself. Browsers already bypass the HTTP cache for the
 # worker script on an update check; this makes it explicit and covers hosts

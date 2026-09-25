@@ -1,6 +1,7 @@
 /**
- * The wire contract between the service worker, which counts bytes as they
- * stream past, and whoever is listening on the page.
+ * The wire contracts between the service worker and the page: the byte counts
+ * the worker broadcasts as they stream past, and the page's request that a
+ * waiting update take over.
  *
  * See the note at the top of ./rules.ts for why nothing in `lib/cache` may
  * import anything heavier than a type.
@@ -18,3 +19,10 @@ export interface AssetProgressMessage {
   /** Null where the response declared no Content-Length. */
   total: number | null;
 }
+
+/**
+ * Posted by a starting page to a waiting worker, with a MessagePort for the
+ * answer: `true` if it is taking over, `false` if another tab is still running
+ * the app on the old one.
+ */
+export const TAKE_OVER = 'take-over';

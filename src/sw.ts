@@ -4,7 +4,8 @@
  *
  * It serves two tiers that have nothing to do with each other:
  *
- * - The app shell is precached on install, so the app boots with no network.
+ * - The app shell — the /app document and what it loads, nothing from any
+ *   other page — is precached on install, so the app boots with no network.
  *   It is versioned by build and replaced wholesale on each deploy.
  * - Runtimes and model weights are cached the first time they are fetched,
  *   during the preload the user has explicitly agreed to. Three gigabytes is
@@ -33,6 +34,7 @@ import { BUILD_ID, PRECACHE_URLS } from './sw-precache';
 // what the service worker bundle pulls in is visible here at the call site.
 import {
   PROGRESS_CHANNEL,
+  TAKE_OVER,
   type AssetProgressMessage,
 } from './lib/cache/channel';
 import {
@@ -51,14 +53,35 @@ interface SwFetchEvent extends SwExtendableEvent {
   respondWith(response: Response | Promise<Response>): void;
 }
 
+interface SwMessageEvent extends SwExtendableEvent {
+  data: unknown;
+  source: { id: string } | null;
+  ports: readonly MessagePort[];
+}
+
+interface SwClient {
+  id: string;
+  url: string;
+}
+
 interface ServiceWorkerScope {
   addEventListener(
     type: 'install' | 'activate',
     handler: (event: SwExtendableEvent) => void,
   ): void;
   addEventListener(type: 'fetch', handler: (event: SwFetchEvent) => void): void;
+  addEventListener(
+    type: 'message',
+    handler: (event: SwMessageEvent) => void,
+  ): void;
   skipWaiting(): Promise<void>;
-  clients: { claim(): Promise<void> };
+  clients: {
+    claim(): Promise<void>;
+    matchAll(options: {
+      type: 'window';
+      includeUncontrolled: boolean;
+    }): Promise<SwClient[]>;
+  };
   registration: { active: unknown };
 }
 
@@ -88,6 +111,11 @@ sw.addEventListener('activate', (event) => {
   event.waitUntil(activate());
 });
 
+sw.addEventListener('message', (event) => {
+  if (event.data !== TAKE_OVER) return;
+  event.waitUntil(takeOver(event));
+});
+
 sw.addEventListener('fetch', (event) => {
   const { request } = event;
 
@@ -109,13 +137,10 @@ sw.addEventListener('fetch', (event) => {
   // including the module graph and its rewrites, so leave it alone.
   if (!SHELL_ENABLED) return;
 
-  if (request.mode === 'navigate') {
-    event.respondWith(serveNavigation(request));
-    return;
-  }
-
+  // Only /app and what it loads are precached. Every other page — the home
+  // page included — is the network's, online or not.
   if (precached.has(url.pathname)) {
-    event.respondWith(serveShellAsset(request));
+    event.respondWith(serveShell(request));
   }
 });
 
@@ -129,13 +154,43 @@ async function install(): Promise<void> {
   // page that registered it until the next navigation — which is precisely the
   // visit where the user downloads everything, so it would observe none of it.
   //
-  // Deliberately NOT done on an update: a new deploy should take over on the
-  // next navigation rather than swapping the shell under a running page. That
-  // reasoning is about the shell, so it doesn't apply in dev — there, an edit
-  // to this file should take effect on the reload that fetched it.
+  // Deliberately NOT done on an update: that would swap the shell under a
+  // running page. An update waits until a starting page asks it to take over
+  // (see `takeOver`). That reasoning is about the shell, so it doesn't apply in
+  // dev — there, an edit to this file should take effect on the reload that
+  // fetched it.
   if (!SHELL_ENABLED || !sw.registration.active) {
     await sw.skipWaiting();
   }
+}
+
+/**
+ * A page starting up asks a waiting update to take over, then reloads into it
+ * (see `applyUpdate` in `lib/sw-client.ts`). Left alone, a waiting worker
+ * activates only once every tab running the old one has closed — a refresh
+ * isn't enough.
+ *
+ * It takes over only if no other tab is running the app. Switching would move
+ * that tab onto this build's shell mid-session, where the previous build's
+ * chunks it asks for next are no longer cached and may no longer be deployed.
+ * Tabs on other pages don't count: nothing they load comes from the shell.
+ */
+async function takeOver(event: SwMessageEvent): Promise<void> {
+  const clients = await sw.clients.matchAll({
+    type: 'window',
+    includeUncontrolled: true,
+  });
+
+  const othersRunningApp = clients.filter(
+    (client) =>
+      client.id !== event.source?.id &&
+      precached.has(new URL(client.url).pathname),
+  );
+
+  const accepted = othersRunningApp.length === 0;
+  if (accepted) await sw.skipWaiting();
+
+  event.ports[0]?.postMessage(accepted);
 }
 
 async function activate(): Promise<void> {
@@ -161,36 +216,21 @@ async function purgeOldShells(): Promise<void> {
 }
 
 /**
- * Documents are served from the shell so the app boots offline. `ignoreSearch`
- * because a query string doesn't change which prerendered document applies,
- * and `ignoreVary` because the precached responses were stored against a
- * fetch, not against this navigation's headers.
+ * The /app document and its hashed assets, cache-first, so the app boots
+ * offline. A hit is always correct: the assets are immutable, and the document
+ * is replaced along with everything else when the build id changes.
+ *
+ * `ignoreSearch` because a query string doesn't change which prerendered
+ * document applies, and `ignoreVary` because the precached responses were
+ * stored against a fetch, not against this request's headers.
  */
-async function serveNavigation(request: Request): Promise<Response> {
+async function serveShell(request: Request): Promise<Response> {
   const cache = await caches.open(SHELL_CACHE);
 
   const cached = await cache.match(request, {
     ignoreSearch: true,
     ignoreVary: true,
   });
-  if (cached) return cached;
-
-  try {
-    return await fetch(request);
-  } catch {
-    // Offline and no exact match — hand back the root document and let the
-    // client router resolve the path (including to its not-found route).
-    const fallback = await cache.match('/', { ignoreVary: true });
-    if (fallback) return fallback;
-    throw new Error('Offline, and no cached document to fall back to.');
-  }
-}
-
-/** Hashed assets are immutable, so a hit is always correct. */
-async function serveShellAsset(request: Request): Promise<Response> {
-  const cache = await caches.open(SHELL_CACHE);
-
-  const cached = await cache.match(request, { ignoreVary: true });
   if (cached) return cached;
 
   return fetch(request);

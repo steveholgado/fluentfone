@@ -2,13 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   PROGRESS_CHANNEL,
+  TAKE_OVER,
   type AssetProgressMessage,
 } from '#/lib/cache/channel';
 import { MODELS_CACHE } from '#/lib/cache/names';
 import { stubCacheStorage, type FakeCache } from '#/test-utils';
 
 const PRECACHE_URLS = [
-  '/',
   '/app',
   '/assets/index-aaa.js',
   '/assets/worker-bbb.js',
@@ -43,6 +43,7 @@ let handlers: Map<string, Handler>;
 let buckets: Map<string, FakeCache>;
 let skipWaiting: ReturnType<typeof vi.fn>;
 let claim: ReturnType<typeof vi.fn>;
+let openClients: { id: string; url: string }[];
 let registration: { active: unknown };
 
 /** Fires install/activate and waits for whatever it passed to waitUntil. */
@@ -88,13 +89,14 @@ beforeEach(async () => {
   handlers = new Map();
   skipWaiting = vi.fn().mockResolvedValue(undefined);
   claim = vi.fn().mockResolvedValue(undefined);
+  openClients = [];
   registration = { active: null };
 
   vi.stubGlobal('self', {
     addEventListener: (type: string, handler: Handler) =>
       handlers.set(type, handler),
     skipWaiting,
-    clients: { claim },
+    clients: { claim, matchAll: vi.fn(async () => openClients) },
     registration,
   });
 
@@ -157,6 +159,62 @@ describe('install', () => {
   });
 });
 
+describe('take over', () => {
+  /** Posts a message from the tab with id `from`; returns the answer port. */
+  async function message(data: unknown, from = 'starting') {
+    const port = { postMessage: vi.fn() };
+    const waits: Promise<unknown>[] = [];
+
+    handlers.get('message')?.({
+      data,
+      source: { id: from },
+      ports: [port],
+      waitUntil: (p: Promise<unknown>) => waits.push(p),
+    });
+
+    await Promise.all(waits);
+    return port;
+  }
+
+  beforeEach(() => {
+    // An update, waiting behind an existing worker.
+    registration.active = {};
+  });
+
+  it('takes over when asked by the only tab running the app', async () => {
+    openClients = [
+      { id: 'starting', url: 'http://localhost:3000/app' },
+      // Other pages load nothing from the shell, so they don't hold it back.
+      { id: 'home', url: 'http://localhost:3000/' },
+    ];
+
+    const port = await message(TAKE_OVER);
+
+    expect(skipWaiting).toHaveBeenCalled();
+    expect(port.postMessage).toHaveBeenCalledWith(true);
+  });
+
+  it('declines while another tab is running the app', async () => {
+    // Switching would move that tab onto this build's shell mid-session.
+    openClients = [
+      { id: 'starting', url: 'http://localhost:3000/app' },
+      { id: 'other', url: 'http://localhost:3000/app?utm=x' },
+    ];
+
+    const port = await message(TAKE_OVER);
+
+    expect(skipWaiting).not.toHaveBeenCalled();
+    expect(port.postMessage).toHaveBeenCalledWith(false);
+  });
+
+  it('ignores any other message', async () => {
+    const port = await message('something-else');
+
+    expect(skipWaiting).not.toHaveBeenCalled();
+    expect(port.postMessage).not.toHaveBeenCalled();
+  });
+});
+
 describe('activate', () => {
   it('claims open clients, including the web workers', async () => {
     await fire('activate');
@@ -210,16 +268,18 @@ describe('fetch', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it('falls back to the root document when offline on an unknown path', async () => {
+  it('leaves every page but /app to the network, the home page included', async () => {
+    // Only the app is precached. Other pages aren't cached at all, so there is
+    // no document for the worker to answer with — online or off.
     await fire('install');
-    vi.mocked(fetch).mockRejectedValue(new Error('offline'));
 
-    const response = await fetchEvent('http://localhost:3000/nope', {
-      mode: 'navigate',
-    });
+    for (const path of ['/', '/nope']) {
+      const response = await fetchEvent(`http://localhost:3000${path}`, {
+        mode: 'navigate',
+      });
 
-    // The client router resolves the path from here, including to not-found.
-    expect(await response?.text()).toBe('network:/');
+      expect(response).toBeUndefined();
+    }
   });
 
   it('serves a precached asset from the shell', async () => {
