@@ -5,7 +5,12 @@ import { usePreload } from '#/hooks/usePreload';
 import { checkDeviceSupport, type DeviceSupport } from '#/lib/device';
 import { checkPreloaded, isFullyPreloaded, preloadAll } from '#/lib/preload';
 import type { PreloadStatus } from '#/lib/preload';
+import { requestPersistentStorage } from '#/lib/persist';
 import { VOICE_ID } from '#/config';
+
+vi.mock('#/lib/persist', () => ({
+  requestPersistentStorage: vi.fn().mockResolvedValue(false),
+}));
 
 // Mocked rather than driven through a stubbed navigator.gpu: the real module
 // reads that once, when it loads, so a per-test stub would never reach it.
@@ -308,6 +313,45 @@ describe('usePreload', () => {
       });
     });
 
+    it('asks for persistent storage when the download starts, not on mount', async () => {
+      vi.mocked(checkPreloaded).mockResolvedValue(status(false));
+      vi.mocked(isFullyPreloaded).mockReturnValue(false);
+      vi.mocked(preloadAll).mockResolvedValue(undefined);
+
+      const { result } = renderHook(() => usePreload());
+      await waitFor(() => expect(result.current.phase).toBe('needed'));
+
+      // Firefox prompts for it, so it waits for the click that agrees to the
+      // download.
+      expect(requestPersistentStorage).not.toHaveBeenCalled();
+
+      await act(async () => {
+        await result.current.preload();
+      });
+
+      expect(requestPersistentStorage).toHaveBeenCalledOnce();
+    });
+
+    it('downloads without waiting on the persistent storage answer', async () => {
+      vi.mocked(checkPreloaded).mockResolvedValue(status(false));
+      vi.mocked(isFullyPreloaded).mockReturnValue(false);
+      vi.mocked(preloadAll).mockResolvedValue(undefined);
+      // A Firefox prompt the user never answers.
+      vi.mocked(requestPersistentStorage).mockReturnValueOnce(
+        new Promise(() => {}),
+      );
+
+      const { result } = renderHook(() => usePreload());
+      await waitFor(() => expect(result.current.phase).toBe('needed'));
+
+      await act(async () => {
+        await result.current.preload();
+      });
+
+      expect(preloadAll).toHaveBeenCalled();
+      expect(result.current.cached).toEqual(status(true));
+    });
+
     it('sets an error status and stops preloading on failure', async () => {
       vi.mocked(checkPreloaded).mockResolvedValue(status(false));
       vi.mocked(isFullyPreloaded).mockReturnValue(false);
@@ -371,6 +415,7 @@ describe('usePreload', () => {
       });
 
       expect(preloadAll).not.toHaveBeenCalled();
+      expect(requestPersistentStorage).not.toHaveBeenCalled();
       expect(result.current.isPreloading).toBe(false);
     });
   });

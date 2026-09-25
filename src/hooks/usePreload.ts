@@ -8,6 +8,7 @@ import {
   type PreloadStatus,
 } from '#/lib/preload';
 import { checkDeviceSupport, type DeviceSupport } from '#/lib/device';
+import { requestPersistentStorage } from '#/lib/persist';
 import { ensureController } from '#/lib/sw-client';
 import { VOICE_ID } from '#/config';
 
@@ -116,6 +117,11 @@ export function usePreload() {
     // The UI doesn't offer the button in this phase, but downloading gigabytes
     // onto a device that can't use them is worth refusing at the source too.
     if (phase === 'unsupported') return;
+
+    // First, while the click that got us here still counts as user activation
+    // — Firefox won't prompt without it. Not awaited: the download goes ahead
+    // whatever the answer.
+    void requestPersistentStorage();
 
     setIsPreloading(true);
     maxPercentRef.current = { index: 0, percent: 0 };
