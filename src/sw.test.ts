@@ -518,6 +518,42 @@ describe('models and runtimes', () => {
     expect(stored(MODELS_CACHE, MODEL_URL)).toBe(false);
   });
 
+  it('records a failed cache write against the step', async () => {
+    // Over quota, most likely. The step still resolves and writes its marker,
+    // so without this record the next visit would believe the model is on
+    // disk and quietly download it again.
+    stubDownload(4096);
+    const models = await caches.open(MODELS_CACHE);
+    vi.mocked(models.put).mockRejectedValueOnce(
+      new DOMException('Quota exceeded', 'QuotaExceededError'),
+    );
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const response = await fetchEvent(MODEL_URL);
+    await response?.arrayBuffer();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // The caller still gets the bytes; only storing them failed.
+    expect(response?.status).toBe(200);
+    expect(stored(MODELS_CACHE, MODEL_URL)).toBe(false);
+    expect(stored(MODELS_CACHE, 'https://write-failed.invalid/chat')).toBe(
+      true,
+    );
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('records nothing when the cache write succeeds', async () => {
+    stubDownload(4096);
+
+    await (await fetchEvent(MODEL_URL))?.arrayBuffer();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(stored(MODELS_CACHE, 'https://write-failed.invalid/chat')).toBe(
+      false,
+    );
+  });
+
   it('caches a model even with no shell, as it does in dev', async () => {
     // The whole reason the dev worker exists: 3 GB re-downloaded on every
     // reload is not a workable dev loop.

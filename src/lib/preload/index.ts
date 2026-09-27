@@ -1,6 +1,7 @@
 import * as speechToText from '#/lib/speech-to-text';
 import * as chat from '#/lib/chat';
 import * as textToSpeech from '#/lib/text-to-speech';
+import { clearWriteFailed } from '#/lib/cache/markers';
 import type { LoadProgress } from '#/lib/progress';
 import { trackStep } from './track';
 import { DOWNLOAD_ORDER, STEPS_BY_LABEL } from './steps';
@@ -75,6 +76,11 @@ async function runStep(
   onProgress?: (step: PreloadStepId, p: LoadProgress) => void,
 ): Promise<void> {
   onProgress?.(step, START);
+
+  // Every write this run makes is tested afresh: a failure recorded by an
+  // earlier run must not outlive a retry that succeeds, and one this run hits
+  // is recorded again. Before the work, so it can't erase this run's own.
+  await clearWriteFailed(step);
 
   const stop = trackStep(step, (p) => onProgress?.(step, p));
 

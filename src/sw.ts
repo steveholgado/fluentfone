@@ -42,6 +42,7 @@ import {
   SHELL_CACHE_PREFIX,
   shellCacheName,
 } from './lib/cache/names';
+import { markWriteFailed } from './lib/cache/markers';
 import { ruleFor, type AssetRule } from './lib/cache/rules';
 
 interface SwExtendableEvent {
@@ -279,15 +280,17 @@ async function serveAsset(
   const [forCaller, forCache] = response.body.tee();
 
   event.waitUntil(
-    // Logged rather than swallowed. A rejection here (quota, most likely, on
-    // a file this size) leaves the bytes unstored while the step still
-    // succeeds and writes its marker — so the next visit believes the model is
-    // on disk and quietly downloads it again.
+    // A rejection here (quota, most likely, on a file this size) leaves the
+    // bytes unstored while the step still succeeds and writes its marker. So
+    // it is recorded against the step, which `hasStep` believes over the
+    // marker — otherwise the next visit would think the model is on disk and
+    // quietly download it again.
     cache
       .put(request, new Response(forCache, responseInit(response)))
-      .catch((err) =>
-        console.warn('Asset cache write failed:', request.url, err),
-      ),
+      .catch((err) => {
+        console.warn('Asset cache write failed:', request.url, err);
+        return markWriteFailed(rule.step);
+      }),
   );
 
   return count(

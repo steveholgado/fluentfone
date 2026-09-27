@@ -12,9 +12,12 @@ import {
   PROGRESS_CHANNEL,
   type AssetProgressMessage,
 } from '#/lib/cache/channel';
+import { hasStep, markStep, markWriteFailed } from '#/lib/cache/markers';
+import { MODELS_CACHE } from '#/lib/cache/names';
 import * as chat from '#/lib/chat';
 import * as speechToText from '#/lib/speech-to-text';
 import * as textToSpeech from '#/lib/text-to-speech';
+import { stubCacheStorage } from '#/test-utils';
 
 vi.mock('#/lib/speech-to-text', () => ({
   preload: vi.fn().mockResolvedValue(undefined),
@@ -83,6 +86,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.unstubAllGlobals();
   sw?.close();
   echo?.close();
   sw = undefined;
@@ -184,6 +188,36 @@ describe('preloadAll', () => {
       );
       expect(first?.[1]).toEqual({ loaded: 0, total: 1, progress: 0 });
     }
+  });
+
+  it('clears a write failure from an earlier run before the step works', async () => {
+    // Otherwise a retry that stores everything would still read as not
+    // downloaded — and one that fails again must be free to record it.
+    stubCacheStorage();
+    await markWriteFailed('chat');
+
+    let failedDuringWork: boolean | undefined;
+    vi.mocked(chat.preload).mockImplementation(async () => {
+      const models = await caches.open(MODELS_CACHE);
+      failedDuringWork =
+        (await models.match('https://write-failed.invalid/chat')) !== undefined;
+    });
+
+    await preloadAll('voice-id');
+
+    expect(failedDuringWork).toBe(false);
+  });
+
+  it('keeps a write failure recorded during the step', async () => {
+    stubCacheStorage();
+    await markStep('chat', 'model');
+    vi.mocked(chat.preload).mockImplementation(async () => {
+      await markWriteFailed('chat');
+    });
+
+    await preloadAll('voice-id');
+
+    await expect(hasStep('chat', 'model')).resolves.toBe(false);
   });
 
   it('lands every step on 100%, however little it reported', async () => {

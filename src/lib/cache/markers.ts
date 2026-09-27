@@ -69,6 +69,50 @@ export async function markStep(
   }
 }
 
+/**
+ * A marker is only as good as the writes it vouches for, and those can fail
+ * after it is written: the service worker's cache write finishes in the
+ * background, often after the step has resolved and marked itself done. When
+ * one fails (over quota, most likely, on files this size), the service worker
+ * records it here, and `hasStep` believes that over the marker.
+ *
+ * Per step rather than per key — the service worker knows which step a URL
+ * belongs to, but not the version a marker is keyed by — and on its own host
+ * so no marker key can collide with it. Cleared at the start of each run of
+ * the step (see `runStep` in lib/preload), which is what makes either order
+ * safe: a failure recorded after the marker still wins, and a retry starts
+ * clean but records any write of its own that fails.
+ */
+function failureUrl(step: PreloadStepId): string {
+  return `https://write-failed.invalid/${step}`;
+}
+
+export async function markWriteFailed(step: PreloadStepId): Promise<void> {
+  if (typeof caches === 'undefined') return;
+
+  try {
+    const cache = await caches.open(MODELS_CACHE);
+    await cache.put(failureUrl(step), new Response('1'));
+  } catch (err) {
+    // The marker goes on vouching for bytes that aren't there, which is what
+    // happened before this record existed: a silent re-download next visit.
+    console.warn('Write-failure record failed (continuing):', err);
+  }
+}
+
+export async function clearWriteFailed(step: PreloadStepId): Promise<void> {
+  if (typeof caches === 'undefined') return;
+
+  try {
+    const cache = await caches.open(MODELS_CACHE);
+    await cache.delete(failureUrl(step));
+  } catch (err) {
+    // Left in place, it only makes the step look not downloaded — a redundant
+    // preload screen, never a skipped one.
+    console.warn('Write-failure record clear failed (continuing):', err);
+  }
+}
+
 export async function hasStep(
   step: PreloadStepId,
   key: string,
@@ -76,5 +120,6 @@ export async function hasStep(
   if (typeof caches === 'undefined') return false;
 
   const cache = await caches.open(MODELS_CACHE);
+  if ((await cache.match(failureUrl(step))) !== undefined) return false;
   return (await cache.match(markerUrl(step, key))) !== undefined;
 }
