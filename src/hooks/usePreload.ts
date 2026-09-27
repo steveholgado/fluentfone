@@ -7,6 +7,7 @@ import {
   preloadAll,
   type PreloadStatus,
 } from '#/lib/preload';
+import { sweepStaleAssets } from '#/lib/preload/sweep';
 import { checkDeviceSupport, type DeviceSupport } from '#/lib/device';
 import { requestPersistentStorage } from '#/lib/persist';
 import { ensureController } from '#/lib/sw-client';
@@ -83,6 +84,12 @@ export function usePreload() {
       // startup. A false here means no caching is available — the app still
       // runs, it just re-downloads each session.
       await ensureController();
+      if (cancelled) return;
+
+      // Before the check, so the space it frees is already free by the time
+      // anything asks how much there is. It never touches a current file, so
+      // the check's answer is the same either way.
+      await sweepStaleAssets();
       if (cancelled) return;
 
       const result = await checkPreloaded(VOICE_ID);

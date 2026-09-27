@@ -6,10 +6,15 @@ import { checkDeviceSupport, type DeviceSupport } from '#/lib/device';
 import { checkPreloaded, isFullyPreloaded, preloadAll } from '#/lib/preload';
 import type { PreloadStatus } from '#/lib/preload';
 import { requestPersistentStorage } from '#/lib/persist';
+import { sweepStaleAssets } from '#/lib/preload/sweep';
 import { VOICE_ID } from '#/config';
 
 vi.mock('#/lib/persist', () => ({
   requestPersistentStorage: vi.fn().mockResolvedValue(false),
+}));
+
+vi.mock('#/lib/preload/sweep', () => ({
+  sweepStaleAssets: vi.fn().mockResolvedValue(0),
 }));
 
 // Mocked rather than driven through a stubbed navigator.gpu: the real module
@@ -139,6 +144,24 @@ describe('usePreload', () => {
 
     await waitFor(() => expect(result.current.phase).toBe('needed'));
     expect(preloadAll).not.toHaveBeenCalled();
+  });
+
+  it('sweeps stale downloads before checking what is cached', async () => {
+    const order: string[] = [];
+    vi.mocked(sweepStaleAssets).mockImplementationOnce(async () => {
+      order.push('sweep');
+      return 0;
+    });
+    vi.mocked(checkPreloaded).mockImplementationOnce(async () => {
+      order.push('check');
+      return status(false);
+    });
+    vi.mocked(isFullyPreloaded).mockReturnValue(false);
+
+    const { result } = renderHook(() => usePreload());
+
+    await waitFor(() => expect(result.current.phase).toBe('needed'));
+    expect(order).toEqual(['sweep', 'check']);
   });
 
   it('does not update state after unmount', async () => {
@@ -386,6 +409,7 @@ describe('usePreload', () => {
       ]);
       // The point of the gate: nothing is asked of storage, and nothing is
       // fetched.
+      expect(sweepStaleAssets).not.toHaveBeenCalled();
       expect(checkPreloaded).not.toHaveBeenCalled();
       expect(preloadAll).not.toHaveBeenCalled();
     });

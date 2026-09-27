@@ -37,5 +37,18 @@ export const MODEL_KEY = `${MODEL}:${
     : Object.values(MODEL_DTYPE).join('+')
 }`;
 
+/**
+ * The onnxruntime-web build Transformers.js depends on, and so fetches its wasm
+ * from jsDelivr under — not the app's own onnxruntime-web, which is Piper's.
+ * Lets the models-cache sweep tell this runtime from one an older
+ * Transformers.js left behind.
+ *
+ * Written out because the package doesn't export its package.json. A test
+ * checks it against the installed dependency, so a Transformers.js bump that
+ * changes the pin fails there rather than having the sweep delete the runtime
+ * on every visit.
+ */
+export const TRANSFORMERS_ORT_VERSION = '1.26.0-dev.20260416-b7804b056c';
+
 /** What Whisper expects its input resampled to. */
 export const SAMPLE_RATE = 16000;

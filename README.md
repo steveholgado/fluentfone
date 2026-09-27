@@ -33,7 +33,9 @@ agreed to it.
 
 - Register the service worker and wait until it controls the page — it has to
   be in charge before anything is fetched, or it would see none of it
-- Read five step markers from the `models-v1` cache
+- Delete files an older build downloaded and this one no longer uses (see
+  [Changing a model or dependency](#changing-a-model-or-dependency))
+- Read four step markers from the `models-v1` cache
 - Read OPFS for the voice, which piper-tts-web owns and we can only observe
 - No network, no workers, no libraries loaded
 - All five present → straight to the conversation; anything missing → preload
@@ -76,9 +78,14 @@ place cache policy is written:
 - **`names.ts`** — the two bucket names
 - **`rules.ts`** — which URLs belong to which preload step, whether the worker
   stores them, and roughly how big they are
-- **`markers.ts`** — reading and writing the markers that record a step as done
+- **`markers.ts`** — reading and writing the markers that record a step as
+  done, and the records of cache writes that failed
 - **`channel.ts`** — the byte-count message the worker broadcasts, and the
   page's request that a waiting update take over
+
+The one piece of cache policy outside it is `src/lib/preload/sweep.ts`, which
+deletes old versions from `models-v1`. It needs the current version of every
+library, and some of those must not be reachable from the worker bundle.
 
 `src/lib/cache/` is the bottom of the import graph: both `sw.ts` and the page
 import from it, so every file in it imports only dependency-free leaves
@@ -91,13 +98,21 @@ Two buckets, because they have opposite lifecycles:
   loads, precached on install so the app boots offline. No other page is
   cached. Replaced wholesale on each deploy; the old one is purged on activate.
 - **`models-v1`** — runtimes, weights, and the step markers that vouch for them.
-  Cached on first fetch during the preload the user agreed to, and never purged.
+  Cached on first fetch during the preload the user agreed to, and never purged
+  wholesale — only files a newer build has replaced are deleted, one by one.
 
 A marker lives in the same bucket as the bytes it stands for, which is what
 makes it trustworthy: browsers evict storage per origin, not per entry, so it
 cannot outlive them. Each marker is keyed by whatever makes the download
 distinct — a voice id, a model URL, a version-stamped path — so switching model
 or bumping a dependency misses rather than matching something stale.
+
+A marker is written by the page when a step finishes, but the worker's copy
+into the cache finishes in the background and can still fail after that —
+over quota, usually, on files this size. When it does, the worker records it
+at `https://write-failed.invalid/<step>`, and the check believes that record
+over the marker, so the step shows as not downloaded. The record is cleared
+when the step next runs.
 
 The voice is the one exception. piper-tts-web writes it to OPFS and offers no
 way to point it elsewhere, so the worker counts those bytes without storing
@@ -161,6 +176,7 @@ preloadAll() — five steps, strictly one at a time:
   each step:  library fetch ─▶ worker ─▶ network ─┬─▶ cache
                                                   └─▶ bytes ─▶ progress bar
   each step ends: the page writes a marker into models-v1
+  a store that fails: the worker writes write-failed.invalid/<step>
   │
   ▼
 Start
@@ -175,6 +191,8 @@ JS / CSS / worker chunks     ← shell-<build id>  ┘ worker controls from byte
   │
   ▼  ensureController()      ← already controlling; applies a new deploy if
   │                            one is waiting (see Updates), else returns
+  ▼  sweepStaleAssets()      ← deletes what an older build left in models-v1;
+  │                            usually nothing
   ▼  checkPreloaded()        ← 4 markers hit + voice found in OPFS
   │
   ▼
@@ -199,6 +217,36 @@ Each step therefore starts from an estimate in `EXPECTED_BYTES` and takes
 `max(estimate, observed)`, so a stale estimate is corrected by observation
 rather than believed. Refresh them on a dependency bump; being wrong is cheap
 in both directions.
+
+### Changing a model or dependency
+
+Most of what a change needs happens on its own. Markers are keyed by model and
+version, so the check misses and the preload screen offers the new download.
+And on every load, `sweepStaleAssets()` (`src/lib/preload/sweep.ts`) deletes
+from `models-v1` any file that is another version of something the app
+downloads, or that no rule in `rules.ts` matches any more.
+
+The sweep has no list of the files the app needs — the libraries choose those
+URLs themselves. Instead, each step has a check in `IS_STALE` that compares a
+URL against the current model name or version. Anything it can't place is
+kept: a current file deleted by mistake would be deleted, and downloaded
+again, on every visit.
+
+What to do by hand:
+
+| Change                                                     | Handled for you                                                       | By hand                                                                                                                     |
+| ---------------------------------------------------------- | --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Whisper `MODEL`                                            | Marker misses; old model's files deleted                              | Check the `speech-to-text` rule still matches the new URL (it looks for `onnx-community/whisper`); refresh `EXPECTED_BYTES` |
+| Whisper `MODEL_DTYPE`                                      | Marker misses                                                         | Nothing — but the old precision's files are **not** deleted                                                                 |
+| `DEFAULT_CHAT_MODEL`                                       | Marker misses; old model file deleted                                 | A model outside `CHAT_MODELS` needs its own `EXPECTED_BYTES` figure                                                         |
+| `@litert-lm/core`                                          | Version read from its package.json; marker, rule and sweep all follow | Refresh `EXPECTED_BYTES`                                                                                                    |
+| `@huggingface/transformers`                                | —                                                                     | Update `TRANSFORMERS_ORT_VERSION` in `speech-to-text/constants.ts`; a test fails until you do                               |
+| Piper's `onnxruntime-web` or `@diffusionstudio/piper-wasm` | The vendor plugin copies the files into a new version folder          | Update `ONNX_WASM_BASE` / `PIPER_WASM_BASE` in `text-to-speech/constants.ts` to match                                       |
+| `VOICE_ID`                                                 | The OPFS check misses and the new voice downloads                     | Nothing — but the old voice stays in OPFS; the sweep only covers `models-v1`                                                |
+| A new preload step                                         | The type checker asks for its `EXPECTED_BYTES` and `IS_STALE` entries | Add its rule to `rules.ts`                                                                                                  |
+
+Old markers are never deleted either. They're a few bytes each, and keyed by
+version, so nothing matches them again.
 
 ### In dev
 
