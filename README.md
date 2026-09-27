@@ -55,6 +55,15 @@ Transformers.js API downloads its wasm runtime without also building the
 pipeline. The others split, so the runtime and the weights each get a full
 0→100% sweep instead of sharing a bar whose total jumps partway through.
 
+The screen gives the size of what's left to download and asks for a normal
+window, since private windows can't keep downloads this size. It says so to
+everyone rather than checking: browsers deliberately hide private mode, and
+`navigator.storage.estimate()` can't be trusted to reveal it — it can't see a
+full disk, and Brave reports a fixed 2 GiB whatever the real limit. In a normal
+window, every browser with WebGPU allows far more than the app needs. When a
+save does fail, the write-failure record (see [Caching](#caching)) keeps the
+step showing as not downloaded, so the app never claims files it doesn't have.
+
 ### Conversation
 
 - **Connecting** — briefly, before the first stage reports

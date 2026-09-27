@@ -2,6 +2,7 @@ import * as speechToText from '#/lib/speech-to-text';
 import * as chat from '#/lib/chat';
 import * as textToSpeech from '#/lib/text-to-speech';
 import { clearWriteFailed } from '#/lib/cache/markers';
+import { EXPECTED_BYTES } from '#/lib/cache/rules';
 import type { LoadProgress } from '#/lib/progress';
 import { trackStep } from './track';
 import { DOWNLOAD_ORDER, STEPS_BY_LABEL } from './steps';
@@ -128,6 +129,17 @@ export async function checkPreloaded(voiceId: string): Promise<PreloadStatus> {
     'chat-runtime': chatRuntime,
     chat: chatCached,
   };
+}
+
+/**
+ * Roughly what a download would fetch, given what's already on disk — what
+ * the preload screen tells the user they're agreeing to.
+ */
+export function bytesNeeded(status: PreloadStatus): number {
+  return DOWNLOAD_ORDER.filter((step) => !status[step]).reduce(
+    (sum, step) => sum + EXPECTED_BYTES[step],
+    0,
+  );
 }
 
 export function isFullyPreloaded(status: PreloadStatus): boolean {

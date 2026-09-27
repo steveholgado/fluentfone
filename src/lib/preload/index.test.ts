@@ -1,11 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  bytesNeeded,
   checkPreloaded,
   isFullyPreloaded,
   isLabelPreloaded,
   preloadAll,
 } from '#/lib/preload';
+import { EXPECTED_BYTES } from '#/lib/cache/rules';
 import type { PreloadStatus } from '#/lib/preload';
 import { DOWNLOAD_ORDER } from '#/lib/preload/steps';
 import {
@@ -290,6 +292,22 @@ describe('checkPreloaded', () => {
     expect(warnSpy).toHaveBeenCalled();
 
     warnSpy.mockRestore();
+  });
+});
+
+describe('bytesNeeded', () => {
+  it('counts only the steps that are missing', () => {
+    expect(bytesNeeded(status(true))).toBe(0);
+    expect(bytesNeeded(status(true, { chat: false }))).toBe(
+      EXPECTED_BYTES.chat,
+    );
+  });
+
+  it('comes to the whole app when nothing is cached', () => {
+    // The voice included, although it lands in OPFS rather than the cache.
+    expect(bytesNeeded(status(false))).toBe(
+      Object.values(EXPECTED_BYTES).reduce((sum, bytes) => sum + bytes, 0),
+    );
   });
 });
 

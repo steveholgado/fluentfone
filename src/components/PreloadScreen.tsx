@@ -1,4 +1,5 @@
 import {
+  bytesNeeded,
   isFullyPreloaded,
   isLabelPreloaded,
   type PreloadLabel,
@@ -7,6 +8,7 @@ import {
 import type { PreloadProgress } from '#/hooks/usePreload';
 import { DownloadProgressBar } from '#/components/DownloadProgressBar';
 import { Notification } from '#/components/Notification';
+import { formatBytes } from '#/utils/formatBytes';
 
 const LABELS: Record<PreloadLabel, string> = {
   'speech-to-text': 'Speech-to-text',
@@ -24,6 +26,28 @@ interface PreloadScreenProps {
   visible: boolean;
   onPreload: () => void;
   onStart: () => void;
+}
+
+/**
+ * Shown to everyone rather than detected. Browsers deliberately hide private
+ * mode, and the quota they report can't be trusted to reveal it — Brave, for
+ * one, reports a fixed 2 GiB. In a normal window, any browser with WebGPU
+ * allows far more than the app needs, so a private window is the case worth
+ * warning about.
+ */
+function DownloadNote({ bytes }: { bytes: number }) {
+  return (
+    <div className="flex flex-col gap-4 rounded-lg bg-amber-100 p-4 text-sm">
+      <p>
+        This app downloads about {formatBytes(bytes)}, kept on this device for
+        next time.
+      </p>
+      <p>
+        Private windows have a size limit, so please use a normal window.
+        Otherwise the files will download again each time.
+      </p>
+    </div>
+  );
 }
 
 export function PreloadScreen({
@@ -57,6 +81,8 @@ export function PreloadScreen({
       </ul>
 
       {!!status && <div>{status}</div>}
+
+      {!ready && <DownloadNote bytes={bytesNeeded(cached)} />}
 
       {ready ? (
         <button
