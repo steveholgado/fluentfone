@@ -1,12 +1,24 @@
 /**
  * Shared between worker.ts, which builds the pipeline, and index.ts, which
- * uses MODEL_KEY to key the step marker — so a model or precision change
- * misses the old marker rather than matching it.
+ * uses MODEL_KEY to key the step marker — so a model, revision or precision
+ * change misses the old marker rather than matching it.
  */
 
 import { HAS_WEBGPU } from '#/lib/device';
 
 export const MODEL = 'onnx-community/whisper-small';
+
+/**
+ * The commit of MODEL to download from, rather than Transformers.js' default
+ * of `main`. The weights are several files fetched separately, so following a
+ * branch risks an interrupted download resuming against a newer commit and
+ * pairing one commit's encoder with another's decoder. Pinned, the URL is the
+ * version, which is what the step marker and the sweep both assume.
+ *
+ * Get the hash with
+ * `curl -s https://huggingface.co/api/models/onnx-community/whisper-small | jq -r .sha`.
+ */
+export const MODEL_REVISION = '36050c46d777d46dc4b5f43f6d90574fc38f8732';
 
 /**
  * Selects which weight files Transformers.js downloads.
@@ -29,9 +41,9 @@ export const MODEL_DTYPE = HAS_WEBGPU
 
 /**
  * Identifies this set of weights for the step marker, e.g.
- * `onnx-community/whisper-small:fp32+q4`.
+ * `onnx-community/whisper-small@36050c4…:fp32+q4`.
  */
-export const MODEL_KEY = `${MODEL}:${
+export const MODEL_KEY = `${MODEL}@${MODEL_REVISION}:${
   typeof MODEL_DTYPE === 'string'
     ? MODEL_DTYPE
     : Object.values(MODEL_DTYPE).join('+')

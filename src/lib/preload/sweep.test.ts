@@ -4,7 +4,10 @@ import { version as LITERT_VERSION } from '@litert-lm/core/package.json';
 import { MODELS_CACHE } from '#/lib/cache/names';
 import { CHAT_MODELS, DEFAULT_CHAT_MODEL } from '#/lib/chat/constants';
 import { sweepStaleAssets } from '#/lib/preload/sweep';
-import { TRANSFORMERS_ORT_VERSION } from '#/lib/speech-to-text/constants';
+import {
+  MODEL_REVISION as WHISPER_REVISION,
+  TRANSFORMERS_ORT_VERSION,
+} from '#/lib/speech-to-text/constants';
 import {
   ONNX_WASM_BASE,
   PIPER_WASM_BASE,
@@ -18,8 +21,8 @@ const OTHER_CHAT_MODEL =
 const CURRENT = [
   `${location.origin}${ONNX_WASM_BASE}ort-wasm-simd-threaded.wasm`,
   `${location.origin}${PIPER_WASM_BASE}piper_phonemize.data`,
-  'https://huggingface.co/onnx-community/whisper-small/resolve/main/onnx/encoder_model.onnx',
-  'https://huggingface.co/onnx-community/whisper-small/resolve/main/config.json',
+  `https://huggingface.co/onnx-community/whisper-small/resolve/${WHISPER_REVISION}/onnx/encoder_model.onnx`,
+  `https://huggingface.co/onnx-community/whisper-small/resolve/${WHISPER_REVISION}/config.json`,
   `https://cdn.jsdelivr.net/npm/onnxruntime-web@${TRANSFORMERS_ORT_VERSION}/dist/ort-wasm-simd-threaded.jsep.wasm`,
   `https://cdn.jsdelivr.net/npm/@litert-lm/core@${LITERT_VERSION}/wasm/litertlm_wasm_internal.wasm`,
   DEFAULT_CHAT_MODEL,
@@ -67,6 +70,8 @@ describe('sweepStaleAssets', () => {
       `${location.origin}/vendor/piper-wasm/0.9.0/piper_phonemize.data`,
       // What every returning user still has from before the move to small.
       'https://huggingface.co/onnx-community/whisper-base/resolve/main/onnx/decoder_model_merged_quantized.onnx',
+      // And from before the pin: the current model, but fetched off `main`.
+      'https://huggingface.co/onnx-community/whisper-small/resolve/main/onnx/encoder_model.onnx',
       'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort-wasm-simd-threaded.jsep.wasm',
       'https://cdn.jsdelivr.net/npm/@litert-lm/core@0.13.0/wasm/litertlm_wasm_internal.wasm',
       OTHER_CHAT_MODEL,

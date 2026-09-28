@@ -23,6 +23,7 @@ import { ruleFor } from '#/lib/cache/rules';
 import { DEFAULT_CHAT_MODEL } from '#/lib/chat/constants';
 import {
   MODEL as WHISPER_MODEL,
+  MODEL_REVISION as WHISPER_REVISION,
   TRANSFORMERS_ORT_VERSION,
 } from '#/lib/speech-to-text/constants';
 import {
@@ -73,9 +74,11 @@ const IS_STALE: Record<PreloadStepId, (url: URL) => boolean> = {
   'text-to-speech': () => false,
   'speech-to-text': (url) =>
     url.hostname === 'huggingface.co'
-      ? // The trailing slash keeps e.g. whisper-small.en from passing as
-        // whisper-small.
-        !url.pathname.startsWith(`/${WHISPER_MODEL}/`)
+      ? // Another commit of the same model is stale too, `main` included. The
+        // slashes keep e.g. whisper-small.en from passing as whisper-small.
+        !url.pathname.startsWith(
+          `/${WHISPER_MODEL}/resolve/${WHISPER_REVISION}/`,
+        )
       : otherVersion(url, 'onnxruntime-web', TRANSFORMERS_ORT_VERSION),
   'chat-runtime': (url) => otherVersion(url, '@litert-lm/core', LITERT_VERSION),
   // One file, fetched by its exact URL (see fetchModel in lib/chat/engine.ts).

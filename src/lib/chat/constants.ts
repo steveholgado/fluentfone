@@ -10,11 +10,21 @@
 
 import type { SamplerParams } from './types';
 
+/**
+ * Pinned to a commit rather than `main`, which is a branch: a push upstream
+ * would change the bytes behind an unchanged URL, and everything downstream —
+ * the step marker, the sweep, the service worker's cache — takes the URL as
+ * the version. Moving to a newer upload means bumping the hash here, which
+ * misses the old marker and lets the sweep delete the old file.
+ *
+ * Get the hash with
+ * `curl -s https://huggingface.co/api/models/<repo> | jq -r .sha`.
+ */
 export const CHAT_MODELS = {
   /** Lower-end devices — smaller/faster, less capable. */
-  e2b: 'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it-web.litertlm',
+  e2b: 'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it-web.litertlm',
   /** Default — better output quality, for devices that can handle it. */
-  e4b: 'https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it-web.litertlm',
+  e4b: 'https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/2eee7ac325f20eb8c9ac1d0e972f7c84663062da/gemma-4-E4B-it-web.litertlm',
 };
 
 export const DEFAULT_CHAT_MODEL = CHAT_MODELS.e2b;

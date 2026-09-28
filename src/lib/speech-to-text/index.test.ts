@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import * as audio from '#/lib/audio';
+import { MODEL_REVISION } from '#/lib/speech-to-text/constants';
 import { stubCacheStorage } from '#/test-utils';
 import type {
   WorkerRequest,
@@ -53,10 +54,11 @@ class FakeWorker {
 // `FakeWorker.instances`.
 const flush = () => Promise.resolve();
 
-// Literal rather than read from constants.ts, whose MODEL_KEY is fixed by
-// whichever backend the module saw when it loaded.
-const Q8_KEY = 'onnx-community/whisper-small:q8';
-const WEBGPU_KEY = 'onnx-community/whisper-small:fp32+q4';
+// Spelled out rather than read from constants.ts, whose MODEL_KEY is fixed by
+// whichever backend the module saw when it loaded. The revision doesn't depend
+// on the backend, so that part is read.
+const Q8_KEY = `onnx-community/whisper-small@${MODEL_REVISION}:q8`;
+const WEBGPU_KEY = `onnx-community/whisper-small@${MODEL_REVISION}:fp32+q4`;
 
 beforeEach(() => {
   FakeWorker.instances = [];

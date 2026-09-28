@@ -11,7 +11,7 @@
 import type { AutomaticSpeechRecognitionPipeline } from '@huggingface/transformers';
 import type { WorkerRequest, WorkerResponse } from './messages';
 import { HAS_WEBGPU } from '#/lib/device';
-import { MODEL, MODEL_DTYPE } from './constants';
+import { MODEL, MODEL_DTYPE, MODEL_REVISION } from './constants';
 
 // DOM lib doesn't type worker-global `self`; the shape matches Worker's
 // instance side closely enough for postMessage's transfer-list overload.
@@ -38,6 +38,15 @@ ctx.onmessage = async (event: MessageEvent<WorkerRequest>) => {
         // the service worker already holds — the same bytes twice, and a
         // second place to ask whether they are present.
         env.useBrowserCache = false;
+
+        // The revision goes in the URL template rather than the pipeline's
+        // `revision` option, which 4.2.0 doesn't forward everywhere: the
+        // pipeline works out which files it needs before loading any, and that
+        // pass fetches config.json (and probes preprocessor_config.json) off
+        // `main` regardless. The sweep would then delete that copy on every
+        // visit, and with it the ability to start offline. Every Hub URL the
+        // library builds goes through this template, so nothing can miss it.
+        env.remotePathTemplate = `{model}/resolve/${MODEL_REVISION}/`;
 
         return pipeline('automatic-speech-recognition', MODEL, {
           dtype: MODEL_DTYPE,
