@@ -175,14 +175,18 @@ async function generate(
   try {
     // The SDK requires an outbound message to elicit a response — there's no
     // documented "generate from the preface alone" call. When `prompt` is
-    // omitted (the opening-message case), we send an empty trigger turn; the
-    // system instruction should describe what that first message should say.
-    // This trigger is NOT part of `history` — don't store it as a real turn.
+    // omitted (the opening-message case), we send the caller's trigger in its
+    // place — empty if there isn't one, leaving the system instruction to
+    // describe what that first message should say. The trigger is NOT part of
+    // `history` — don't store it as a real turn.
     //
     // Streamed, so the reply can be passed on a piece at a time while the rest
     // is still decoding. Each chunk is new text only, not the reply so far.
     const reader = conversation
-      .sendMessageStreaming({ role: 'user', content: request.prompt ?? '' })
+      .sendMessageStreaming({
+        role: 'user',
+        content: request.prompt ?? request.trigger ?? '',
+      })
       .getReader();
     for (;;) {
       const { done, value } = await reader.read();
@@ -199,7 +203,7 @@ async function generate(
   }
 
   // Kept for the next turn, which will pass this same history back. An opening
-  // message's empty trigger stays in the conversation but out of this record,
+  // message's trigger stays in the conversation but out of this record,
   // just as it's out of the caller's history. Anything kept meanwhile, by a
   // generate that overlapped this one, is replaced.
   await dropActive();

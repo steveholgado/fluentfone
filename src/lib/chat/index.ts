@@ -58,8 +58,10 @@ function engineKey(modelUrl: string, maxNumTokens: number): string {
  * instruction and prior chat history.
  *
  * Call this two ways:
- * 1. Opening message: `generateMessage({ systemInstruction })` — no
- *    `prompt`/`history` yet, since the user hasn't said anything.
+ * 1. Opening message: `generateMessage({ systemInstruction, trigger })` — no
+ *    `prompt`/`history` yet, since the user hasn't said anything. `trigger`
+ *    (optional) tells the model what to open with; it's left out of the
+ *    history, so the next turn still carries on from this conversation.
  * 2. Follow-up turns: `generateMessage({ prompt: userText, systemInstruction,
  *    history })` — pass the full running history so the model has context.
  *
@@ -71,6 +73,7 @@ function engineKey(modelUrl: string, maxNumTokens: number): string {
  */
 export async function generateMessage({
   prompt,
+  trigger,
   systemInstruction,
   history = [],
   modelUrl = DEFAULT_CHAT_MODEL,
@@ -83,6 +86,7 @@ export async function generateMessage({
     {
       mode: 'generate',
       prompt,
+      trigger,
       systemInstruction,
       history,
       modelUrl,

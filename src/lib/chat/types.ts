@@ -30,10 +30,18 @@ export interface SamplerParams {
 export interface GenerateMessageOptions {
   /**
    * The user's message content for this turn. Omit this to generate an
-   * opening message driven purely by the system instruction — e.g. the very
-   * first message in a new chat, before the user has typed anything.
+   * opening message — e.g. the very first message in a new chat, before the
+   * user has typed anything — steered by `trigger`, if given.
    */
   prompt?: string;
+  /**
+   * For an opening message only (no `prompt`): what the model is told to do,
+   * sent in the user's place. It stays in the model's context but out of the
+   * history, so the caller leaves it out of the history it passes next time
+   * too. Without it, the opening message is driven by the system instruction
+   * alone. Ignored when `prompt` is given.
+   */
+  trigger?: string;
   /** System-level instruction that sets the assistant's behavior/persona. */
   systemInstruction?: string;
   /**

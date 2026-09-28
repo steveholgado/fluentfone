@@ -82,6 +82,25 @@ describe('generateMessage', () => {
     );
   });
 
+  it('posts the trigger for an opening message', async () => {
+    const { generateMessage } = await import('#/lib/chat/index');
+
+    const promise = generateMessage({
+      systemInstruction: 'be nice',
+      trigger: 'greet the student',
+    });
+    only().emit({ id: 0, type: 'done', text: '¡Hola!' });
+    await promise;
+
+    expect(only().postedMessages[0]).toEqual(
+      expect.objectContaining({
+        prompt: undefined,
+        trigger: 'greet the student',
+        history: [],
+      }),
+    );
+  });
+
   it('resolves the model, context size and sampler defaults before posting', async () => {
     // The worker has no second copy of these, so anything left undefined here
     // would reach the engine as undefined.

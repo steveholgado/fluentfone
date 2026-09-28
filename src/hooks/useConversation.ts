@@ -17,12 +17,8 @@ import { openVoice, type SpeakTimings, type Voice } from '#/lib/text-to-speech';
 import { formatProgress } from '#/utils/formatProgress';
 import { formatTurnTimings } from '#/lib/utils/formatTurnTimings';
 import { createSentenceSplitter } from '#/lib/utils/sentenceSplitter';
-import {
-  CONVERSATION_INSTRUCTION,
-  GREETING_INSTRUCTION,
-  LANGUAGE,
-  VOICE_ID,
-} from '#/config';
+import { GREETING_TRIGGER } from '#/prompts';
+import { LANGUAGE, SYSTEM_INSTRUCTION, VOICE_ID } from '#/config';
 
 // 'loading' is the everyday one: preload put the model on disk, and this is
 // the wait while several gigabytes are read back off it. 'downloading' is
@@ -89,7 +85,8 @@ export function useConversation() {
       getVoice();
       setStatus(STAGE_STATUS.compiling);
       const opening = await generateMessage({
-        systemInstruction: GREETING_INSTRUCTION,
+        systemInstruction: SYSTEM_INSTRUCTION,
+        trigger: GREETING_TRIGGER,
         onStage: (stage) => setStatus(STAGE_STATUS[stage]),
       });
       const audio = await getVoice().speak(opening, { slow: true });
@@ -208,7 +205,7 @@ export function useConversation() {
       try {
         reply = await generateMessage({
           prompt: text,
-          systemInstruction: CONVERSATION_INSTRUCTION,
+          systemInstruction: SYSTEM_INSTRUCTION,
           history: historyRef.current.slice(0, -1),
           onStage: (stage) => {
             if (stage === 'generating') generating = performance.now();

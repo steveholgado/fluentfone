@@ -7,11 +7,8 @@ import { play } from '#/lib/audio/player';
 import { transcribe } from '#/lib/speech-to-text';
 import { generateMessage } from '#/lib/chat';
 import { openVoice, type Voice } from '#/lib/text-to-speech';
-import {
-  CONVERSATION_INSTRUCTION,
-  GREETING_INSTRUCTION,
-  VOICE_ID,
-} from '#/config';
+import { GREETING_TRIGGER } from '#/prompts';
+import { SYSTEM_INSTRUCTION, VOICE_ID } from '#/config';
 
 vi.mock('#/lib/audio/recorder', () => ({
   AudioRecorder: vi.fn(),
@@ -188,7 +185,8 @@ describe('useConversation', () => {
       });
 
       expect(generateMessage).toHaveBeenCalledWith({
-        systemInstruction: GREETING_INSTRUCTION,
+        systemInstruction: SYSTEM_INSTRUCTION,
+        trigger: GREETING_TRIGGER,
         onStage: expect.any(Function),
       });
       expect(openVoice).toHaveBeenCalledWith(VOICE_ID, expect.any(Function));
@@ -340,7 +338,7 @@ describe('useConversation', () => {
       });
       expect(generateMessage).toHaveBeenCalledWith({
         prompt: 'Hola, ¿cómo estás?',
-        systemInstruction: CONVERSATION_INSTRUCTION,
+        systemInstruction: SYSTEM_INSTRUCTION,
         history: [],
         onStage: expect.any(Function),
         onChunk: expect.any(Function),
@@ -434,7 +432,7 @@ describe('useConversation', () => {
 
       expect(generateMessage).toHaveBeenLastCalledWith({
         prompt: 'Adiós',
-        systemInstruction: CONVERSATION_INSTRUCTION,
+        systemInstruction: SYSTEM_INSTRUCTION,
         history: [
           { role: 'user', content: 'Hola' },
           { role: 'model', content: '¡Hola!' },

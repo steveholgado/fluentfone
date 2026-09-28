@@ -23,6 +23,8 @@ export type ChatRequest =
       mode: 'generate';
       /** Omitted for the opening message — see the note in worker.ts. */
       prompt?: string;
+      /** The opening message's stand-in for `prompt`, if any. */
+      trigger?: string;
       systemInstruction?: string;
       history: ChatMessage[];
       modelUrl: string;

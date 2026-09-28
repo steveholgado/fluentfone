@@ -148,6 +148,24 @@ describe('generate', () => {
     });
   });
 
+  it('sends the trigger in place of a prompt', async () => {
+    await post(generateRequest({ trigger: 'greet the student' }));
+
+    expect(sendMessageStreaming).toHaveBeenCalledWith({
+      role: 'user',
+      content: 'greet the student',
+    });
+  });
+
+  it('sends the prompt, not the trigger, when given both', async () => {
+    await post(generateRequest({ prompt: 'hola', trigger: 'greet' }));
+
+    expect(sendMessageStreaming).toHaveBeenCalledWith({
+      role: 'user',
+      content: 'hola',
+    });
+  });
+
   it('posts each chunk as it arrives, then the whole reply', async () => {
     sendMessageStreaming.mockImplementation(() =>
       streamOf(
@@ -378,6 +396,25 @@ describe('conversation reuse', () => {
     );
 
     expect(createConversation).toHaveBeenCalledTimes(1);
+  });
+
+  it('carries on from an opening message sent with a trigger', async () => {
+    await post(
+      generateRequest({ systemInstruction: 'chat', trigger: 'greet' }),
+    );
+    await post(
+      generateRequest({
+        systemInstruction: 'chat',
+        prompt: 'hola',
+        history: [{ role: 'model', content: 'a reply' }],
+      }),
+    );
+
+    expect(createConversation).toHaveBeenCalledTimes(1);
+    expect(sendMessageStreaming.mock.calls).toEqual([
+      [{ role: 'user', content: 'greet' }],
+      [{ role: 'user', content: 'hola' }],
+    ]);
   });
 
   it('builds afresh, and deletes the old one, when the history differs', async () => {

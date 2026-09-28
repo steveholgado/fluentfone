@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  buildConversationInstruction,
-  buildGreetingInstruction,
+  buildSystemInstruction,
   LEVELS,
   renderLevelBlock,
   type CefrLevel,
@@ -27,32 +26,14 @@ describe('renderLevelBlock', () => {
   });
 });
 
-describe('system instructions', () => {
-  it('asks for a greeting only in the greeting instruction', () => {
-    const greeting = buildGreetingInstruction('A2');
-    const conversation = buildConversationInstruction('A2');
-
-    expect(greeting).toContain('This is the start of the conversation.');
-    expect(greeting).not.toContain('Do not greet the student again.');
-    expect(conversation).toContain('Do not greet the student again.');
-    expect(conversation).not.toContain(
-      'This is the start of the conversation.',
-    );
-  });
-
-  it('includes the level block in both', () => {
-    const block = renderLevelBlock('B1');
-
-    expect(buildGreetingInstruction('B1')).toContain(block);
-    expect(buildConversationInstruction('B1')).toContain(block);
+describe('buildSystemInstruction', () => {
+  it('includes the level block', () => {
+    expect(buildSystemInstruction('B1')).toContain(renderLevelBlock('B1'));
   });
 
   // The chat worker reuses a conversation only when the instruction matches
   // exactly, so anything random in it would rebuild the conversation per turn.
   it('is identical every time it is built', () => {
-    expect(buildGreetingInstruction('A2')).toBe(buildGreetingInstruction('A2'));
-    expect(buildConversationInstruction('A2')).toBe(
-      buildConversationInstruction('A2'),
-    );
+    expect(buildSystemInstruction('A2')).toBe(buildSystemInstruction('A2'));
   });
 });

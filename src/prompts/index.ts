@@ -1,21 +1,21 @@
 /**
- * System instructions for the conversation partner.
+ * What the conversation partner is told.
  *
- * The greeting and the turns after it get separate instructions sharing one
- * base: the greeting has nothing to reply to, and an instruction that says
- * "greet the student" tends to get a greeting on every turn. The cost is that
- * the first reply can't reuse the greeting's conversation (the worker matches
- * on the instruction), so it's rebuilt once, from a one-message history.
+ * One system instruction serves every call, the greeting included: the worker
+ * only carries a conversation on when the instruction matches exactly, so a
+ * separate greeting instruction would have the first reply rebuild it. What
+ * the greeting needs on top goes in its trigger — sent in the student's place
+ * for the opening message, and never part of the history.
  *
- * Nothing here should vary between calls for the same level: every turn of a
- * conversation must pass an identical instruction for the worker to reuse it.
+ * Nothing here should vary between calls for the same level, for the same
+ * reason.
  */
 
 import { renderLevelBlock, type CefrLevel } from './levels';
 
 export { LEVELS, renderLevelBlock, type CefrLevel } from './levels';
 
-function base(level: CefrLevel): string {
+export function buildSystemInstruction(level: CefrLevel): string {
   return `You are a friendly, patient native speaker from Spain helping a student practise speaking Spanish.
 
 Language:
@@ -25,18 +25,7 @@ Language:
 ${renderLevelBlock(level)}
 
 Your replies are read aloud by a text-to-speech voice:
-- Write plain spoken sentences only: no emojis, lists, markdown, parentheses, or translations.`;
-}
-
-export function buildGreetingInstruction(level: CefrLevel): string {
-  return `${base(level)}
-
-This is the start of the conversation. Greet the student in one short sentence, then ask one simple question to get the conversation going.
-`;
-}
-
-export function buildConversationInstruction(level: CefrLevel): string {
-  return `${base(level)}
+- Write plain spoken sentences only: no emojis, lists, markdown, parentheses, or translations.
 
 Each reply:
 - React to what the student said in one short sentence, then ask one question to keep the conversation going.
@@ -46,3 +35,11 @@ Each reply:
 - Do not greet the student again.
 `;
 }
+
+/**
+ * Sent in the student's place for the opening message. Bracketed so it reads
+ * as a direction rather than something the student said — in English, it
+ * would otherwise fall under the rule for a student answering in English.
+ */
+export const GREETING_TRIGGER =
+  '[The conversation is starting. Greet the student in one short sentence, then ask one simple question to get the conversation going.]';
