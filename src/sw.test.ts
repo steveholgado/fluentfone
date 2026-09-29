@@ -476,10 +476,9 @@ describe('models and runtimes', () => {
     });
   });
 
-  it('reports bytes served from cache too', async () => {
-    // A cache hit is not instant on a file this size, and a step that reports
-    // nothing leaves the progress bar showing the previous step's final frame
-    // — a full bar reading "Finishing up…" for the whole read.
+  it('serves a cache hit untouched, without counting it', async () => {
+    // Every warm-up reads gigabytes back through here, and re-streaming them
+    // through a counter is paid on every load for a bar that isn't showing.
     stubDownload(1_048_576);
     await (await fetchEvent(MODEL_URL))?.arrayBuffer();
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -488,12 +487,7 @@ describe('models and runtimes', () => {
     const seen = await captureProgress(() => fetchEvent(MODEL_URL));
 
     expect(fetch).not.toHaveBeenCalled();
-    expect(seen.at(-1)).toEqual({
-      step: 'chat',
-      url: MODEL_URL,
-      loaded: 1_048_576,
-      total: 1_048_576,
-    });
+    expect(seen).toEqual([]);
   });
 
   it('reports byte counts that only ever climb', async () => {

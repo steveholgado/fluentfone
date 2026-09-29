@@ -244,7 +244,7 @@ async function serveShell(request: Request): Promise<Response> {
 
 /**
  * A runtime or model file. Cache-first where the rule says we own the bytes,
- * and counted on the way past either way — including for the voice, whose
+ * and counted on the way in from the network — including for the voice, whose
  * bytes belong to OPFS but whose progress the bar still wants.
  */
 async function serveAsset(
@@ -256,11 +256,12 @@ async function serveAsset(
 
   if (cache) {
     const cached = await cache.match(request, { ignoreVary: true });
-    // Counted, even though no bytes crossed the network. Reading a model back
-    // off disk is not instant either, and a step that reports nothing at all
-    // doesn't leave the bar at zero — it leaves it showing the previous step's
-    // final frame, which is a full bar reading "Finishing up".
-    if (cached) return count(cached, rule, request.url, contentLength(cached));
+    // Handed back untouched, so the browser streams it straight off disk.
+    // Counting would put every chunk of several gigabytes through this
+    // worker's JS on every warm-up, for a bar nobody is looking at — only a
+    // preload reports progress, and there `runStep` already opens each step
+    // at zero, so one that reports nothing just sits there until it's done.
+    if (cached) return cached;
   }
 
   const response = await fetch(request);

@@ -65,8 +65,9 @@ export async function preloadAll(
  * touches the UI at all, so the screen keeps rendering the *previous* step's
  * DONE — a full bar reading "Finishing up…" for however long this step takes.
  * A silent step is not a hypothetical, either: it is what a step served
- * entirely from cache used to be, and what any step becomes the moment its
- * bytes arrive somewhere the service worker can't see them.
+ * entirely from cache is (the service worker counts only network bytes), and
+ * what any step becomes the moment its bytes arrive somewhere the service
+ * worker can't see them.
  *
  * The terminal DONE is what the "Finishing up…" state legitimately keys off,
  * while the step does its unreported tail work (compiling, writing to disk).
