@@ -86,10 +86,10 @@ describe('ConversationScreen', () => {
       render(<ConversationScreen {...BASE} hasGreeted canRepeat />);
 
       expect(
-        screen.getByRole('button', { name: 'Say again' }),
+        screen.getByRole('button', { name: 'Repeat' }),
       ).toBeInTheDocument();
       expect(
-        screen.getByRole('button', { name: 'Say again slowly' }),
+        screen.getByRole('button', { name: 'Repeat slowly' }),
       ).toBeInTheDocument();
     });
 
@@ -97,13 +97,13 @@ describe('ConversationScreen', () => {
       render(<ConversationScreen {...BASE} hasGreeted status="Generating…" />);
 
       expect(screen.getByText('Generating…')).toBeInTheDocument();
-      expect(screen.queryByRole('button', { name: /Say again/ })).toBeNull();
+      expect(screen.queryByRole('button', { name: /Repeat/ })).toBeNull();
     });
 
     it('are hidden while audio is live', () => {
       render(<ConversationScreen {...BASE} hasGreeted canRepeat isAudioLive />);
 
-      expect(screen.queryByRole('button', { name: /Say again/ })).toBeNull();
+      expect(screen.queryByRole('button', { name: /Repeat/ })).toBeNull();
     });
 
     it('give way to a status, such as a failed repeat', () => {
@@ -117,7 +117,7 @@ describe('ConversationScreen', () => {
       );
 
       expect(screen.getByText('Something went wrong')).toBeInTheDocument();
-      expect(screen.queryByRole('button', { name: /Say again/ })).toBeNull();
+      expect(screen.queryByRole('button', { name: /Repeat/ })).toBeNull();
     });
 
     it('call their own handlers', () => {
@@ -133,11 +133,11 @@ describe('ConversationScreen', () => {
         />,
       );
 
-      fireEvent.click(screen.getByRole('button', { name: 'Say again' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Repeat' }));
       expect(onRepeat).toHaveBeenCalledTimes(1);
       expect(onRepeatSlowly).not.toHaveBeenCalled();
 
-      fireEvent.click(screen.getByRole('button', { name: 'Say again slowly' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Repeat slowly' }));
       expect(onRepeatSlowly).toHaveBeenCalledTimes(1);
     });
   });

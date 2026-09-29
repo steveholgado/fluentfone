@@ -40,15 +40,15 @@ describe('PreloadScreen', () => {
     render(<PreloadScreen {...BASE} />);
 
     expect(screen.getByText(/Private windows/)).toHaveTextContent(
-      "Private windows can't keep downloads this size, so please use a normal window — otherwise the files will download again each time.",
+      'Private windows have a size limit, so please use a normal window. Otherwise the files will download again each time.',
     );
   });
 
   it('gives the size of what is left to download', () => {
     render(<PreloadScreen {...BASE} cached={status(true, { chat: false })} />);
 
-    expect(screen.getByText(/This downloads about/)).toHaveTextContent(
-      `This downloads about ${formatBytes(EXPECTED_BYTES.chat)}`,
+    expect(screen.getByText(/downloads about/)).toHaveTextContent(
+      `This app downloads about ${formatBytes(EXPECTED_BYTES.chat)}, kept on this device for next time.`,
     );
   });
 
