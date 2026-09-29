@@ -39,6 +39,7 @@ export function useConversation() {
   const [hasGreeted, setHasGreeted] = useState(false);
   const [isGreetingReady, setIsGreetingReady] = useState(false);
   const [status, setStatus] = useState('');
+  const [canRepeat, setCanRepeat] = useState(false);
 
   const busyRef = useRef(false);
   const recorderRef = useRef<AudioRecorder | null>(null);
@@ -46,6 +47,14 @@ export function useConversation() {
   const preparingGreetingRef = useRef(false);
   const greetingRef = useRef<{ text: string; audio: Blob } | null>(null);
   const voiceRef = useRef<Voice | null>(null);
+  // The line the agent has just finished speaking, kept so it can be said
+  // again. The normal-speed clips are the ones already played; the slow ones
+  // are only synthesised if asked for, then kept for any further repeats.
+  const lastLineRef = useRef<{
+    sentences: string[];
+    clips: Blob[];
+    slowClips?: Promise<Blob>[];
+  } | null>(null);
 
   // One voice for the whole conversation, so its session loads once rather
   // than on every line. Opened on first use and closed with the conversation.
@@ -89,7 +98,7 @@ export function useConversation() {
         trigger: GREETING_TRIGGER,
         onStage: (stage) => setStatus(STAGE_STATUS[stage]),
       });
-      const audio = await getVoice().speak(opening, { slow: true });
+      const audio = await getVoice().speak(opening, { slow: false });
       greetingRef.current = { text: opening, audio };
       setStatus('');
       setIsGreetingReady(true);
@@ -114,6 +123,11 @@ export function useConversation() {
       setHasGreeted(true);
       setStatus('Speaking…');
       await playVoice(greeting.audio);
+      lastLineRef.current = {
+        sentences: [greeting.text],
+        clips: [greeting.audio],
+      };
+      setCanRepeat(true);
       setStatus('');
     } catch (err) {
       console.error(err);
@@ -125,6 +139,10 @@ export function useConversation() {
 
   const startRecording = useCallback(async () => {
     busyRef.current = true;
+    // Only the line just spoken can be repeated; once the user starts their
+    // turn, it's gone until the next reply has been heard in full.
+    lastLineRef.current = null;
+    setCanRepeat(false);
     try {
       const recorder = new AudioRecorder();
       await recorder.start();
@@ -172,16 +190,17 @@ export function useConversation() {
       let firstSentence: number | undefined;
       let synthesised: number | undefined;
       let ttsTimings: SpeakTimings | undefined;
-      let sentenceCount = 0;
+      const spoken: string[] = [];
+      const clips: Blob[] = [];
       let playback = Promise.resolve();
 
       const sentences = createSentenceSplitter((sentence) => {
-        const isFirst = sentenceCount++ === 0;
+        const isFirst = spoken.push(sentence) === 1;
         if (isFirst) firstSentence = performance.now();
 
         let timings: SpeakTimings | undefined;
         const audio = voice.speak(sentence, {
-          slow: true,
+          slow: false,
           onTimings: (t) => (timings = t),
         });
         // Its failure surfaces through `playback`, which awaits it in turn.
@@ -194,6 +213,7 @@ export function useConversation() {
             ttsTimings = timings;
             setStatus('Speaking…');
           }
+          clips.push(clip);
           await playVoice(clip);
         });
         // Awaited below, once generation is over; until then a failure would
@@ -224,6 +244,8 @@ export function useConversation() {
       console.log(historyRef.current);
 
       await playback;
+      lastLineRef.current = { sentences: spoken, clips };
+      setCanRepeat(true);
       setStatus('');
 
       if (
@@ -244,7 +266,7 @@ export function useConversation() {
             tts: ttsTimings,
           },
           reply.length,
-          sentenceCount,
+          spoken.length,
         );
         console.info(`[turn] ${timings}`);
       }
@@ -266,14 +288,51 @@ export function useConversation() {
     }
   }, [isRecording, startRecording, stopRecordingAndRespond]);
 
+  const repeatLastLine = useCallback(
+    async (slow: boolean) => {
+      unlock();
+      if (busyRef.current) return;
+      const line = lastLineRef.current;
+      if (!line) return;
+      busyRef.current = true;
+      try {
+        setStatus('Speaking…');
+        if (slow) {
+          // Every sentence goes to the voice at once, so later ones are
+          // synthesised while the first plays.
+          line.slowClips ??= line.sentences.map((sentence) => {
+            const audio = getVoice().speak(sentence, { slow: true });
+            // Its failure surfaces below, when it's awaited in turn.
+            audio.catch(() => {});
+            return audio;
+          });
+          for (const clip of line.slowClips) await playVoice(await clip);
+        } else {
+          for (const clip of line.clips) await playVoice(clip);
+        }
+        setStatus('');
+      } catch (err) {
+        console.error(err);
+        setStatus('Something went wrong');
+        // So the next slow repeat tries the synthesis again.
+        line.slowClips = undefined;
+      } finally {
+        busyRef.current = false;
+      }
+    },
+    [getVoice, playVoice],
+  );
+
   return {
     isRecording,
     isAudioLive: isRecording || isSpeaking,
     hasGreeted,
     isGreetingReady,
+    canRepeat,
     status,
     greet,
     prepareGreeting,
     toggleRecording,
+    repeatLastLine,
   };
 }

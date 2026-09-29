@@ -1,5 +1,5 @@
-import { cleanup, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ConversationScreen } from '#/components/ConversationScreen';
 
@@ -13,9 +13,12 @@ const BASE = {
   isAudioLive: false,
   hasGreeted: false,
   isGreetingReady: false,
+  canRepeat: false,
   status: '',
   onAnswer: () => {},
   onToggleRecording: () => {},
+  onRepeat: () => {},
+  onRepeatSlowly: () => {},
 };
 
 describe('ConversationScreen', () => {
@@ -76,5 +79,66 @@ describe('ConversationScreen', () => {
     expect(container.querySelector('canvas')).toBeInTheDocument();
     // Still announced, just no longer the visible element.
     expect(screen.getByText('Speaking…')).toHaveClass('sr-only');
+  });
+
+  describe('repeat buttons', () => {
+    it('take the status line once the agent has finished speaking', () => {
+      render(<ConversationScreen {...BASE} hasGreeted canRepeat />);
+
+      expect(
+        screen.getByRole('button', { name: 'Say again' }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: 'Say again slowly' }),
+      ).toBeInTheDocument();
+    });
+
+    it('are hidden when there is nothing to repeat', () => {
+      render(<ConversationScreen {...BASE} hasGreeted status="Generating…" />);
+
+      expect(screen.getByText('Generating…')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /Say again/ })).toBeNull();
+    });
+
+    it('are hidden while audio is live', () => {
+      render(<ConversationScreen {...BASE} hasGreeted canRepeat isAudioLive />);
+
+      expect(screen.queryByRole('button', { name: /Say again/ })).toBeNull();
+    });
+
+    it('give way to a status, such as a failed repeat', () => {
+      render(
+        <ConversationScreen
+          {...BASE}
+          hasGreeted
+          canRepeat
+          status="Something went wrong"
+        />,
+      );
+
+      expect(screen.getByText('Something went wrong')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /Say again/ })).toBeNull();
+    });
+
+    it('call their own handlers', () => {
+      const onRepeat = vi.fn();
+      const onRepeatSlowly = vi.fn();
+      render(
+        <ConversationScreen
+          {...BASE}
+          hasGreeted
+          canRepeat
+          onRepeat={onRepeat}
+          onRepeatSlowly={onRepeatSlowly}
+        />,
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: 'Say again' }));
+      expect(onRepeat).toHaveBeenCalledTimes(1);
+      expect(onRepeatSlowly).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Say again slowly' }));
+      expect(onRepeatSlowly).toHaveBeenCalledTimes(1);
+    });
   });
 });

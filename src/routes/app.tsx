@@ -26,10 +26,12 @@ function App() {
     isAudioLive,
     hasGreeted,
     isGreetingReady,
+    canRepeat,
     status,
     greet,
     prepareGreeting,
     toggleRecording,
+    repeatLastLine,
   } = useConversation();
 
   useEffect(() => {
@@ -47,10 +49,13 @@ function App() {
             isAudioLive={isAudioLive}
             hasGreeted={hasGreeted}
             isGreetingReady={isGreetingReady}
+            canRepeat={canRepeat}
             status={status}
             minimal={phase !== 'ready'}
             onAnswer={greet}
             onToggleRecording={toggleRecording}
+            onRepeat={() => void repeatLastLine(false)}
+            onRepeatSlowly={() => void repeatLastLine(true)}
           />
         )}
 

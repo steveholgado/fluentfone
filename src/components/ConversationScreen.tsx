@@ -5,21 +5,30 @@ interface ConversationScreenProps {
   isAudioLive: boolean;
   hasGreeted: boolean;
   isGreetingReady: boolean;
+  canRepeat: boolean;
   status: string;
   minimal?: boolean;
   onAnswer: () => void;
   onToggleRecording: () => void;
+  onRepeat: () => void;
+  onRepeatSlowly: () => void;
 }
+
+const REPEAT_BUTTON_CLASS =
+  'cursor-pointer rounded-lg border border-gray-300 px-4 py-1.5 text-base text-gray-200 hover:bg-white/10';
 
 export function ConversationScreen({
   isRecording,
   isAudioLive,
   hasGreeted,
   isGreetingReady,
+  canRepeat,
   status,
   minimal = false,
   onAnswer,
   onToggleRecording,
+  onRepeat,
+  onRepeatSlowly,
 }: ConversationScreenProps) {
   return (
     <div className="flex h-full w-full flex-col items-center justify-between px-8 py-16 sm:py-32">
@@ -54,6 +63,15 @@ export function ConversationScreen({
                   flow, so it costs the layout nothing. */}
               <span className="sr-only">{status}</span>
             </>
+          ) : canRepeat && !status ? (
+            <div className="flex flex-col gap-3">
+              <button onClick={onRepeat} className={REPEAT_BUTTON_CLASS}>
+                Repeat
+              </button>
+              <button onClick={onRepeatSlowly} className={REPEAT_BUTTON_CLASS}>
+                Repeat slowly
+              </button>
+            </div>
           ) : (
             <div className="text-center text-2xl">{status}</div>
           )}

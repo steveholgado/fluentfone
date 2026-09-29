@@ -190,7 +190,7 @@ describe('useConversation', () => {
         onStage: expect.any(Function),
       });
       expect(openVoice).toHaveBeenCalledWith(VOICE_ID, expect.any(Function));
-      expect(speak).toHaveBeenCalledWith('¡Hola!', { slow: true });
+      expect(speak).toHaveBeenCalledWith('¡Hola!', { slow: false });
       expect(result.current.isGreetingReady).toBe(true);
       expect(result.current.status).toBe('');
     });
@@ -344,7 +344,7 @@ describe('useConversation', () => {
         onChunk: expect.any(Function),
       });
       expect(speak).toHaveBeenCalledWith('¡Muy bien, gracias!', {
-        slow: true,
+        slow: false,
         onTimings: expect.any(Function),
       });
       expect(play).toHaveBeenCalledWith(GREETING_AUDIO);
@@ -599,6 +599,173 @@ describe('useConversation', () => {
       });
 
       expect(start).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('repeatLastLine', () => {
+    /** Prepares the greeting and plays it, leaving the hook ready to repeat. */
+    async function greeted() {
+      vi.mocked(generateMessage).mockResolvedValue('¡Hola!');
+      speak.mockResolvedValue(GREETING_AUDIO);
+      const hook = renderHook(() => useConversation());
+      await act(async () => {
+        await hook.result.current.prepareGreeting();
+      });
+      await act(async () => {
+        await hook.result.current.greet();
+      });
+      speak.mockClear();
+      vi.mocked(play).mockClear();
+      return hook;
+    }
+
+    it('cannot repeat until the greeting has been played', async () => {
+      vi.mocked(generateMessage).mockResolvedValue('¡Hola!');
+      const { result } = renderHook(() => useConversation());
+      expect(result.current.canRepeat).toBe(false);
+
+      await act(async () => {
+        await result.current.prepareGreeting();
+      });
+      expect(result.current.canRepeat).toBe(false);
+
+      await act(async () => {
+        await result.current.greet();
+      });
+      expect(result.current.canRepeat).toBe(true);
+    });
+
+    it('replays the greeting without synthesising it again', async () => {
+      const { result } = await greeted();
+
+      await act(async () => {
+        await result.current.repeatLastLine(false);
+      });
+
+      expect(speak).not.toHaveBeenCalled();
+      expect(play).toHaveBeenCalledWith(GREETING_AUDIO);
+      expect(result.current.status).toBe('');
+      expect(result.current.canRepeat).toBe(true);
+    });
+
+    it('is withdrawn once the user starts speaking, until the reply has played', async () => {
+      mockRecorderImpl();
+      vi.mocked(transcribe).mockResolvedValue('Hola');
+      const { result } = await greeted();
+      const reply = deferred<string>();
+      vi.mocked(generateMessage).mockImplementation(() => reply.promise);
+
+      await act(async () => {
+        result.current.toggleRecording();
+      });
+      await waitFor(() => expect(result.current.isRecording).toBe(true));
+      expect(result.current.canRepeat).toBe(false);
+
+      await act(async () => {
+        result.current.toggleRecording();
+      });
+      expect(result.current.canRepeat).toBe(false);
+
+      await act(async () => {
+        reply.resolve('Vale.');
+      });
+      await waitFor(() => expect(result.current.canRepeat).toBe(true));
+    });
+
+    it('replays every sentence of the last reply, in order', async () => {
+      mockRecorderImpl();
+      vi.mocked(transcribe).mockResolvedValue('Hola');
+      vi.mocked(generateMessage).mockImplementation(streamed('Uno. ', 'Dos.'));
+      const firstClip = new Blob(['uno']);
+      const secondClip = new Blob(['dos']);
+      speak.mockResolvedValueOnce(firstClip).mockResolvedValueOnce(secondClip);
+
+      const { result } = renderHook(() => useConversation());
+      await takeTurn(result);
+      await waitFor(() => expect(result.current.canRepeat).toBe(true));
+      speak.mockClear();
+      vi.mocked(play).mockClear();
+
+      await act(async () => {
+        await result.current.repeatLastLine(false);
+      });
+
+      expect(speak).not.toHaveBeenCalled();
+      expect(vi.mocked(play).mock.calls).toEqual([[firstClip], [secondClip]]);
+    });
+
+    it('synthesises each sentence slowly, and only the first time', async () => {
+      mockRecorderImpl();
+      vi.mocked(transcribe).mockResolvedValue('Hola');
+      vi.mocked(generateMessage).mockImplementation(streamed('Uno. ', 'Dos.'));
+
+      const { result } = renderHook(() => useConversation());
+      await takeTurn(result);
+      await waitFor(() => expect(result.current.canRepeat).toBe(true));
+      speak.mockClear();
+      vi.mocked(play).mockClear();
+      const slowFirst = new Blob(['uuuno']);
+      const slowSecond = new Blob(['dooos']);
+      speak.mockResolvedValueOnce(slowFirst).mockResolvedValueOnce(slowSecond);
+
+      await act(async () => {
+        await result.current.repeatLastLine(true);
+      });
+      await act(async () => {
+        await result.current.repeatLastLine(true);
+      });
+
+      expect(speak.mock.calls).toEqual([
+        ['Uno.', { slow: true }],
+        ['Dos.', { slow: true }],
+      ]);
+      expect(vi.mocked(play).mock.calls).toEqual([
+        [slowFirst],
+        [slowSecond],
+        [slowFirst],
+        [slowSecond],
+      ]);
+      expect(result.current.status).toBe('');
+    });
+
+    it('ignores a repeat while one is already playing', async () => {
+      const { result } = await greeted();
+      const playing = deferred<void>();
+      vi.mocked(play).mockReturnValueOnce(playing.promise);
+
+      await act(async () => {
+        void result.current.repeatLastLine(false);
+        void result.current.repeatLastLine(true);
+      });
+      await act(async () => {
+        playing.resolve();
+      });
+
+      expect(play).toHaveBeenCalledTimes(1);
+      expect(speak).not.toHaveBeenCalled();
+    });
+
+    it('sets an error status, and tries the slow synthesis again next time', async () => {
+      const { result } = await greeted();
+      speak.mockRejectedValueOnce(new Error('synth failed'));
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      await act(async () => {
+        await result.current.repeatLastLine(true);
+      });
+
+      expect(result.current.status).toBe('Something went wrong');
+      expect(errorSpy).toHaveBeenCalled();
+
+      await act(async () => {
+        await result.current.repeatLastLine(true);
+      });
+
+      expect(speak).toHaveBeenCalledTimes(2);
+      expect(play).toHaveBeenCalledTimes(1);
+      expect(result.current.status).toBe('');
+
+      errorSpy.mockRestore();
     });
   });
 });
