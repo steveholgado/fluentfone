@@ -4,6 +4,7 @@ import {
   AudioRecorder,
   play,
   releaseTap,
+  stopPlayback,
   tapStream,
   unlock,
 } from '#/lib/audio';
@@ -47,6 +48,8 @@ export function useConversation() {
   const [canRepeat, setCanRepeat] = useState(false);
 
   const busyRef = useRef(false);
+  // Set once the conversation has unmounted, i.e. the call has ended.
+  const disposedRef = useRef(false);
   const recorderRef = useRef<AudioRecorder | null>(null);
   const historyRef = useRef<ChatMessage[]>([]);
   const preparingGreetingRef = useRef(false);
@@ -62,19 +65,38 @@ export function useConversation() {
   } | null>(null);
 
   // One voice for the whole conversation, so its session loads once rather
-  // than on every line. Opened on first use and closed with the conversation.
-  const getVoice = useCallback(
-    () =>
-      (voiceRef.current ??= openVoice(VOICE_ID, (p) =>
-        setStatus(`Downloading voice model… ${formatProgress(p.progress)}`),
-      )),
-    [],
-  );
+  // than on every line. Opened on first use and closed with the conversation;
+  // refused after that, so work still in flight can't open another.
+  const getVoice = useCallback(() => {
+    if (disposedRef.current) throw new Error('This conversation has ended.');
+    return (voiceRef.current ??= openVoice(VOICE_ID, (p) =>
+      setStatus(`Downloading voice model… ${formatProgress(p.progress)}`),
+    ));
+  }, []);
 
-  useEffect(
-    () => () => {
+  // Ending the call cuts off whatever is in flight, rather than leaving it to
+  // play into the next one. A generate can't be aborted, so it runs on in the
+  // chat worker, but nothing it produces is spoken: the voice is closed, and
+  // playVoice won't play.
+  useEffect(() => {
+    disposedRef.current = false;
+    return () => {
+      disposedRef.current = true;
+      stopPlayback();
+      void recorderRef.current?.stop().catch(() => {});
+      recorderRef.current = null;
       voiceRef.current?.close();
       voiceRef.current = null;
+    };
+  }, []);
+
+  // Once the call has ended, work still in flight fails as the voice closes
+  // under it. That's expected, and there's no one left to tell.
+  const report = useCallback(
+    (err: unknown, message = 'Something went wrong') => {
+      if (disposedRef.current) return;
+      console.error(err);
+      setStatus(message);
     },
     [],
   );
@@ -82,6 +104,7 @@ export function useConversation() {
   // Both playback sites go through here so the flag clears even when playback
   // rejects — the callers turn that into a status message and carry on.
   const playVoice = useCallback(async (audio: Blob) => {
+    if (disposedRef.current) return;
     setIsSpeaking(true);
     try {
       await play(audio);
@@ -108,12 +131,11 @@ export function useConversation() {
       setStatus('');
       setIsGreetingReady(true);
     } catch (err) {
-      console.error(err);
-      setStatus('Something went wrong');
+      report(err);
     } finally {
       preparingGreetingRef.current = false;
     }
-  }, [getVoice]);
+  }, [getVoice, report]);
 
   const greet = useCallback(async () => {
     // Synchronously, before any await: the audio context can only start from
@@ -135,12 +157,11 @@ export function useConversation() {
       setCanRepeat(true);
       setStatus('');
     } catch (err) {
-      console.error(err);
-      setStatus('Something went wrong');
+      report(err);
     } finally {
       busyRef.current = false;
     }
-  }, [playVoice]);
+  }, [playVoice, report]);
 
   const startRecording = useCallback(async () => {
     busyRef.current = true;
@@ -151,20 +172,26 @@ export function useConversation() {
     try {
       const recorder = new AudioRecorder();
       await recorder.start();
+      // The permission prompt can sit open while the call is ended.
+      if (disposedRef.current) {
+        void recorder.stop();
+        return;
+      }
       recorderRef.current = recorder;
       tapStream(recorder.stream);
       setIsRecording(true);
     } catch (err) {
-      console.error(err);
-      setStatus('Could not access microphone');
+      report(err, 'Could not access microphone');
     } finally {
       busyRef.current = false;
     }
-  }, []);
+  }, [report]);
 
   const stopRecordingAndRespond = useCallback(async () => {
     const recorder = recorderRef.current;
     if (!recorder) return;
+    // Cleared so that only a live recorder is left for the unmount to stop.
+    recorderRef.current = null;
 
     setIsRecording(false);
     // Before stop(), which ends the tracks the tap is reading from.
@@ -276,12 +303,11 @@ export function useConversation() {
         console.info(`[turn] ${timings}`);
       }
     } catch (err) {
-      console.error(err);
-      setStatus('Something went wrong');
+      report(err);
     } finally {
       busyRef.current = false;
     }
-  }, [getVoice, playVoice]);
+  }, [getVoice, playVoice, report]);
 
   const toggleRecording = useCallback(() => {
     unlock();
@@ -319,15 +345,14 @@ export function useConversation() {
         }
         setStatus('');
       } catch (err) {
-        console.error(err);
-        setStatus('Something went wrong');
+        report(err);
         // So the next slow repeat tries the synthesis again.
         line.slowClips = undefined;
       } finally {
         busyRef.current = false;
       }
     },
-    [getVoice, playVoice],
+    [getVoice, playVoice, report],
   );
 
   return {

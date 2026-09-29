@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useConversation } from '#/hooks/useConversation';
 import { AudioRecorder } from '#/lib/audio/recorder';
-import { play } from '#/lib/audio/player';
+import { play, stopPlayback } from '#/lib/audio/player';
 import { transcribe } from '#/lib/speech-to-text';
 import { generateMessage } from '#/lib/chat';
 import { openVoice, slowRepeatSpeed, type Voice } from '#/lib/text-to-speech';
@@ -15,6 +15,7 @@ vi.mock('#/lib/audio/recorder', () => ({
 }));
 vi.mock('#/lib/audio/player', () => ({
   play: vi.fn(),
+  stopPlayback: vi.fn(),
 }));
 vi.mock('#/lib/speech-to-text', () => ({
   transcribe: vi.fn(),
@@ -175,6 +176,100 @@ describe('useConversation', () => {
 
       expect(openVoice).not.toHaveBeenCalled();
       expect(close).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('unmounting', () => {
+    it('stops playback and the mic', async () => {
+      const { stop } = mockRecorderImpl();
+
+      const { result, unmount } = renderHook(() => useConversation());
+      await act(async () => {
+        result.current.toggleRecording();
+      });
+      await waitFor(() => expect(result.current.isRecording).toBe(true));
+      unmount();
+
+      expect(stopPlayback).toHaveBeenCalledTimes(1);
+      expect(stop).toHaveBeenCalledTimes(1);
+    });
+
+    it('leaves a recorder that has already stopped alone', async () => {
+      const { stop } = mockRecorderImpl();
+      vi.mocked(transcribe).mockResolvedValue('Hola');
+      vi.mocked(generateMessage).mockImplementation(streamed('¡Hola!'));
+
+      const { result, unmount } = renderHook(() => useConversation());
+      await takeTurn(result);
+      await waitFor(() => expect(result.current.canRepeat).toBe(true));
+      unmount();
+
+      expect(stop).toHaveBeenCalledTimes(1);
+    });
+
+    it('stops a mic that only goes live after the conversation has ended', async () => {
+      const started = deferred<void>();
+      const { stop } = mockRecorderImpl({ start: () => started.promise });
+
+      const { result, unmount } = renderHook(() => useConversation());
+      await act(async () => {
+        result.current.toggleRecording();
+      });
+      unmount();
+      await act(async () => {
+        started.resolve();
+      });
+
+      expect(stop).toHaveBeenCalledTimes(1);
+    });
+
+    it('speaks nothing more of a reply that is still coming', async () => {
+      mockRecorderImpl();
+      vi.mocked(transcribe).mockResolvedValue('Hola');
+      const rest = deferred<void>();
+      vi.mocked(generateMessage).mockImplementation(async (options) => {
+        options?.onStage?.('generating');
+        options?.onChunk?.('Uno. ');
+        await rest.promise;
+        options?.onChunk?.('Dos.');
+        return 'Uno. Dos.';
+      });
+      const first = new Blob(['uno']);
+      speak.mockResolvedValueOnce(first);
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      const { result, unmount } = renderHook(() => useConversation());
+      await takeTurn(result);
+      await waitFor(() => expect(play).toHaveBeenCalledTimes(1));
+      unmount();
+      await act(async () => {
+        rest.resolve();
+      });
+
+      expect(vi.mocked(play).mock.calls).toEqual([[first]]);
+      expect(error).not.toHaveBeenCalled();
+    });
+
+    it('opens no voice for a greeting that arrives after the conversation has ended', async () => {
+      const opening = deferred<string>();
+      vi.mocked(generateMessage).mockReturnValue(opening.promise);
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      const { result, unmount } = renderHook(() => useConversation());
+      let preparing!: Promise<void>;
+      act(() => {
+        preparing = result.current.prepareGreeting();
+      });
+      unmount();
+      await act(async () => {
+        opening.resolve('¡Hola!');
+        await preparing;
+      });
+
+      // The one opened up front, while the greeting was generating.
+      expect(openVoice).toHaveBeenCalledTimes(1);
+      expect(speak).not.toHaveBeenCalled();
+      expect(error).not.toHaveBeenCalled();
     });
   });
 
