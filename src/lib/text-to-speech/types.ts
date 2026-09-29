@@ -1,9 +1,10 @@
 export interface SpeakOptions {
   /**
-   * Synthesize at a slower pace, for repeating a line. Relies on the
-   * piper-tts-web patch; without it the speech plays at normal speed.
+   * Pace relative to the voice's own, where 1 is natural and 0.5 is half as
+   * fast. Relies on the piper-tts-web patch; without it the speech plays at
+   * normal speed.
    */
-  slow?: boolean;
+  speed?: number;
   /** Called once the audio is back, with where its time went. */
   onTimings?: (timings: SpeakTimings) => void;
 }

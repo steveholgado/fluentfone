@@ -6,7 +6,7 @@ import { AudioRecorder } from '#/lib/audio/recorder';
 import { play } from '#/lib/audio/player';
 import { transcribe } from '#/lib/speech-to-text';
 import { generateMessage } from '#/lib/chat';
-import { openVoice, type Voice } from '#/lib/text-to-speech';
+import { openVoice, slowRepeatSpeed, type Voice } from '#/lib/text-to-speech';
 import { GREETING_TRIGGER } from '#/prompts';
 import { SYSTEM_INSTRUCTION, VOICE_ID } from '#/config';
 
@@ -22,8 +22,13 @@ vi.mock('#/lib/speech-to-text', () => ({
 vi.mock('#/lib/chat', () => ({
   generateMessage: vi.fn(),
 }));
-vi.mock('#/lib/text-to-speech', () => ({
+vi.mock('#/lib/text-to-speech', async () => ({
   openVoice: vi.fn(),
+  slowRepeatSpeed: (
+    await vi.importActual<typeof import('#/lib/text-to-speech/constants')>(
+      '#/lib/text-to-speech/constants',
+    )
+  ).slowRepeatSpeed,
   VOICES: { en: 'en_US-hfc_female-medium', es: 'es_ES-davefx-medium' },
 }));
 
@@ -190,7 +195,7 @@ describe('useConversation', () => {
         onStage: expect.any(Function),
       });
       expect(openVoice).toHaveBeenCalledWith(VOICE_ID, expect.any(Function));
-      expect(speak).toHaveBeenCalledWith('¡Hola!', { slow: false });
+      expect(speak).toHaveBeenCalledWith('¡Hola!', { speed: 1 });
       expect(result.current.isGreetingReady).toBe(true);
       expect(result.current.status).toBe('');
     });
@@ -344,7 +349,7 @@ describe('useConversation', () => {
         onChunk: expect.any(Function),
       });
       expect(speak).toHaveBeenCalledWith('¡Muy bien, gracias!', {
-        slow: false,
+        speed: 1,
         onTimings: expect.any(Function),
       });
       expect(play).toHaveBeenCalledWith(GREETING_AUDIO);
@@ -716,8 +721,8 @@ describe('useConversation', () => {
       });
 
       expect(speak.mock.calls).toEqual([
-        ['Uno.', { slow: true }],
-        ['Dos.', { slow: true }],
+        ['Uno.', { speed: slowRepeatSpeed(1) }],
+        ['Dos.', { speed: slowRepeatSpeed(1) }],
       ]);
       expect(vi.mocked(play).mock.calls).toEqual([
         [slowFirst],

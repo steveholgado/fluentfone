@@ -13,8 +13,9 @@ import {
   VOICES,
 } from '#/lib/text-to-speech/index';
 import {
+  MIN_SPEED,
   RUNTIME_KEY,
-  SLOW_LENGTH_SCALE,
+  slowRepeatSpeed,
   WASM_FILES,
 } from '#/lib/text-to-speech/constants';
 import { hasStep, markStep } from '#/lib/cache/markers';
@@ -150,17 +151,27 @@ describe('openVoice', () => {
     await expect(second).resolves.toHaveProperty('type', 'audio/b');
   });
 
-  it('asks for a longer length scale when slow', () => {
+  it('asks for no length scale at natural speed', () => {
     const voice = openVoice(VOICES.en);
 
-    void voice.speak('hello', { slow: true });
+    void voice.speak('hello', { speed: 1 });
+
+    expect(FakeWorker.instances[0].postedMessages[1]).not.toHaveProperty(
+      'lengthScale',
+    );
+  });
+
+  it('asks for the inverse length scale at any other speed', () => {
+    const voice = openVoice(VOICES.en);
+
+    void voice.speak('hello', { speed: 0.8 });
 
     expect(FakeWorker.instances[0].postedMessages[1]).toEqual({
       id: 1,
       mode: 'speak',
       voiceId: VOICES.en,
       text: 'hello',
-      lengthScale: SLOW_LENGTH_SCALE,
+      lengthScale: 1.25,
     });
   });
 
@@ -301,6 +312,17 @@ describe('openVoice', () => {
     });
 
     expect(onProgress).not.toHaveBeenCalled();
+  });
+});
+
+describe('slowRepeatSpeed', () => {
+  it('goes slower than the speed the line was spoken at', () => {
+    expect(slowRepeatSpeed(1)).toBeCloseTo(2 / 3);
+    expect(slowRepeatSpeed(0.85)).toBeLessThan(0.85);
+  });
+
+  it('never goes below the minimum speed', () => {
+    expect(slowRepeatSpeed(0.7)).toBe(MIN_SPEED);
   });
 });
 

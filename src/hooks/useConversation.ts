@@ -13,7 +13,12 @@ import {
   type ChatMessage,
   type GenerateStage,
 } from '#/lib/chat';
-import { openVoice, type SpeakTimings, type Voice } from '#/lib/text-to-speech';
+import {
+  openVoice,
+  slowRepeatSpeed,
+  type SpeakTimings,
+  type Voice,
+} from '#/lib/text-to-speech';
 import { formatProgress } from '#/utils/formatProgress';
 import { formatTurnTimings } from '#/lib/utils/formatTurnTimings';
 import { createSentenceSplitter } from '#/lib/utils/sentenceSplitter';
@@ -98,7 +103,7 @@ export function useConversation() {
         trigger: GREETING_TRIGGER,
         onStage: (stage) => setStatus(STAGE_STATUS[stage]),
       });
-      const audio = await getVoice().speak(opening, { slow: false });
+      const audio = await getVoice().speak(opening, { speed: 1 });
       greetingRef.current = { text: opening, audio };
       setStatus('');
       setIsGreetingReady(true);
@@ -200,7 +205,7 @@ export function useConversation() {
 
         let timings: SpeakTimings | undefined;
         const audio = voice.speak(sentence, {
-          slow: false,
+          speed: 1,
           onTimings: (t) => (timings = t),
         });
         // Its failure surfaces through `playback`, which awaits it in turn.
@@ -301,7 +306,9 @@ export function useConversation() {
           // Every sentence goes to the voice at once, so later ones are
           // synthesised while the first plays.
           line.slowClips ??= line.sentences.map((sentence) => {
-            const audio = getVoice().speak(sentence, { slow: true });
+            const audio = getVoice().speak(sentence, {
+              speed: slowRepeatSpeed(1),
+            });
             // Its failure surfaces below, when it's awaited in turn.
             audio.catch(() => {});
             return audio;

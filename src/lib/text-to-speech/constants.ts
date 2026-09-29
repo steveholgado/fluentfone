@@ -22,10 +22,21 @@ export const VOICES = {
 };
 
 /**
- * Slow speech. Piper's length_scale lengthens every phoneme and pause, which
- * sounds like deliberate speech; this multiplies the voice's own value.
+ * Slower speech is synthesised rather than played back slower: Piper's
+ * length_scale lengthens every phoneme and pause, which sounds like deliberate
+ * speech rather than a stretched recording. A speed is its inverse, and
+ * multiplies the voice's own value.
+ *
+ * "Repeat slowly" goes this much slower than the line was spoken, but never
+ * below MIN_SPEED, past which Piper starts to drawl.
  */
-export const SLOW_LENGTH_SCALE = 1.5;
+export const SLOW_REPEAT_FACTOR = 2 / 3;
+export const MIN_SPEED = 0.5;
+
+/** The speed to repeat a line at slowly, given the speed it was spoken at. */
+export function slowRepeatSpeed(speed: number): number {
+  return Math.max(MIN_SPEED, speed * SLOW_REPEAT_FACTOR);
+}
 
 /** Self-hosted by vite-plugin-vendor-wasm-assets.ts; versioned by path. */
 export const ONNX_WASM_BASE = '/vendor/onnx/1.23.2/';

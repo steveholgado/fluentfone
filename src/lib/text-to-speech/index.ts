@@ -9,7 +9,7 @@
 // separate module registry, so nothing module-scoped inside piper-tts-web is
 // shared between two of them. A worker keeps its session for as long as it is
 // open — a whole conversation, normally — which is safe because a conversation
-// never changes voice, and slow speech is a per-`predict()` option rather than
+// never changes voice, and speed is a per-`predict()` option rather than
 // something baked into the session.
 //
 // Voice files are cached in OPFS, which is scoped to the origin rather than
@@ -18,16 +18,11 @@
 import { hasStep, markStep } from '#/lib/cache/markers';
 import { trackStep } from '#/lib/preload/track';
 import type { ProgressCallback } from '#/lib/progress';
-import {
-  OPFS_VOICE_DIR,
-  RUNTIME_KEY,
-  SLOW_LENGTH_SCALE,
-  WASM_FILES,
-} from './constants';
+import { OPFS_VOICE_DIR, RUNTIME_KEY, WASM_FILES } from './constants';
 import type { TtsRequest, WorkerRequest, WorkerResponse } from './messages';
 import type { SpeakOptions } from './types';
 
-export { VOICES } from './constants';
+export { slowRepeatSpeed, VOICES } from './constants';
 export type { SpeakOptions, SpeakTimings } from './types';
 
 type DoneResponse = Extract<WorkerResponse, { type: 'done' }>;
@@ -133,7 +128,7 @@ export function openVoice(
       return ready;
     },
 
-    async speak(text, { slow = false, onTimings } = {}) {
+    async speak(text, { speed = 1, onTimings } = {}) {
       if (closed) throw new Error('This voice has been closed.');
 
       const start = performance.now();
@@ -141,7 +136,7 @@ export function openVoice(
         mode: 'speak',
         voiceId,
         text,
-        ...(slow && { lengthScale: SLOW_LENGTH_SCALE }),
+        ...(speed !== 1 && { lengthScale: 1 / speed }),
       });
 
       if (!result.buffer || !result.mimeType) {
