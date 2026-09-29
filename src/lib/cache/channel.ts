@@ -1,7 +1,7 @@
 /**
  * The wire contracts between the service worker and the page: the byte counts
- * the worker broadcasts as they stream past, and the page's request that a
- * waiting update take over.
+ * the worker broadcasts as they stream past, the page's request that a
+ * waiting update take over, and its request to be claimed.
  *
  * See the note at the top of ./rules.ts for why nothing in `lib/cache` may
  * import anything heavier than a type.
@@ -26,3 +26,10 @@ export interface AssetProgressMessage {
  * the app on the old one.
  */
 export const TAKE_OVER = 'take-over';
+
+/**
+ * Posted by a starting page that the active worker doesn't control, asking to
+ * be claimed. A hard reload loads the page past the worker, and an
+ * already-active worker never activates again to claim it on its own.
+ */
+export const CLAIM = 'claim';

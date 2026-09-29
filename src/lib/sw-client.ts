@@ -6,8 +6,8 @@
  * document that registered it; it takes over on the next navigation. On a
  * first visit that would mean the worker observing none of the downloads, on
  * exactly the visit where all of them happen. `sw.ts` calls `clients.claim()`
- * on a first install to take control early, and this resolves once that has
- * landed.
+ * on a first install to take control early, or when asked to by a page that a
+ * hard reload loaded past it, and this resolves once that has landed.
  *
  * It is also where a new deploy is picked up: see `applyUpdate`.
  *
@@ -16,7 +16,7 @@
  * shell and leaves only the model tier — so there is nothing left to go stale.
  */
 
-import { TAKE_OVER } from '#/lib/cache/channel';
+import { CLAIM, TAKE_OVER } from '#/lib/cache/channel';
 
 const SW_URL = '/sw.js';
 
@@ -69,13 +69,21 @@ async function resolveController(): Promise<boolean> {
     return true;
   }
 
-  await navigator.serviceWorker.ready;
+  const { active } = await navigator.serviceWorker.ready;
 
   // `ready` resolves on activation, which can be a beat before the claim
   // reaches this page.
   if (navigator.serviceWorker.controller) return true;
 
-  return waitForControllerChange();
+  // Listening before asking, so the claim can't be missed. On a first install
+  // the worker's own activation claims this page and the ask is redundant. But
+  // after a hard reload, which loads the page past an already-active worker,
+  // nothing else would: that worker won't activate again, and without the ask
+  // this sits out the whole timeout and the app runs uncached.
+  const claimed = waitForControllerChange();
+  active?.postMessage(CLAIM);
+
+  return claimed;
 }
 
 /**

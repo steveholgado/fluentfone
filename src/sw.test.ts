@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  CLAIM,
   PROGRESS_CHANNEL,
   TAKE_OVER,
   type AssetProgressMessage,
@@ -212,6 +213,16 @@ describe('take over', () => {
 
     expect(skipWaiting).not.toHaveBeenCalled();
     expect(port.postMessage).not.toHaveBeenCalled();
+    expect(claim).not.toHaveBeenCalled();
+  });
+
+  it('claims when asked by a page it does not control', async () => {
+    // A hard reload loads the page past this worker, which, already active,
+    // would never claim it on its own.
+    await message(CLAIM);
+
+    expect(claim).toHaveBeenCalled();
+    expect(skipWaiting).not.toHaveBeenCalled();
   });
 });
 

@@ -33,6 +33,7 @@ import { BUILD_ID, PRECACHE_URLS } from './sw-precache';
 // The leaves rather than a barrel: `lib/cache` deliberately has none, so that
 // what the service worker bundle pulls in is visible here at the call site.
 import {
+  CLAIM,
   PROGRESS_CHANNEL,
   TAKE_OVER,
   type AssetProgressMessage,
@@ -113,8 +114,12 @@ sw.addEventListener('activate', (event) => {
 });
 
 sw.addEventListener('message', (event) => {
-  if (event.data !== TAKE_OVER) return;
-  event.waitUntil(takeOver(event));
+  if (event.data === TAKE_OVER) event.waitUntil(takeOver(event));
+  // A page that loaded past this worker — a hard reload — asking to be
+  // claimed (see `resolveController` in lib/sw-client.ts). Nothing is swapped
+  // under it: it came from the network, and any of its chunks that aren't in
+  // this build's precache still go to the network.
+  else if (event.data === CLAIM) event.waitUntil(sw.clients.claim());
 });
 
 sw.addEventListener('fetch', (event) => {

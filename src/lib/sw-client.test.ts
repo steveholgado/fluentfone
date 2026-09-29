@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { CLAIM } from '#/lib/cache/channel';
+
 /**
  * The module memoizes its answer, so every test imports it fresh.
  */
@@ -106,6 +108,21 @@ describe('ensureController', () => {
 
     await expect(pending).resolves.toBe(true);
     expect(container.register).toHaveBeenCalledWith('/sw.js');
+  });
+
+  it('asks an already-active worker to claim a page loaded past it', async () => {
+    // A hard reload bypasses the worker, and one that is already active never
+    // activates again to claim the page by itself. Without the ask, startup
+    // sits out the whole timeout and then runs uncached.
+    const active = {
+      postMessage: vi.fn(() => listeners.get('controllerchange')?.()),
+    };
+    stubServiceWorker({ ready: Promise.resolve({ active }) });
+
+    const { ensureController } = await load();
+
+    await expect(ensureController()).resolves.toBe(true);
+    expect(active.postMessage).toHaveBeenCalledWith(CLAIM);
   });
 
   it('asks only once however many callers there are', async () => {
