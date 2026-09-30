@@ -2,12 +2,12 @@ import { useEffect, useState } from 'react';
 
 import { cn } from '#/utils/cn';
 
-interface NotificationProps {
+interface OverlayProps {
   visible: boolean;
   children: React.ReactNode;
 }
 
-export function Notification({ visible, children }: NotificationProps) {
+export function Overlay({ visible, children }: OverlayProps) {
   const [shouldRender, setShouldRender] = useState(visible);
 
   useEffect(() => {

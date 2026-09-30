@@ -1,19 +1,19 @@
 import type { RequirementResult } from '#/lib/device';
-import { Notification } from '#/components/Notification';
+import { Overlay } from '#/components/Overlay';
 
-interface UnsupportedScreenProps {
+interface UnsupportedOverlayProps {
   visible: boolean;
   status: string;
   unmet: RequirementResult[];
 }
 
-export function UnsupportedScreen({
+export function UnsupportedOverlay({
   visible,
   status,
   unmet,
-}: UnsupportedScreenProps) {
+}: UnsupportedOverlayProps) {
   return (
-    <Notification visible={visible}>
+    <Overlay visible={visible}>
       <div className="text-lg">{status}</div>
       <div>
         Unfortunately your device needs the following features in order to run
@@ -24,6 +24,6 @@ export function UnsupportedScreen({
           <li key={requirement.id}>{requirement.label}</li>
         ))}
       </ul>
-    </Notification>
+    </Overlay>
   );
 }

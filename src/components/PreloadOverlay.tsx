@@ -7,7 +7,7 @@ import {
 } from '#/lib/preload';
 import type { PreloadProgress } from '#/hooks/usePreload';
 import { DownloadProgressBar } from '#/components/DownloadProgressBar';
-import { Notification } from '#/components/Notification';
+import { Overlay } from '#/components/Overlay';
 import { formatBytes } from '#/utils/formatBytes';
 
 const LABELS: Record<PreloadLabel, string> = {
@@ -18,7 +18,7 @@ const LABELS: Record<PreloadLabel, string> = {
 
 const ORDER: PreloadLabel[] = ['speech-to-text', 'chat', 'text-to-speech'];
 
-interface PreloadScreenProps {
+interface PreloadOverlayProps {
   cached: PreloadStatus;
   isPreloading: boolean;
   status: string;
@@ -50,7 +50,7 @@ function DownloadNote({ bytes }: { bytes: number }) {
   );
 }
 
-export function PreloadScreen({
+export function PreloadOverlay({
   cached,
   isPreloading,
   status,
@@ -58,11 +58,11 @@ export function PreloadScreen({
   visible,
   onPreload,
   onStart,
-}: PreloadScreenProps) {
+}: PreloadOverlayProps) {
   const ready = isFullyPreloaded(cached);
 
   return (
-    <Notification visible={visible}>
+    <Overlay visible={visible}>
       <div className="text-lg">Download</div>
       <ul>
         {ORDER.map((label) => {
@@ -107,6 +107,6 @@ export function PreloadScreen({
           Download
         </button>
       )}
-    </Notification>
+    </Overlay>
   );
 }

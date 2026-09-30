@@ -2,9 +2,9 @@ import { createFileRoute } from '@tanstack/react-router';
 
 import { CheckScreen } from '#/components/CheckScreen';
 import { Conversation } from '#/components/Conversation';
-import { PreloadScreen } from '#/components/PreloadScreen';
+import { PreloadOverlay } from '#/components/PreloadOverlay';
 import { SettingsMenu } from '#/components/SettingsMenu';
-import { UnsupportedScreen } from '#/components/UnsupportedScreen';
+import { UnsupportedOverlay } from '#/components/UnsupportedOverlay';
 import { usePreload } from '#/hooks/usePreload';
 import { useSettings } from '#/hooks/useSettings';
 
@@ -46,7 +46,7 @@ function App() {
           <Conversation key={level} level={level} speed={speed} phase={phase} />
         )}
 
-        <PreloadScreen
+        <PreloadOverlay
           cached={cached}
           isPreloading={isPreloading}
           status={preloadStatus}
@@ -56,7 +56,7 @@ function App() {
           onStart={start}
         />
 
-        <UnsupportedScreen
+        <UnsupportedOverlay
           visible={phase === 'unsupported'}
           status={preloadStatus}
           unmet={support?.unmet ?? []}
