@@ -7,6 +7,7 @@ import type { CefrLevel } from '#/prompts';
 
 interface ConversationProps {
   level: CefrLevel;
+  speed: number;
   phase: PreloadPhase;
 }
 
@@ -14,7 +15,7 @@ interface ConversationProps {
  * One conversation, from the incoming call onwards. Its level is fixed: the
  * caller keys this by level, so a new one is a new call.
  */
-export function Conversation({ level, phase }: ConversationProps) {
+export function Conversation({ level, speed, phase }: ConversationProps) {
   const {
     isRecording,
     isAudioLive,
@@ -26,7 +27,7 @@ export function Conversation({ level, phase }: ConversationProps) {
     prepareGreeting,
     toggleRecording,
     repeatLastLine,
-  } = useConversation({ level });
+  } = useConversation({ level, speed });
 
   useEffect(() => {
     if (phase === 'ready') void prepareGreeting();

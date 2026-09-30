@@ -49,13 +49,20 @@ interface ConversationOptions {
    * caller remounts rather than passing a different one.
    */
   level: CefrLevel;
+  /**
+   * Can change mid-call. Each reply is spoken at the speed it started at, so
+   * a change applies from the next one.
+   */
+  speed: number;
 }
 
-export function useConversation({ level }: ConversationOptions) {
+export function useConversation({ level, speed }: ConversationOptions) {
   const systemInstruction = useMemo(
     () => buildSystemInstruction(level),
     [level],
   );
+  // Read when a line is synthesised, which is after the render that set it.
+  const speedRef = useRef(speed);
 
   const [isRecording, setIsRecording] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -70,14 +77,19 @@ export function useConversation({ level }: ConversationOptions) {
   const recorderRef = useRef<AudioRecorder | null>(null);
   const historyRef = useRef<ChatMessage[]>([]);
   const preparingGreetingRef = useRef(false);
-  const greetingRef = useRef<{ text: string; audio: Blob } | null>(null);
+  const greetingRef = useRef<{
+    text: string;
+    audio: Promise<Blob>;
+    speed: number;
+  } | null>(null);
   const voiceRef = useRef<Voice | null>(null);
   // The line the agent has just finished speaking, kept so it can be said
-  // again. The normal-speed clips are the ones already played; the slow ones
+  // again. The clips are the ones already played, at `speed`; the slow ones
   // are only synthesised if asked for, then kept for any further repeats.
   const lastLineRef = useRef<{
     sentences: string[];
     clips: Blob[];
+    speed: number;
     slowClips?: Promise<Blob>[];
   } | null>(null);
 
@@ -130,6 +142,18 @@ export function useConversation({ level }: ConversationOptions) {
     }
   }, []);
 
+  // The greeting is synthesised before the call is answered, so a speed change
+  // in between has it synthesised again, straight away, to be ready in time.
+  const matchGreetingSpeed = useCallback(() => {
+    const greeting = greetingRef.current;
+    const speed = speedRef.current;
+    if (!greeting || greeting.speed === speed) return;
+    const audio = getVoice().speak(greeting.text, { speed });
+    // Its failure surfaces in greet(), which awaits it.
+    audio.catch(() => {});
+    greetingRef.current = { ...greeting, audio, speed };
+  }, [getVoice]);
+
   const prepareGreeting = useCallback(async () => {
     if (preparingGreetingRef.current || greetingRef.current) return;
     preparingGreetingRef.current = true;
@@ -143,8 +167,15 @@ export function useConversation({ level }: ConversationOptions) {
         trigger: GREETING_TRIGGER,
         onStage: (stage) => setStatus(STAGE_STATUS[stage]),
       });
-      const audio = await getVoice().speak(opening, { speed: 1 });
-      greetingRef.current = { text: opening, audio };
+      const speed = speedRef.current;
+      const audio = await getVoice().speak(opening, { speed });
+      greetingRef.current = {
+        text: opening,
+        audio: Promise.resolve(audio),
+        speed,
+      };
+      // In case the speed changed while that was being synthesised.
+      matchGreetingSpeed();
       setStatus('');
       setIsGreetingReady(true);
     } catch (err) {
@@ -152,7 +183,12 @@ export function useConversation({ level }: ConversationOptions) {
     } finally {
       preparingGreetingRef.current = false;
     }
-  }, [getVoice, report, systemInstruction]);
+  }, [getVoice, matchGreetingSpeed, report, systemInstruction]);
+
+  useEffect(() => {
+    speedRef.current = speed;
+    if (!hasGreeted) matchGreetingSpeed();
+  }, [speed, hasGreeted, matchGreetingSpeed]);
 
   const greet = useCallback(async () => {
     // Synchronously, before any await: the audio context can only start from
@@ -166,10 +202,13 @@ export function useConversation({ level }: ConversationOptions) {
       historyRef.current.push({ role: 'model', content: greeting.text });
       setHasGreeted(true);
       setStatus('Speaking…');
-      await playVoice(greeting.audio);
+      // Only still synthesising if the speed was changed just before answering.
+      const audio = await greeting.audio;
+      await playVoice(audio);
       lastLineRef.current = {
         sentences: [greeting.text],
-        clips: [greeting.audio],
+        clips: [audio],
+        speed: greeting.speed,
       };
       setCanRepeat(true);
       setStatus('');
@@ -233,8 +272,12 @@ export function useConversation({ level }: ConversationOptions) {
       // its audio is back and the one before has finished. So the first
       // sentence plays while the rest is still being generated and
       // synthesised, rather than after all of it.
+      //
+      // The whole reply is at one speed: a change that lands partway through
+      // applies from the next one.
       setStatus(STAGE_STATUS.generating);
       const voice = getVoice();
+      const replySpeed = speedRef.current;
       let generating: number | undefined;
       let firstSentence: number | undefined;
       let synthesised: number | undefined;
@@ -249,7 +292,7 @@ export function useConversation({ level }: ConversationOptions) {
 
         let timings: SpeakTimings | undefined;
         const audio = voice.speak(sentence, {
-          speed: 1,
+          speed: replySpeed,
           onTimings: (t) => (timings = t),
         });
         // Its failure surfaces through `playback`, which awaits it in turn.
@@ -293,7 +336,11 @@ export function useConversation({ level }: ConversationOptions) {
       console.log(historyRef.current);
 
       await playback;
-      lastLineRef.current = { sentences: spoken, clips };
+      lastLineRef.current = {
+        sentences: spoken,
+        clips,
+        speed: replySpeed,
+      };
       setCanRepeat(true);
       setStatus('');
 
@@ -350,7 +397,7 @@ export function useConversation({ level }: ConversationOptions) {
           // synthesised while the first plays.
           line.slowClips ??= line.sentences.map((sentence) => {
             const audio = getVoice().speak(sentence, {
-              speed: slowRepeatSpeed(1),
+              speed: slowRepeatSpeed(line.speed),
             });
             // Its failure surfaces below, when it's awaited in turn.
             audio.catch(() => {});

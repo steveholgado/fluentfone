@@ -5,7 +5,7 @@ import { Conversation } from '#/components/Conversation';
 import { PreloadScreen } from '#/components/PreloadScreen';
 import { UnsupportedScreen } from '#/components/UnsupportedScreen';
 import { usePreload } from '#/hooks/usePreload';
-import { DEFAULT_LEVEL } from '#/config';
+import { DEFAULT_LEVEL, DEFAULT_SPEED } from '#/config';
 
 export const Route = createFileRoute('/app')({ ssr: false, component: App });
 
@@ -32,6 +32,7 @@ function App() {
           <Conversation
             key={DEFAULT_LEVEL}
             level={DEFAULT_LEVEL}
+            speed={DEFAULT_SPEED[DEFAULT_LEVEL]}
             phase={phase}
           />
         )}
