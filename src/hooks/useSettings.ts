@@ -59,10 +59,16 @@ export function useSettings() {
     save(next);
   }, []);
 
-  /** Also resets the speed, to where the new level starts. */
+  /**
+   * Also resets the speed, to where the new level starts. The current level
+   * is left alone, speed included.
+   */
   const setLevel = useCallback(
-    (level: CefrLevel) => update({ level, speed: DEFAULT_SPEED[level] }),
-    [update],
+    (level: CefrLevel) => {
+      if (level === settings.level) return;
+      update({ level, speed: DEFAULT_SPEED[level] });
+    },
+    [settings, update],
   );
 
   const setSpeed = useCallback(

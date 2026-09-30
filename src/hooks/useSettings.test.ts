@@ -53,6 +53,14 @@ describe('useSettings', () => {
     expect(result.current.speed).toBe(DEFAULT_SPEED.A1);
   });
 
+  it('leaves the speed alone when the current level is chosen again', () => {
+    const { result } = renderHook(() => useSettings());
+    act(() => result.current.setSpeed(0.7));
+    act(() => result.current.setLevel(DEFAULT_LEVEL));
+
+    expect(result.current.speed).toBe(0.7);
+  });
+
   it('keeps the level when only the speed changes', () => {
     const { result } = renderHook(() => useSettings());
     act(() => result.current.setLevel('B2'));
