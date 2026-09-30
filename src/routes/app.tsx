@@ -5,7 +5,7 @@ import { Conversation } from '#/components/Conversation';
 import { PreloadScreen } from '#/components/PreloadScreen';
 import { UnsupportedScreen } from '#/components/UnsupportedScreen';
 import { usePreload } from '#/hooks/usePreload';
-import { DEFAULT_LEVEL, DEFAULT_SPEED } from '#/config';
+import { useSettings } from '#/hooks/useSettings';
 
 export const Route = createFileRoute('/app')({ ssr: false, component: App });
 
@@ -20,6 +20,7 @@ function App() {
     preload,
     start,
   } = usePreload();
+  const { level, speed } = useSettings();
 
   return (
     <main className="min-h-screen sm:flex sm:items-center sm:justify-center sm:p-8">
@@ -29,12 +30,7 @@ function App() {
         {/* Keyed by level: a new level is a new call, so everything from the
             last one — history, greeting, anything still in flight — goes. */}
         {phase !== 'checking' && (
-          <Conversation
-            key={DEFAULT_LEVEL}
-            level={DEFAULT_LEVEL}
-            speed={DEFAULT_SPEED[DEFAULT_LEVEL]}
-            phase={phase}
-          />
+          <Conversation key={level} level={level} speed={speed} phase={phase} />
         )}
 
         <PreloadScreen
