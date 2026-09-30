@@ -1,12 +1,11 @@
-import { useEffect } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 
 import { CheckScreen } from '#/components/CheckScreen';
+import { Conversation } from '#/components/Conversation';
 import { PreloadScreen } from '#/components/PreloadScreen';
 import { UnsupportedScreen } from '#/components/UnsupportedScreen';
-import { ConversationScreen } from '#/components/ConversationScreen';
-import { useConversation } from '#/hooks/useConversation';
 import { usePreload } from '#/hooks/usePreload';
+import { DEFAULT_LEVEL } from '#/config';
 
 export const Route = createFileRoute('/app')({ ssr: false, component: App });
 
@@ -21,41 +20,19 @@ function App() {
     preload,
     start,
   } = usePreload();
-  const {
-    isRecording,
-    isAudioLive,
-    hasGreeted,
-    isGreetingReady,
-    canRepeat,
-    status,
-    greet,
-    prepareGreeting,
-    toggleRecording,
-    repeatLastLine,
-  } = useConversation();
-
-  useEffect(() => {
-    if (phase === 'ready') void prepareGreeting();
-  }, [phase, prepareGreeting]);
 
   return (
     <main className="min-h-screen sm:flex sm:items-center sm:justify-center sm:p-8">
       <div className="relative h-screen w-full overflow-hidden bg-neutral-800 text-white sm:aspect-9/18 sm:h-auto sm:w-100 sm:rounded-[48px]">
         {phase === 'checking' && <CheckScreen />}
 
+        {/* Keyed by level: a new level is a new call, so everything from the
+            last one — history, greeting, anything still in flight — goes. */}
         {phase !== 'checking' && (
-          <ConversationScreen
-            isRecording={isRecording}
-            isAudioLive={isAudioLive}
-            hasGreeted={hasGreeted}
-            isGreetingReady={isGreetingReady}
-            canRepeat={canRepeat}
-            status={status}
-            minimal={phase !== 'ready'}
-            onAnswer={greet}
-            onToggleRecording={toggleRecording}
-            onRepeat={() => void repeatLastLine(false)}
-            onRepeatSlowly={() => void repeatLastLine(true)}
+          <Conversation
+            key={DEFAULT_LEVEL}
+            level={DEFAULT_LEVEL}
+            phase={phase}
           />
         )}
 

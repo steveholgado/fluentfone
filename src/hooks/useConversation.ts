@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   AudioRecorder,
@@ -23,8 +23,12 @@ import {
 import { formatProgress } from '#/utils/formatProgress';
 import { formatTurnTimings } from '#/lib/utils/formatTurnTimings';
 import { createSentenceSplitter } from '#/lib/utils/sentenceSplitter';
-import { GREETING_TRIGGER } from '#/prompts';
-import { LANGUAGE, SYSTEM_INSTRUCTION, VOICE_ID } from '#/config';
+import {
+  buildSystemInstruction,
+  GREETING_TRIGGER,
+  type CefrLevel,
+} from '#/prompts';
+import { LANGUAGE, VOICE_ID } from '#/config';
 
 // 'loading' is the everyday one: preload put the model on disk, and this is
 // the wait while several gigabytes are read back off it. 'downloading' is
@@ -39,7 +43,20 @@ const STAGE_STATUS: Record<GenerateStage, string> = {
   generating: 'Generating…',
 };
 
-export function useConversation() {
+interface ConversationOptions {
+  /**
+   * Fixed for the conversation's life: a new level means a new call, so the
+   * caller remounts rather than passing a different one.
+   */
+  level: CefrLevel;
+}
+
+export function useConversation({ level }: ConversationOptions) {
+  const systemInstruction = useMemo(
+    () => buildSystemInstruction(level),
+    [level],
+  );
+
   const [isRecording, setIsRecording] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [hasGreeted, setHasGreeted] = useState(false);
@@ -122,7 +139,7 @@ export function useConversation() {
       getVoice();
       setStatus(STAGE_STATUS.compiling);
       const opening = await generateMessage({
-        systemInstruction: SYSTEM_INSTRUCTION,
+        systemInstruction,
         trigger: GREETING_TRIGGER,
         onStage: (stage) => setStatus(STAGE_STATUS[stage]),
       });
@@ -135,7 +152,7 @@ export function useConversation() {
     } finally {
       preparingGreetingRef.current = false;
     }
-  }, [getVoice, report]);
+  }, [getVoice, report, systemInstruction]);
 
   const greet = useCallback(async () => {
     // Synchronously, before any await: the audio context can only start from
@@ -257,7 +274,7 @@ export function useConversation() {
       try {
         reply = await generateMessage({
           prompt: text,
-          systemInstruction: SYSTEM_INSTRUCTION,
+          systemInstruction,
           history: historyRef.current.slice(0, -1),
           onStage: (stage) => {
             if (stage === 'generating') generating = performance.now();
@@ -307,7 +324,7 @@ export function useConversation() {
     } finally {
       busyRef.current = false;
     }
-  }, [getVoice, playVoice, report]);
+  }, [getVoice, playVoice, report, systemInstruction]);
 
   const toggleRecording = useCallback(() => {
     unlock();
