@@ -12,7 +12,7 @@ import {
   GREETING_TRIGGER,
   type CefrLevel,
 } from '#/prompts';
-import { VOICE_ID } from '#/config';
+import { DEFAULT_LANGUAGE, voiceFor } from '#/config';
 
 vi.mock('#/lib/audio/recorder', () => ({
   AudioRecorder: vi.fn(),
@@ -34,7 +34,11 @@ vi.mock('#/lib/text-to-speech', async () => ({
       '#/lib/text-to-speech/constants',
     )
   ).slowRepeatSpeed,
-  VOICES: { en: 'en_US-hfc_female-medium', es: 'es_ES-davefx-medium' },
+  VOICES: {
+    en_US: ['en_US-hfc_female-medium'],
+    es_ES: ['es_ES-davefx-medium'],
+    es_MX: ['es_MX-ald-medium'],
+  },
 }));
 
 const LEVEL: CefrLevel = 'B1';
@@ -448,7 +452,10 @@ describe('useConversation', () => {
         trigger: GREETING_TRIGGER,
         onStage: expect.any(Function),
       });
-      expect(openVoice).toHaveBeenCalledWith(VOICE_ID, expect.any(Function));
+      expect(openVoice).toHaveBeenCalledWith(
+        voiceFor(DEFAULT_LANGUAGE),
+        expect.any(Function),
+      );
       expect(speak).toHaveBeenCalledWith('¡Hola!', { speed: 1 });
       expect(result.current.isGreetingReady).toBe(true);
       expect(result.current.status).toBe('');

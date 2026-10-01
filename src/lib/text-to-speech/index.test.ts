@@ -73,16 +73,16 @@ const AUDIO = { buffer: new ArrayBuffer(1), mimeType: 'audio/wav' };
 
 describe('openVoice', () => {
   it('starts loading the voice in a worker straight away', () => {
-    openVoice(VOICES.es);
+    openVoice(VOICES.es_ES[0]);
 
     expect(FakeWorker.instances).toHaveLength(1);
     expect(FakeWorker.instances[0].postedMessages).toEqual([
-      { id: 0, mode: 'load', voiceId: VOICES.es },
+      { id: 0, mode: 'load', voiceId: VOICES.es_ES[0] },
     ]);
   });
 
   it('settles ready once the session has loaded', async () => {
-    const voice = openVoice(VOICES.es);
+    const voice = openVoice(VOICES.es_ES[0]);
 
     FakeWorker.instances[0].emit({ id: 0, type: 'done' });
 
@@ -90,7 +90,7 @@ describe('openVoice', () => {
   });
 
   it('speaks a line and resolves with the returned audio blob', async () => {
-    const voice = openVoice(VOICES.en);
+    const voice = openVoice(VOICES.en_US[0]);
     const worker = FakeWorker.instances[0];
     const buffer = new TextEncoder().encode('audio bytes').buffer;
 
@@ -98,7 +98,7 @@ describe('openVoice', () => {
     expect(worker.postedMessages[1]).toEqual({
       id: 1,
       mode: 'speak',
-      voiceId: VOICES.en,
+      voiceId: VOICES.en_US[0],
       text: 'hello',
     });
     worker.emit({ id: 1, type: 'done', buffer, mimeType: 'audio/wav' });
@@ -110,7 +110,7 @@ describe('openVoice', () => {
   });
 
   it('keeps one worker for every line', async () => {
-    const voice = openVoice(VOICES.en);
+    const voice = openVoice(VOICES.en_US[0]);
     const worker = FakeWorker.instances[0];
 
     const first = voice.speak('uno');
@@ -129,7 +129,7 @@ describe('openVoice', () => {
   });
 
   it('matches replies to lines by id', async () => {
-    const voice = openVoice(VOICES.en);
+    const voice = openVoice(VOICES.en_US[0]);
     const worker = FakeWorker.instances[0];
 
     const first = voice.speak('uno');
@@ -152,7 +152,7 @@ describe('openVoice', () => {
   });
 
   it('asks for no length scale at natural speed', () => {
-    const voice = openVoice(VOICES.en);
+    const voice = openVoice(VOICES.en_US[0]);
 
     void voice.speak('hello', { speed: 1 });
 
@@ -162,21 +162,21 @@ describe('openVoice', () => {
   });
 
   it('asks for the inverse length scale at any other speed', () => {
-    const voice = openVoice(VOICES.en);
+    const voice = openVoice(VOICES.en_US[0]);
 
     void voice.speak('hello', { speed: 0.8 });
 
     expect(FakeWorker.instances[0].postedMessages[1]).toEqual({
       id: 1,
       mode: 'speak',
-      voiceId: VOICES.en,
+      voiceId: VOICES.en_US[0],
       text: 'hello',
       lengthScale: 1.25,
     });
   });
 
   it('reports startup as the round trip less the worker’s synthesis time', async () => {
-    const voice = openVoice(VOICES.en);
+    const voice = openVoice(VOICES.en_US[0]);
     const now = vi
       .spyOn(performance, 'now')
       .mockReturnValueOnce(1000)
@@ -198,7 +198,7 @@ describe('openVoice', () => {
 
   it('keeps the timings callback out of the worker request', () => {
     // A function can't be structured-cloned; posting one would throw.
-    const voice = openVoice(VOICES.en);
+    const voice = openVoice(VOICES.en_US[0]);
 
     void voice.speak('hello', { onTimings: vi.fn() });
 
@@ -208,7 +208,7 @@ describe('openVoice', () => {
   });
 
   it('rejects a line the worker reports an error for, and keeps the worker', async () => {
-    const voice = openVoice(VOICES.en);
+    const voice = openVoice(VOICES.en_US[0]);
     const worker = FakeWorker.instances[0];
     worker.emit({ id: 0, type: 'done' });
 
@@ -220,7 +220,7 @@ describe('openVoice', () => {
   });
 
   it('rejects when done arrives without audio data', async () => {
-    const voice = openVoice(VOICES.en);
+    const voice = openVoice(VOICES.en_US[0]);
 
     const promise = voice.speak('hello');
     FakeWorker.instances[0].emit({ id: 1, type: 'done' });
@@ -231,7 +231,7 @@ describe('openVoice', () => {
   it('replaces a worker whose voice failed to load', async () => {
     // Piper keeps the failed session as its singleton, so that worker can
     // never load one now.
-    const voice = openVoice(VOICES.en);
+    const voice = openVoice(VOICES.en_US[0]);
     const failed = FakeWorker.instances[0];
     const line = voice.speak('hello');
 
@@ -250,7 +250,7 @@ describe('openVoice', () => {
   });
 
   it('replaces a worker that crashed', async () => {
-    const voice = openVoice(VOICES.en);
+    const voice = openVoice(VOICES.en_US[0]);
     const crashed = FakeWorker.instances[0];
     const line = voice.speak('hello');
 
@@ -264,7 +264,7 @@ describe('openVoice', () => {
   });
 
   it('terminates the worker and refuses further lines once closed', async () => {
-    const voice = openVoice(VOICES.en);
+    const voice = openVoice(VOICES.en_US[0]);
     const worker = FakeWorker.instances[0];
     const inFlight = voice.speak('hello');
 
@@ -280,7 +280,7 @@ describe('openVoice', () => {
     // Normally silent — after preload the voice is in OPFS. This is the path
     // where the conversation was reached without one, or it has been evicted.
     const onProgress = vi.fn();
-    const voice = openVoice(VOICES.en, onProgress);
+    const voice = openVoice(VOICES.en_US[0], onProgress);
 
     await report({
       step: 'text-to-speech',
@@ -298,7 +298,7 @@ describe('openVoice', () => {
 
   it('stops listening once the voice has loaded', async () => {
     const onProgress = vi.fn();
-    const voice = openVoice(VOICES.en, onProgress);
+    const voice = openVoice(VOICES.en_US[0], onProgress);
 
     FakeWorker.instances[0].emit({ id: 0, type: 'done' });
     await voice.ready;
@@ -328,11 +328,11 @@ describe('slowRepeatSpeed', () => {
 
 describe('preload', () => {
   it('loads the voice once and closes the worker', async () => {
-    const promise = preload(VOICES.es);
+    const promise = preload(VOICES.es_ES[0]);
     const worker = FakeWorker.instances[0];
 
     expect(worker.postedMessages).toEqual([
-      { id: 0, mode: 'load', voiceId: VOICES.es },
+      { id: 0, mode: 'load', voiceId: VOICES.es_ES[0] },
     ]);
 
     worker.emit({ id: 0, type: 'done' });
@@ -342,7 +342,7 @@ describe('preload', () => {
   });
 
   it('rejects, and still closes the worker, when the voice fails to load', async () => {
-    const promise = preload(VOICES.es);
+    const promise = preload(VOICES.es_ES[0]);
     const worker = FakeWorker.instances[0];
 
     worker.emit({ id: 0, type: 'error', message: 'download failed' });

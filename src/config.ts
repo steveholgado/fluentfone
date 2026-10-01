@@ -1,8 +1,31 @@
 import { VOICES } from '#/lib/text-to-speech';
 import type { CefrLevel } from '#/prompts';
 
-export const LANGUAGE = 'spanish';
-export const VOICE_ID = VOICES.es;
+/**
+ * The languages on offer. `transcription` is what Whisper is told to expect,
+ * which can't tell regional variants apart, so they share one.
+ */
+export const LANGUAGES = {
+  'es-ES': {
+    label: 'Spanish (Spain)',
+    transcription: 'spanish',
+    voiceIds: VOICES.es_ES,
+  },
+  'es-MX': {
+    label: 'Spanish (Mexico)',
+    transcription: 'spanish',
+    voiceIds: VOICES.es_MX,
+  },
+} as const;
+
+export type LanguageId = keyof typeof LANGUAGES;
+
+export const DEFAULT_LANGUAGE: LanguageId = 'es-ES';
+
+/** The voice a call speaks with: its pack's first. */
+export function voiceFor(language: LanguageId): string {
+  return LANGUAGES[language].voiceIds[0];
+}
 
 export const DEFAULT_LEVEL: CefrLevel = 'B1';
 

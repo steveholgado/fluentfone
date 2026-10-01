@@ -92,9 +92,10 @@ export function ruleFor(url: URL): AssetRule | undefined {
  * could report no denominator at all if its responses declared no length.
  * Adding a `PreloadStepId` without a figure here is a type error, by design.
  *
- * The text-to-speech figure is per voice. Every piper "medium" voice happens
- * to be the same size, so it holds for either entry in VOICES — but a voice at
- * another quality would need a new figure.
+ * The text-to-speech figure is per voice. Every voice in VOICES is a piper
+ * "medium", and those happen to be the same size, so it holds for any of them
+ * — but a voice at another quality, or with more than one speaker, would need
+ * a new figure.
  */
 export const EXPECTED_BYTES: Record<PreloadStepId, number> = {
   'text-to-speech-runtime': 30_638_000,

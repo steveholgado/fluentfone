@@ -7,7 +7,7 @@ import { checkPreloaded, isFullyPreloaded, preloadAll } from '#/lib/preload';
 import type { PreloadStatus } from '#/lib/preload';
 import { requestPersistentStorage } from '#/lib/persist';
 import { sweepStaleAssets } from '#/lib/preload/sweep';
-import { VOICE_ID } from '#/config';
+import { DEFAULT_LANGUAGE, voiceFor } from '#/config';
 
 vi.mock('#/lib/persist', () => ({
   requestPersistentStorage: vi.fn().mockResolvedValue(false),
@@ -94,7 +94,7 @@ describe('usePreload', () => {
     await waitFor(() => expect(result.current.phase).toBe('ready'));
 
     expect(result.current.cached).toEqual(cached);
-    expect(preloadAll).toHaveBeenCalledWith(VOICE_ID);
+    expect(preloadAll).toHaveBeenCalledWith(voiceFor(DEFAULT_LANGUAGE));
   });
 
   it('logs but does not throw when the background warm-up fails', async () => {

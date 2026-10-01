@@ -15,11 +15,19 @@
  * which pulls them through so the service worker stores them.
  */
 
-// Piper voice IDs. Full list: await (await import('@mintplex-labs/piper-tts-web')).voices()
+/**
+ * Piper voice IDs, grouped by locale: each group is that locale's voice pack,
+ * downloaded together. Full list:
+ * await (await import('@mintplex-labs/piper-tts-web')).voices()
+ *
+ * Only IDs in that list will load — the library maps each to a file path, and
+ * has no path for any other.
+ */
 export const VOICES = {
-  en: 'en_US-hfc_female-medium',
-  es: 'es_ES-davefx-medium',
-};
+  en_US: ['en_US-hfc_female-medium'],
+  es_ES: ['es_ES-davefx-medium'],
+  es_MX: ['es_MX-ald-medium'],
+} as const;
 
 /**
  * Slower speech is synthesised rather than played back slower: Piper's

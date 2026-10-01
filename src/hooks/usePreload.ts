@@ -11,7 +11,7 @@ import { sweepStaleAssets } from '#/lib/preload/sweep';
 import { checkDeviceSupport, type DeviceSupport } from '#/lib/device';
 import { requestPersistentStorage } from '#/lib/persist';
 import { ensureController } from '#/lib/sw-client';
-import { VOICE_ID } from '#/config';
+import { DEFAULT_LANGUAGE, voiceFor } from '#/config';
 
 /**
  * 'checking'    — probing device support and local storage on mount
@@ -92,7 +92,7 @@ export function usePreload() {
       await sweepStaleAssets();
       if (cancelled) return;
 
-      const result = await checkPreloaded(VOICE_ID);
+      const result = await checkPreloaded(voiceFor(DEFAULT_LANGUAGE));
       if (cancelled) return;
 
       setCached(result);
@@ -102,7 +102,7 @@ export function usePreload() {
         // Everything is downloaded, but the engines still have to be created
         // and compiled. Do that now, off-screen, so the first conversation
         // turn doesn't pay for it. Reads from cache, so no network cost.
-        void preloadAll(VOICE_ID).catch((err) => {
+        void preloadAll(voiceFor(DEFAULT_LANGUAGE)).catch((err) => {
           console.error('Background warm-up failed:', err);
         });
       } else {
@@ -141,7 +141,7 @@ export function usePreload() {
     // frozen on the previous step. Steps that really are cached cost a slot
     // the bar passes through in a frame.
     try {
-      await preloadAll(VOICE_ID, (step, p) => {
+      await preloadAll(voiceFor(DEFAULT_LANGUAGE), (step, p) => {
         const position = DOWNLOAD_ORDER.indexOf(step);
         if (position === -1) return;
         const index = position + 1;

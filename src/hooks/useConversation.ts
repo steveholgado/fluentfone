@@ -28,7 +28,7 @@ import {
   GREETING_TRIGGER,
   type CefrLevel,
 } from '#/prompts';
-import { LANGUAGE, VOICE_ID } from '#/config';
+import { DEFAULT_LANGUAGE, LANGUAGES, voiceFor } from '#/config';
 
 // 'loading' is the everyday one: preload put the model on disk, and this is
 // the wait while several gigabytes are read back off it. 'downloading' is
@@ -98,7 +98,7 @@ export function useConversation({ level, speed }: ConversationOptions) {
   // refused after that, so work still in flight can't open another.
   const getVoice = useCallback(() => {
     if (disposedRef.current) throw new Error('This conversation has ended.');
-    return (voiceRef.current ??= openVoice(VOICE_ID, (p) =>
+    return (voiceRef.current ??= openVoice(voiceFor(DEFAULT_LANGUAGE), (p) =>
       setStatus(`Downloading voice model… ${formatProgress(p.progress)}`),
     ));
   }, []);
@@ -261,7 +261,7 @@ export function useConversation({ level, speed }: ConversationOptions) {
       setStatus('Transcribing…');
       let sttTimings: TranscribeTimings | undefined;
       const text = await transcribe(audioBlob, {
-        language: LANGUAGE,
+        language: LANGUAGES[DEFAULT_LANGUAGE].transcription,
         onTimings: (t) => (sttTimings = t),
       });
       const transcribed = performance.now();
