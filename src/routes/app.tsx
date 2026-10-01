@@ -7,11 +7,13 @@ import { SettingsMenu } from '#/components/SettingsMenu';
 import { UnsupportedOverlay } from '#/components/UnsupportedOverlay';
 import { usePreload } from '#/hooks/usePreload';
 import { useSettings } from '#/hooks/useSettings';
-import { DEFAULT_LANGUAGE } from '#/config';
+import { voiceFor } from '#/config';
 
 export const Route = createFileRoute('/app')({ ssr: false, component: App });
 
 function App() {
+  const { language, level, speed, setLanguage, setLevel, setSpeed } =
+    useSettings();
   const {
     phase,
     cached,
@@ -21,8 +23,7 @@ function App() {
     support,
     preload,
     start,
-  } = usePreload();
-  const { level, speed, setLevel, setSpeed } = useSettings();
+  } = usePreload(voiceFor(language));
 
   return (
     <main className="min-h-screen sm:flex sm:items-center sm:justify-center sm:p-8">
@@ -30,8 +31,10 @@ function App() {
       {phase !== 'checking' && phase !== 'unsupported' && (
         <div className="fixed top-4 right-4 z-10">
           <SettingsMenu
+            language={language}
             level={level}
             speed={speed}
+            onLanguageChange={setLanguage}
             onLevelChange={setLevel}
             onSpeedChange={setSpeed}
           />
@@ -41,13 +44,14 @@ function App() {
       <div className="relative h-screen w-full overflow-hidden bg-neutral-800 text-white sm:aspect-9/18 sm:h-auto sm:w-100 sm:rounded-[48px]">
         {phase === 'checking' && <CheckScreen />}
 
-        {/* Keyed by level: a new level is a new call, so everything from the
-            last one — history, greeting, anything still in flight — goes. */}
+        {/* Keyed by language and level: a new one of either is a new call, so
+            everything from the last one — history, greeting, anything still
+            in flight — goes. */}
         {phase !== 'checking' && (
           <Conversation
-            key={level}
+            key={`${language}:${level}`}
             level={level}
-            language={DEFAULT_LANGUAGE}
+            language={language}
             speed={speed}
             phase={phase}
           />

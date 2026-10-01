@@ -2,7 +2,7 @@ import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useSettings } from '#/hooks/useSettings';
-import { DEFAULT_LEVEL, DEFAULT_SPEED } from '#/config';
+import { DEFAULT_LANGUAGE, DEFAULT_LEVEL, DEFAULT_SPEED } from '#/config';
 
 const STORAGE_KEY = 'settings';
 
@@ -41,7 +41,11 @@ describe('useSettings', () => {
 
     expect(next.current.level).toBe('A2');
     expect(next.current.speed).toBe(1);
-    expect(stored()).toEqual({ level: 'A2', speed: 1 });
+    expect(stored()).toEqual({
+      language: DEFAULT_LANGUAGE,
+      level: 'A2',
+      speed: 1,
+    });
   });
 
   it('resets the speed to the new level’s own when the level changes', () => {
@@ -115,6 +119,81 @@ describe('useSettings', () => {
     const { result } = renderHook(() => useSettings());
 
     expect(result.current.level).toBe(DEFAULT_LEVEL);
+  });
+
+  describe('language', () => {
+    it('starts from the default language', () => {
+      const { result } = renderHook(() => useSettings());
+
+      expect(result.current.language).toBe(DEFAULT_LANGUAGE);
+    });
+
+    it('remembers a change for next time', () => {
+      const { result } = renderHook(() => useSettings());
+      act(() => result.current.setLanguage('es-MX'));
+
+      const { result: next } = renderHook(() => useSettings());
+
+      expect(next.current.language).toBe('es-MX');
+      expect(stored()).toEqual({
+        language: 'es-MX',
+        level: DEFAULT_LEVEL,
+        speed: DEFAULT_SPEED[DEFAULT_LEVEL],
+      });
+    });
+
+    it('keeps the level and speed when the language changes', () => {
+      const { result } = renderHook(() => useSettings());
+      act(() => result.current.setLevel('A2'));
+      act(() => result.current.setSpeed(1));
+      act(() => result.current.setLanguage('es-MX'));
+
+      expect(result.current.level).toBe('A2');
+      expect(result.current.speed).toBe(1);
+    });
+
+    it('keeps the language when the level changes', () => {
+      const { result } = renderHook(() => useSettings());
+      act(() => result.current.setLanguage('es-MX'));
+      act(() => result.current.setLevel('A1'));
+
+      expect(result.current.language).toBe('es-MX');
+    });
+
+    it('saves nothing when the current language is chosen again', () => {
+      const { result } = renderHook(() => useSettings());
+      act(() => result.current.setLanguage(DEFAULT_LANGUAGE));
+
+      expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+    });
+
+    it.each(['es-AR', 'toString', 42])(
+      'falls back to the default for a saved language of %s',
+      (language) => {
+        localStorage.setItem(
+          STORAGE_KEY,
+          JSON.stringify({ language, level: 'A1', speed: 0.7 }),
+        );
+
+        const { result } = renderHook(() => useSettings());
+
+        expect(result.current.language).toBe(DEFAULT_LANGUAGE);
+        expect(result.current.level).toBe('A1');
+      },
+    );
+
+    it('keeps settings saved before there was a language, in the default', () => {
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ level: 'A2', speed: 0.85 }),
+      );
+
+      const { result } = renderHook(() => useSettings());
+
+      expect(result.current.language).toBe(DEFAULT_LANGUAGE);
+      expect(result.current.level).toBe('A2');
+      expect(result.current.speed).toBe(0.85);
+    });
   });
 
   it('uses the defaults when storage cannot be read', () => {

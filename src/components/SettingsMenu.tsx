@@ -1,16 +1,19 @@
 import { useId, useRef } from 'react';
 
-import { SPEEDS, type Speed } from '#/config';
+import { LANGUAGES, SPEEDS, type LanguageId, type Speed } from '#/config';
 import { LEVELS, type CefrLevel } from '#/prompts';
 import { cn } from '#/utils/cn';
 
 interface SettingsMenuProps {
+  language: LanguageId;
   level: CefrLevel;
   speed: Speed;
+  onLanguageChange: (language: LanguageId) => void;
   onLevelChange: (level: CefrLevel) => void;
   onSpeedChange: (speed: Speed) => void;
 }
 
+const LANGUAGE_ORDER = Object.keys(LANGUAGES) as LanguageId[];
 const LEVEL_ORDER = Object.keys(LEVELS) as CefrLevel[];
 
 const OPTION_CLASS =
@@ -22,12 +25,15 @@ const OPTION_CLASS =
  * closes it too.
  */
 export function SettingsMenu({
+  language,
   level,
   speed,
+  onLanguageChange,
   onLevelChange,
   onSpeedChange,
 }: SettingsMenuProps) {
   const panelId = useId();
+  const languageHeadingId = useId();
   const levelHeadingId = useId();
   const speedHeadingId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
@@ -57,6 +63,29 @@ export function SettingsMenu({
         className="inset-auto top-16 right-4 m-0 w-72 rounded-lg bg-gray-100 p-8 text-black"
       >
         <div className="flex flex-col gap-8">
+          <section className="flex flex-col gap-2">
+            <h2 id={languageHeadingId} className="text-sm">
+              Language
+            </h2>
+            <div
+              role="group"
+              aria-labelledby={languageHeadingId}
+              className="flex flex-col gap-2"
+            >
+              {LANGUAGE_ORDER.map((option) => (
+                <button
+                  key={option}
+                  aria-pressed={option === language}
+                  onClick={() => select(option, language, onLanguageChange)}
+                  className={cn(OPTION_CLASS, 'text-center')}
+                >
+                  {LANGUAGES[option].label}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs">Changing language starts a new call</p>
+          </section>
+
           <section className="flex flex-col gap-2">
             <h2 id={levelHeadingId} className="text-sm">
               Level

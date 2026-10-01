@@ -7,7 +7,6 @@ import { checkPreloaded, isFullyPreloaded, preloadAll } from '#/lib/preload';
 import type { PreloadStatus } from '#/lib/preload';
 import { requestPersistentStorage } from '#/lib/persist';
 import { sweepStaleAssets } from '#/lib/preload/sweep';
-import { DEFAULT_LANGUAGE, voiceFor } from '#/config';
 
 vi.mock('#/lib/persist', () => ({
   requestPersistentStorage: vi.fn().mockResolvedValue(false),
@@ -22,6 +21,9 @@ vi.mock('#/lib/preload/sweep', () => ({
 vi.mock('#/lib/device', () => ({
   checkDeviceSupport: vi.fn(),
 }));
+
+const VOICE = 'es_ES-davefx-medium';
+const OTHER_VOICE = 'es_MX-ald-medium';
 
 const WEBGPU = { id: 'webgpu', label: 'WebGPU', required: true } as const;
 
@@ -77,7 +79,7 @@ describe('usePreload', () => {
   it('starts in the checking phase', () => {
     vi.mocked(checkPreloaded).mockReturnValue(new Promise(() => {}));
 
-    const { result } = renderHook(() => usePreload());
+    const { result } = renderHook(() => usePreload(VOICE));
 
     expect(result.current.phase).toBe('checking');
     expect(result.current.isPreloading).toBe(false);
@@ -89,12 +91,12 @@ describe('usePreload', () => {
     vi.mocked(isFullyPreloaded).mockReturnValue(true);
     vi.mocked(preloadAll).mockResolvedValue(undefined);
 
-    const { result } = renderHook(() => usePreload());
+    const { result } = renderHook(() => usePreload(VOICE));
 
     await waitFor(() => expect(result.current.phase).toBe('ready'));
 
     expect(result.current.cached).toEqual(cached);
-    expect(preloadAll).toHaveBeenCalledWith(voiceFor(DEFAULT_LANGUAGE));
+    expect(preloadAll).toHaveBeenCalledWith(VOICE);
   });
 
   it('logs but does not throw when the background warm-up fails', async () => {
@@ -103,7 +105,7 @@ describe('usePreload', () => {
     vi.mocked(preloadAll).mockRejectedValue(new Error('warm-up failed'));
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-    const { result } = renderHook(() => usePreload());
+    const { result } = renderHook(() => usePreload(VOICE));
 
     await waitFor(() => expect(result.current.phase).toBe('ready'));
     await waitFor(() =>
@@ -124,7 +126,7 @@ describe('usePreload', () => {
     vi.mocked(checkPreloaded).mockResolvedValue(cached);
     vi.mocked(isFullyPreloaded).mockReturnValue(false);
 
-    const { result } = renderHook(() => usePreload());
+    const { result } = renderHook(() => usePreload(VOICE));
 
     await waitFor(() => expect(result.current.phase).toBe('needed'));
 
@@ -140,7 +142,7 @@ describe('usePreload', () => {
     vi.mocked(checkPreloaded).mockResolvedValue(cached);
     vi.mocked(isFullyPreloaded).mockReturnValue(false);
 
-    const { result } = renderHook(() => usePreload());
+    const { result } = renderHook(() => usePreload(VOICE));
 
     await waitFor(() => expect(result.current.phase).toBe('needed'));
     expect(preloadAll).not.toHaveBeenCalled();
@@ -158,7 +160,7 @@ describe('usePreload', () => {
     });
     vi.mocked(isFullyPreloaded).mockReturnValue(false);
 
-    const { result } = renderHook(() => usePreload());
+    const { result } = renderHook(() => usePreload(VOICE));
 
     await waitFor(() => expect(result.current.phase).toBe('needed'));
     expect(order).toEqual(['sweep', 'check']);
@@ -172,7 +174,7 @@ describe('usePreload', () => {
       }),
     );
 
-    const { result, unmount } = renderHook(() => usePreload());
+    const { result, unmount } = renderHook(() => usePreload(VOICE));
     unmount();
     resolveCheck(status(true));
 
@@ -180,6 +182,66 @@ describe('usePreload', () => {
     await Promise.resolve();
 
     expect(result.current.phase).toBe('checking');
+  });
+
+  describe('a voice chosen after the first check', () => {
+    it('re-checks what is cached for the new voice, leaving the phase alone', async () => {
+      const otherCached = status(true, { 'text-to-speech': false });
+      vi.mocked(checkPreloaded).mockImplementation(async (voice) =>
+        voice === VOICE ? status(false) : otherCached,
+      );
+      vi.mocked(isFullyPreloaded).mockReturnValue(false);
+
+      const { result, rerender } = renderHook(
+        ({ voice }) => usePreload(voice),
+        { initialProps: { voice: VOICE } },
+      );
+      await waitFor(() => expect(result.current.phase).toBe('needed'));
+
+      rerender({ voice: OTHER_VOICE });
+
+      await waitFor(() => expect(result.current.cached).toEqual(otherCached));
+      expect(checkPreloaded).toHaveBeenLastCalledWith(OTHER_VOICE);
+      expect(result.current.phase).toBe('needed');
+    });
+
+    it('does not check again until the voice changes', async () => {
+      vi.mocked(checkPreloaded).mockResolvedValue(status(false));
+      vi.mocked(isFullyPreloaded).mockReturnValue(false);
+
+      const { result, rerender } = renderHook(
+        ({ voice }) => usePreload(voice),
+        { initialProps: { voice: VOICE } },
+      );
+      await waitFor(() => expect(result.current.phase).toBe('needed'));
+
+      rerender({ voice: VOICE });
+      await Promise.resolve();
+
+      expect(checkPreloaded).toHaveBeenCalledTimes(1);
+    });
+
+    it('downloads the voice chosen at the time Download is pressed', async () => {
+      vi.mocked(checkPreloaded).mockResolvedValue(status(false));
+      vi.mocked(isFullyPreloaded).mockReturnValue(false);
+      vi.mocked(preloadAll).mockResolvedValue(undefined);
+
+      const { result, rerender } = renderHook(
+        ({ voice }) => usePreload(voice),
+        { initialProps: { voice: VOICE } },
+      );
+      await waitFor(() => expect(result.current.phase).toBe('needed'));
+      rerender({ voice: OTHER_VOICE });
+
+      await act(async () => {
+        await result.current.preload();
+      });
+
+      expect(preloadAll).toHaveBeenCalledWith(
+        OTHER_VOICE,
+        expect.any(Function),
+      );
+    });
   });
 
   describe('preload', () => {
@@ -195,7 +257,7 @@ describe('usePreload', () => {
         return undefined;
       });
 
-      const { result } = renderHook(() => usePreload());
+      const { result } = renderHook(() => usePreload(VOICE));
       await waitFor(() => expect(result.current.phase).toBe('needed'));
 
       await act(async () => {
@@ -218,7 +280,7 @@ describe('usePreload', () => {
       );
       vi.mocked(isFullyPreloaded).mockReturnValue(false);
 
-      const { result } = renderHook(() => usePreload());
+      const { result } = renderHook(() => usePreload(VOICE));
       await waitFor(() => expect(result.current.phase).toBe('needed'));
 
       let resolvePreloadAll: () => void = () => {};
@@ -260,7 +322,7 @@ describe('usePreload', () => {
       vi.mocked(checkPreloaded).mockResolvedValue(status(false));
       vi.mocked(isFullyPreloaded).mockReturnValue(false);
 
-      const { result } = renderHook(() => usePreload());
+      const { result } = renderHook(() => usePreload(VOICE));
       await waitFor(() => expect(result.current.phase).toBe('needed'));
 
       let resolvePreloadAll: () => void = () => {};
@@ -303,7 +365,7 @@ describe('usePreload', () => {
       vi.mocked(checkPreloaded).mockResolvedValue(status(false));
       vi.mocked(isFullyPreloaded).mockReturnValue(false);
 
-      const { result } = renderHook(() => usePreload());
+      const { result } = renderHook(() => usePreload(VOICE));
       await waitFor(() => expect(result.current.phase).toBe('needed'));
 
       let resolvePreloadAll: () => void = () => {};
@@ -341,7 +403,7 @@ describe('usePreload', () => {
       vi.mocked(isFullyPreloaded).mockReturnValue(false);
       vi.mocked(preloadAll).mockResolvedValue(undefined);
 
-      const { result } = renderHook(() => usePreload());
+      const { result } = renderHook(() => usePreload(VOICE));
       await waitFor(() => expect(result.current.phase).toBe('needed'));
 
       // Firefox prompts for it, so it waits for the click that agrees to the
@@ -364,7 +426,7 @@ describe('usePreload', () => {
         new Promise(() => {}),
       );
 
-      const { result } = renderHook(() => usePreload());
+      const { result } = renderHook(() => usePreload(VOICE));
       await waitFor(() => expect(result.current.phase).toBe('needed'));
 
       await act(async () => {
@@ -381,7 +443,7 @@ describe('usePreload', () => {
       vi.mocked(preloadAll).mockRejectedValue(new Error('network error'));
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-      const { result } = renderHook(() => usePreload());
+      const { result } = renderHook(() => usePreload(VOICE));
       await waitFor(() => expect(result.current.phase).toBe('needed'));
 
       await act(async () => {
@@ -400,7 +462,7 @@ describe('usePreload', () => {
     it('stops at unsupported without probing the cache when WebGPU is missing', async () => {
       vi.mocked(checkDeviceSupport).mockResolvedValue(UNSUPPORTED);
 
-      const { result } = renderHook(() => usePreload());
+      const { result } = renderHook(() => usePreload(VOICE));
 
       await waitFor(() => expect(result.current.phase).toBe('unsupported'));
       expect(result.current.status).toBe('Device not supported');
@@ -422,7 +484,7 @@ describe('usePreload', () => {
       vi.mocked(checkPreloaded).mockResolvedValue(status(true));
       vi.mocked(isFullyPreloaded).mockReturnValue(true);
 
-      const { result } = renderHook(() => usePreload());
+      const { result } = renderHook(() => usePreload(VOICE));
 
       await waitFor(() => expect(result.current.phase).toBe('unsupported'));
       expect(preloadAll).not.toHaveBeenCalled();
@@ -431,7 +493,7 @@ describe('usePreload', () => {
     it('refuses to download when asked anyway', async () => {
       vi.mocked(checkDeviceSupport).mockResolvedValue(UNSUPPORTED);
 
-      const { result } = renderHook(() => usePreload());
+      const { result } = renderHook(() => usePreload(VOICE));
       await waitFor(() => expect(result.current.phase).toBe('unsupported'));
 
       await act(async () => {
@@ -449,7 +511,7 @@ describe('usePreload', () => {
       vi.mocked(checkPreloaded).mockResolvedValue(status(false));
       vi.mocked(isFullyPreloaded).mockReturnValue(false);
 
-      const { result } = renderHook(() => usePreload());
+      const { result } = renderHook(() => usePreload(VOICE));
       await waitFor(() => expect(result.current.phase).toBe('needed'));
 
       act(() => {

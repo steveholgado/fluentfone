@@ -11,7 +11,6 @@ import { sweepStaleAssets } from '#/lib/preload/sweep';
 import { checkDeviceSupport, type DeviceSupport } from '#/lib/device';
 import { requestPersistentStorage } from '#/lib/persist';
 import { ensureController } from '#/lib/sw-client';
-import { DEFAULT_LANGUAGE, voiceFor } from '#/config';
 
 /**
  * 'checking'    — probing device support and local storage on mount
@@ -52,7 +51,12 @@ const ALL_CACHED: PreloadStatus = {
   chat: true,
 };
 
-export function usePreload() {
+/**
+ * `voiceId` is the voice the conversation will speak with, so the one the
+ * download fetches. It can change before the download starts, when the
+ * language does.
+ */
+export function usePreload(voiceId: string) {
   const [phase, setPhase] = useState<PreloadPhase>('checking');
   const [cached, setCached] = useState<PreloadStatus>(NOTHING_CACHED);
   const [status, setStatus] = useState('');
@@ -92,7 +96,7 @@ export function usePreload() {
       await sweepStaleAssets();
       if (cancelled) return;
 
-      const result = await checkPreloaded(voiceFor(DEFAULT_LANGUAGE));
+      const result = await checkPreloaded(voiceId);
       if (cancelled) return;
 
       setCached(result);
@@ -102,7 +106,7 @@ export function usePreload() {
         // Everything is downloaded, but the engines still have to be created
         // and compiled. Do that now, off-screen, so the first conversation
         // turn doesn't pay for it. Reads from cache, so no network cost.
-        void preloadAll(voiceFor(DEFAULT_LANGUAGE)).catch((err) => {
+        void preloadAll(voiceId).catch((err) => {
           console.error('Background warm-up failed:', err);
         });
       } else {
@@ -113,7 +117,32 @@ export function usePreload() {
     return () => {
       cancelled = true;
     };
+    // Mount only: a voice chosen later is checked by the effect below.
   }, []);
+
+  // Keeps `cached` describing the voice that would be downloaded, so the
+  // overlay's ticks and total stay right when the language changes. Only once
+  // the first check is in, which covers the voice it started with; the phase
+  // is left alone, so a voice chosen once the app is ready just downloads
+  // when the conversation opens it.
+  const checkedVoiceRef = useRef(voiceId);
+
+  useEffect(() => {
+    if (phase === 'checking' || phase === 'unsupported') return;
+    if (voiceId === checkedVoiceRef.current) return;
+
+    let cancelled = false;
+
+    void checkPreloaded(voiceId).then((result) => {
+      if (cancelled) return;
+      checkedVoiceRef.current = voiceId;
+      setCached(result);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [phase, voiceId]);
 
   // Progress can be reported out of order or dip slightly as chunks land, so
   // track the highest percent seen for the model currently downloading and
@@ -141,7 +170,7 @@ export function usePreload() {
     // frozen on the previous step. Steps that really are cached cost a slot
     // the bar passes through in a frame.
     try {
-      await preloadAll(voiceFor(DEFAULT_LANGUAGE), (step, p) => {
+      await preloadAll(voiceId, (step, p) => {
         const position = DOWNLOAD_ORDER.indexOf(step);
         if (position === -1) return;
         const index = position + 1;
@@ -177,7 +206,7 @@ export function usePreload() {
     } finally {
       setIsPreloading(false);
     }
-  }, [phase]);
+  }, [phase, voiceId]);
 
   const start = useCallback(() => setPhase('ready'), []);
 

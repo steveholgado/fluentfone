@@ -32,8 +32,10 @@ function panel() {
 }
 
 const BASE = {
+  language: 'es-ES',
   level: 'B1',
   speed: 1,
+  onLanguageChange: () => {},
   onLevelChange: () => {},
   onSpeedChange: () => {},
 } as const;
@@ -130,6 +132,63 @@ describe('SettingsMenu', () => {
     expect(onLevelChange).not.toHaveBeenCalled();
     expect(onSpeedChange).not.toHaveBeenCalled();
     expect(hidePopover).not.toHaveBeenCalled();
+  });
+
+  describe('language', () => {
+    it('offers every language', () => {
+      render(<SettingsMenu {...BASE} />);
+
+      const group = screen.getByRole('group', {
+        name: 'Language',
+        hidden: true,
+      });
+      const languages = within(group)
+        .getAllByRole('button', { hidden: true })
+        .map((language) => language.textContent);
+
+      expect(languages).toEqual(['Spanish (Spain)', 'Spanish (Mexico)']);
+    });
+
+    it('marks the current language as pressed', () => {
+      render(<SettingsMenu {...BASE} language="es-MX" />);
+
+      expect(button('Spanish (Mexico)')).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
+      expect(button('Spanish (Spain)')).toHaveAttribute(
+        'aria-pressed',
+        'false',
+      );
+    });
+
+    it('reports the language chosen, and closes', () => {
+      const onLanguageChange = vi.fn();
+      render(<SettingsMenu {...BASE} onLanguageChange={onLanguageChange} />);
+
+      fireEvent.click(button('Spanish (Mexico)'));
+
+      expect(onLanguageChange).toHaveBeenCalledWith('es-MX');
+      expect(hidePopover.mock.contexts).toEqual([panel()]);
+    });
+
+    it('ignores the language already chosen, and stays open', () => {
+      const onLanguageChange = vi.fn();
+      render(<SettingsMenu {...BASE} onLanguageChange={onLanguageChange} />);
+
+      fireEvent.click(button('Spanish (Spain)'));
+
+      expect(onLanguageChange).not.toHaveBeenCalled();
+      expect(hidePopover).not.toHaveBeenCalled();
+    });
+
+    it('warns that a new language means a new call', () => {
+      render(<SettingsMenu {...BASE} />);
+
+      expect(
+        screen.getByText('Changing language starts a new call'),
+      ).toBeInTheDocument();
+    });
   });
 
   it('warns that a new level means a new call', () => {

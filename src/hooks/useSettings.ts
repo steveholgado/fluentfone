@@ -1,13 +1,26 @@
 import { useCallback, useState } from 'react';
 
-import { DEFAULT_LEVEL, DEFAULT_SPEED, SPEEDS, type Speed } from '#/config';
+import {
+  DEFAULT_LANGUAGE,
+  DEFAULT_LEVEL,
+  DEFAULT_SPEED,
+  LANGUAGES,
+  SPEEDS,
+  type LanguageId,
+  type Speed,
+} from '#/config';
 import { LEVELS, type CefrLevel } from '#/prompts';
 
 const STORAGE_KEY = 'settings';
 
 interface Settings {
+  language: LanguageId;
   level: CefrLevel;
   speed: Speed;
+}
+
+function isLanguage(value: unknown): value is LanguageId {
+  return typeof value === 'string' && Object.hasOwn(LANGUAGES, value);
 }
 
 function isLevel(value: unknown): value is CefrLevel {
@@ -20,9 +33,9 @@ function isSpeed(value: unknown): value is Speed {
 
 /**
  * What was saved last time, with anything missing or no longer on offer — a
- * level or speed since removed, say — falling back to its default. Storage can
- * be unavailable altogether (blocked, or a private window in some browsers),
- * which just means the defaults.
+ * language, level or speed since removed, say — falling back to its default.
+ * Storage can be unavailable altogether (blocked, or a private window in some
+ * browsers), which just means the defaults.
  */
 function load(): Settings {
   let saved: Partial<Record<keyof Settings, unknown>> = {};
@@ -33,9 +46,12 @@ function load(): Settings {
     // Unreadable or unparseable: start from the defaults.
   }
 
+  const language = isLanguage(saved.language)
+    ? saved.language
+    : DEFAULT_LANGUAGE;
   const level = isLevel(saved.level) ? saved.level : DEFAULT_LEVEL;
   const speed = isSpeed(saved.speed) ? saved.speed : DEFAULT_SPEED[level];
-  return { level, speed };
+  return { language, level, speed };
 }
 
 /**
@@ -50,7 +66,7 @@ function save(settings: Settings): void {
   }
 }
 
-/** The user's level and speed, remembered between visits. */
+/** The user's language, level and speed, remembered between visits. */
 export function useSettings() {
   const [settings, setSettings] = useState(load);
 
@@ -61,12 +77,21 @@ export function useSettings() {
 
   /**
    * Also resets the speed, to where the new level starts. The current level
-   * is left alone, speed included.
+   * is left alone, speed included. The language is kept either way.
    */
   const setLevel = useCallback(
     (level: CefrLevel) => {
       if (level === settings.level) return;
-      update({ level, speed: DEFAULT_SPEED[level] });
+      update({ ...settings, level, speed: DEFAULT_SPEED[level] });
+    },
+    [settings, update],
+  );
+
+  /** Level and speed are kept: they don't depend on the language. */
+  const setLanguage = useCallback(
+    (language: LanguageId) => {
+      if (language === settings.language) return;
+      update({ ...settings, language });
     },
     [settings, update],
   );
@@ -76,5 +101,5 @@ export function useSettings() {
     [settings, update],
   );
 
-  return { ...settings, setLevel, setSpeed };
+  return { ...settings, setLanguage, setLevel, setSpeed };
 }
