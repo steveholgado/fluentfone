@@ -155,6 +155,45 @@ export function isLabelPreloaded(
   return STEPS_BY_LABEL[label].every((step) => status[step]);
 }
 
+/**
+ * Downloads a language's voices, for a switch to it once the app is already
+ * set up. One step per voice, in order, each a full 0→100% run of the bar;
+ * `onProgress` says which voice by its position in `voiceIds`.
+ *
+ * Only the voices: the piper runtime they share came with preloadAll. Were
+ * it gone since, the voice's worker would fetch it anyway, just unreported.
+ */
+export async function preloadVoicePack(
+  voiceIds: readonly string[],
+  onProgress?: (index: number, p: LoadProgress) => void,
+): Promise<void> {
+  for (const [index, voiceId] of voiceIds.entries()) {
+    await runStep(
+      'text-to-speech',
+      () => textToSpeech.preload(voiceId),
+      onProgress && ((_step, p) => onProgress(index, p)),
+    );
+  }
+}
+
+/**
+ * Whether every voice in a pack is on disk, so a switch to its language
+ * needs no download. Only reads storage.
+ */
+export async function isVoicePackCached(
+  voiceIds: readonly string[],
+): Promise<boolean> {
+  const cached = await Promise.all(
+    voiceIds.map((voiceId) => settle(textToSpeech.isCached(voiceId))),
+  );
+  return cached.every(Boolean);
+}
+
+/** Roughly what downloading a pack would fetch, for the overlay to show. */
+export function voicePackBytes(voiceIds: readonly string[]): number {
+  return voiceIds.length * EXPECTED_BYTES['text-to-speech'];
+}
+
 /** Treats a failed probe (no OPFS, no Cache Storage, …) as "not cached". */
 async function settle(check: Promise<boolean>): Promise<boolean> {
   try {

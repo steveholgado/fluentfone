@@ -5,7 +5,10 @@ import {
   checkPreloaded,
   isFullyPreloaded,
   isLabelPreloaded,
+  isVoicePackCached,
   preloadAll,
+  preloadVoicePack,
+  voicePackBytes,
 } from '#/lib/preload';
 import { EXPECTED_BYTES } from '#/lib/cache/rules';
 import type { PreloadStatus } from '#/lib/preload';
@@ -336,5 +339,97 @@ describe('isLabelPreloaded', () => {
     expect(isLabelPreloaded(partial, 'speech-to-text')).toBe(true);
     expect(isLabelPreloaded(partial, 'text-to-speech')).toBe(true);
     expect(isLabelPreloaded(partial, 'chat')).toBe(false);
+  });
+});
+
+describe('preloadVoicePack', () => {
+  const PACK = ['es_MX-ald-medium', 'es_MX-claude-high'];
+
+  it('downloads every voice in the pack, in order, and nothing else', async () => {
+    const order: string[] = [];
+    vi.mocked(textToSpeech.preload).mockImplementation(async (voiceId) => {
+      order.push(voiceId);
+    });
+
+    await preloadVoicePack(PACK);
+
+    expect(order).toEqual(PACK);
+    expect(textToSpeech.preloadRuntime).not.toHaveBeenCalled();
+    expect(speechToText.preload).not.toHaveBeenCalled();
+    expect(chat.preloadRuntime).not.toHaveBeenCalled();
+    expect(chat.preload).not.toHaveBeenCalled();
+  });
+
+  it('runs each voice from zero to 100%, keyed by its place in the pack', async () => {
+    const onProgress = vi.fn();
+
+    await preloadVoicePack(PACK, onProgress);
+
+    expect(onProgress.mock.calls).toEqual([
+      [0, { loaded: 0, total: 1, progress: 0 }],
+      [0, { loaded: 1, total: 1, progress: 1 }],
+      [1, { loaded: 0, total: 1, progress: 0 }],
+      [1, { loaded: 1, total: 1, progress: 1 }],
+    ]);
+  });
+
+  it('attributes reported voice bytes to the voice downloading', async () => {
+    vi.mocked(textToSpeech.preload).mockImplementation(async (voiceId) => {
+      if (voiceId !== PACK[1]) return;
+      await report({
+        step: 'text-to-speech',
+        url: 'https://huggingface.co/diffusionstudio/piper-voices/v.onnx',
+        loaded: 30,
+        total: 100,
+      });
+    });
+
+    const onProgress = vi.fn();
+    await preloadVoicePack(PACK, onProgress);
+
+    expect(onProgress).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ loaded: 30 }),
+    );
+    expect(onProgress).not.toHaveBeenCalledWith(
+      0,
+      expect.objectContaining({ loaded: 30 }),
+    );
+  });
+
+  it('stops at the first voice that fails, and rejects', async () => {
+    vi.mocked(textToSpeech.preload).mockRejectedValueOnce(new Error('offline'));
+
+    await expect(preloadVoicePack(PACK)).rejects.toThrow('offline');
+    expect(textToSpeech.preload).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('isVoicePackCached', () => {
+  it('is true only when every voice in the pack is on disk', async () => {
+    vi.mocked(textToSpeech.isCached).mockImplementation(
+      async (voiceId) => voiceId === 'a',
+    );
+
+    await expect(isVoicePackCached(['a'])).resolves.toBe(true);
+    await expect(isVoicePackCached(['a', 'b'])).resolves.toBe(false);
+  });
+
+  it('treats a rejected check as not cached, without throwing', async () => {
+    vi.mocked(textToSpeech.isCached).mockRejectedValue(new Error('no OPFS'));
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await expect(isVoicePackCached(['a'])).resolves.toBe(false);
+
+    warnSpy.mockRestore();
+  });
+});
+
+describe('voicePackBytes', () => {
+  it('counts one voice estimate per voice in the pack', () => {
+    expect(voicePackBytes(['a'])).toBe(EXPECTED_BYTES['text-to-speech']);
+    expect(voicePackBytes(['a', 'b'])).toBe(
+      2 * EXPECTED_BYTES['text-to-speech'],
+    );
   });
 });
