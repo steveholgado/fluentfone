@@ -12,7 +12,7 @@ import {
   GREETING_TRIGGER,
   type CefrLevel,
 } from '#/prompts';
-import { DEFAULT_LANGUAGE, voiceFor } from '#/config';
+import { voiceFor, type LanguageId } from '#/config';
 
 vi.mock('#/lib/audio/recorder', () => ({
   AudioRecorder: vi.fn(),
@@ -42,6 +42,7 @@ vi.mock('#/lib/text-to-speech', async () => ({
 }));
 
 const LEVEL: CefrLevel = 'B1';
+const LANGUAGE: LanguageId = 'es-ES';
 
 // The conversation's one voice, as `openVoice` hands it back.
 const speak = vi.fn<Voice['speak']>();
@@ -121,7 +122,7 @@ afterEach(() => {
 describe('useConversation', () => {
   it('starts with no recording, no greeting, and empty status', () => {
     const { result } = renderHook(() =>
-      useConversation({ level: LEVEL, speed: 1 }),
+      useConversation({ level: LEVEL, language: LANGUAGE, speed: 1 }),
     );
 
     expect(result.current.isRecording).toBe(false);
@@ -137,7 +138,7 @@ describe('useConversation', () => {
       vi.mocked(transcribe).mockResolvedValue('Hola');
 
       const { result } = renderHook(() =>
-        useConversation({ level: LEVEL, speed: 1 }),
+        useConversation({ level: LEVEL, language: LANGUAGE, speed: 1 }),
       );
 
       await act(async () => {
@@ -165,7 +166,7 @@ describe('useConversation', () => {
       });
 
       const { result } = renderHook(() =>
-        useConversation({ level: LEVEL, speed: 1 }),
+        useConversation({ level: LEVEL, language: LANGUAGE, speed: 1 }),
       );
       await act(async () => {
         await result.current.prepareGreeting();
@@ -178,7 +179,7 @@ describe('useConversation', () => {
       vi.mocked(generateMessage).mockResolvedValue('¡Hola!');
 
       const { result, unmount } = renderHook(() =>
-        useConversation({ level: LEVEL, speed: 1 }),
+        useConversation({ level: LEVEL, language: LANGUAGE, speed: 1 }),
       );
       await act(async () => {
         await result.current.prepareGreeting();
@@ -190,7 +191,7 @@ describe('useConversation', () => {
 
     it('opens nothing until a line needs speaking', () => {
       const { unmount } = renderHook(() =>
-        useConversation({ level: LEVEL, speed: 1 }),
+        useConversation({ level: LEVEL, language: LANGUAGE, speed: 1 }),
       );
       unmount();
 
@@ -204,7 +205,7 @@ describe('useConversation', () => {
       const { stop } = mockRecorderImpl();
 
       const { result, unmount } = renderHook(() =>
-        useConversation({ level: LEVEL, speed: 1 }),
+        useConversation({ level: LEVEL, language: LANGUAGE, speed: 1 }),
       );
       await act(async () => {
         result.current.toggleRecording();
@@ -222,7 +223,7 @@ describe('useConversation', () => {
       vi.mocked(generateMessage).mockImplementation(streamed('¡Hola!'));
 
       const { result, unmount } = renderHook(() =>
-        useConversation({ level: LEVEL, speed: 1 }),
+        useConversation({ level: LEVEL, language: LANGUAGE, speed: 1 }),
       );
       await takeTurn(result);
       await waitFor(() => expect(result.current.canRepeat).toBe(true));
@@ -236,7 +237,7 @@ describe('useConversation', () => {
       const { stop } = mockRecorderImpl({ start: () => started.promise });
 
       const { result, unmount } = renderHook(() =>
-        useConversation({ level: LEVEL, speed: 1 }),
+        useConversation({ level: LEVEL, language: LANGUAGE, speed: 1 }),
       );
       await act(async () => {
         result.current.toggleRecording();
@@ -265,7 +266,7 @@ describe('useConversation', () => {
       const error = vi.spyOn(console, 'error').mockImplementation(() => {});
 
       const { result, unmount } = renderHook(() =>
-        useConversation({ level: LEVEL, speed: 1 }),
+        useConversation({ level: LEVEL, language: LANGUAGE, speed: 1 }),
       );
       await takeTurn(result);
       await waitFor(() => expect(play).toHaveBeenCalledTimes(1));
@@ -284,7 +285,7 @@ describe('useConversation', () => {
       const error = vi.spyOn(console, 'error').mockImplementation(() => {});
 
       const { result, unmount } = renderHook(() =>
-        useConversation({ level: LEVEL, speed: 1 }),
+        useConversation({ level: LEVEL, language: LANGUAGE, speed: 1 }),
       );
       let preparing!: Promise<void>;
       act(() => {
@@ -307,7 +308,11 @@ describe('useConversation', () => {
     function renderAtSpeed(speed: number) {
       return renderHook(
         (props: { speed: number }) =>
-          useConversation({ level: LEVEL, speed: props.speed }),
+          useConversation({
+            level: LEVEL,
+            language: LANGUAGE,
+            speed: props.speed,
+          }),
         { initialProps: { speed } },
       );
     }
@@ -440,7 +445,7 @@ describe('useConversation', () => {
       speak.mockResolvedValue(GREETING_AUDIO);
 
       const { result } = renderHook(() =>
-        useConversation({ level: LEVEL, speed: 1 }),
+        useConversation({ level: LEVEL, language: LANGUAGE, speed: 1 }),
       );
 
       await act(async () => {
@@ -448,12 +453,12 @@ describe('useConversation', () => {
       });
 
       expect(generateMessage).toHaveBeenCalledWith({
-        systemInstruction: buildSystemInstruction(LEVEL),
+        systemInstruction: buildSystemInstruction(LEVEL, LANGUAGE),
         trigger: GREETING_TRIGGER,
         onStage: expect.any(Function),
       });
       expect(openVoice).toHaveBeenCalledWith(
-        voiceFor(DEFAULT_LANGUAGE),
+        voiceFor(LANGUAGE),
         expect.any(Function),
       );
       expect(speak).toHaveBeenCalledWith('¡Hola!', { speed: 1 });
@@ -467,7 +472,7 @@ describe('useConversation', () => {
       vi.mocked(generateMessage).mockImplementation(streamed('¡Hola!'));
 
       const { result } = renderHook(() =>
-        useConversation({ level: 'A1', speed: 1 }),
+        useConversation({ level: 'A1', language: LANGUAGE, speed: 1 }),
       );
       await act(async () => {
         await result.current.prepareGreeting();
@@ -479,8 +484,39 @@ describe('useConversation', () => {
         .mocked(generateMessage)
         .mock.calls.map(([options]) => options?.systemInstruction);
       expect(instructions).toEqual([
-        buildSystemInstruction('A1'),
-        buildSystemInstruction('A1'),
+        buildSystemInstruction('A1', LANGUAGE),
+        buildSystemInstruction('A1', LANGUAGE),
+      ]);
+    });
+
+    it('speaks, listens and instructs in the language it was given', async () => {
+      mockRecorderImpl();
+      vi.mocked(transcribe).mockResolvedValue('Hola');
+      vi.mocked(generateMessage).mockImplementation(streamed('¡Hola!'));
+
+      const { result } = renderHook(() =>
+        useConversation({ level: LEVEL, language: 'es-MX', speed: 1 }),
+      );
+      await act(async () => {
+        await result.current.prepareGreeting();
+      });
+      await takeTurn(result);
+      await waitFor(() => expect(result.current.canRepeat).toBe(true));
+
+      expect(openVoice).toHaveBeenCalledWith(
+        voiceFor('es-MX'),
+        expect.any(Function),
+      );
+      expect(transcribe).toHaveBeenCalledWith(AUDIO_BLOB, {
+        language: 'spanish',
+        onTimings: expect.any(Function),
+      });
+      const instructions = vi
+        .mocked(generateMessage)
+        .mock.calls.map(([options]) => options?.systemInstruction);
+      expect(instructions).toEqual([
+        buildSystemInstruction(LEVEL, 'es-MX'),
+        buildSystemInstruction(LEVEL, 'es-MX'),
       ]);
     });
 
@@ -488,7 +524,7 @@ describe('useConversation', () => {
       vi.mocked(generateMessage).mockResolvedValue('¡Hola!');
 
       const { result } = renderHook(() =>
-        useConversation({ level: LEVEL, speed: 1 }),
+        useConversation({ level: LEVEL, language: LANGUAGE, speed: 1 }),
       );
 
       await act(async () => {
@@ -506,7 +542,7 @@ describe('useConversation', () => {
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
       const { result } = renderHook(() =>
-        useConversation({ level: LEVEL, speed: 1 }),
+        useConversation({ level: LEVEL, language: LANGUAGE, speed: 1 }),
       );
 
       await act(async () => {
@@ -524,7 +560,7 @@ describe('useConversation', () => {
   describe('greet', () => {
     it('does nothing when no greeting has been prepared', async () => {
       const { result } = renderHook(() =>
-        useConversation({ level: LEVEL, speed: 1 }),
+        useConversation({ level: LEVEL, language: LANGUAGE, speed: 1 }),
       );
 
       await act(async () => {
@@ -540,7 +576,7 @@ describe('useConversation', () => {
       speak.mockResolvedValue(GREETING_AUDIO);
 
       const { result } = renderHook(() =>
-        useConversation({ level: LEVEL, speed: 1 }),
+        useConversation({ level: LEVEL, language: LANGUAGE, speed: 1 }),
       );
       await act(async () => {
         await result.current.prepareGreeting();
@@ -562,7 +598,7 @@ describe('useConversation', () => {
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
       const { result } = renderHook(() =>
-        useConversation({ level: LEVEL, speed: 1 }),
+        useConversation({ level: LEVEL, language: LANGUAGE, speed: 1 }),
       );
       await act(async () => {
         await result.current.prepareGreeting();
@@ -583,7 +619,7 @@ describe('useConversation', () => {
     it('starts recording when not already recording', async () => {
       const { start } = mockRecorderImpl();
       const { result } = renderHook(() =>
-        useConversation({ level: LEVEL, speed: 1 }),
+        useConversation({ level: LEVEL, language: LANGUAGE, speed: 1 }),
       );
 
       act(() => {
@@ -601,7 +637,7 @@ describe('useConversation', () => {
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
       const { result } = renderHook(() =>
-        useConversation({ level: LEVEL, speed: 1 }),
+        useConversation({ level: LEVEL, language: LANGUAGE, speed: 1 }),
       );
 
       await act(async () => {
@@ -624,7 +660,7 @@ describe('useConversation', () => {
       speak.mockResolvedValue(GREETING_AUDIO);
 
       const { result } = renderHook(() =>
-        useConversation({ level: LEVEL, speed: 1 }),
+        useConversation({ level: LEVEL, language: LANGUAGE, speed: 1 }),
       );
 
       await act(async () => {
@@ -643,7 +679,7 @@ describe('useConversation', () => {
       });
       expect(generateMessage).toHaveBeenCalledWith({
         prompt: 'Hola, ¿cómo estás?',
-        systemInstruction: buildSystemInstruction(LEVEL),
+        systemInstruction: buildSystemInstruction(LEVEL, LANGUAGE),
         history: [],
         onStage: expect.any(Function),
         onChunk: expect.any(Function),
@@ -669,7 +705,7 @@ describe('useConversation', () => {
       });
 
       const { result } = renderHook(() =>
-        useConversation({ level: LEVEL, speed: 1 }),
+        useConversation({ level: LEVEL, language: LANGUAGE, speed: 1 }),
       );
 
       await act(async () => {
@@ -696,7 +732,7 @@ describe('useConversation', () => {
       vi.mocked(generateMessage).mockImplementation(streamed('¡Hola!'));
 
       const { result } = renderHook(() =>
-        useConversation({ level: LEVEL, speed: 1 }),
+        useConversation({ level: LEVEL, language: LANGUAGE, speed: 1 }),
       );
 
       await act(async () => {
@@ -722,7 +758,7 @@ describe('useConversation', () => {
       speak.mockResolvedValue(GREETING_AUDIO);
 
       const { result } = renderHook(() =>
-        useConversation({ level: LEVEL, speed: 1 }),
+        useConversation({ level: LEVEL, language: LANGUAGE, speed: 1 }),
       );
 
       await act(async () => {
@@ -743,7 +779,7 @@ describe('useConversation', () => {
 
       expect(generateMessage).toHaveBeenLastCalledWith({
         prompt: 'Adiós',
-        systemInstruction: buildSystemInstruction(LEVEL),
+        systemInstruction: buildSystemInstruction(LEVEL, LANGUAGE),
         history: [
           { role: 'user', content: 'Hola' },
           { role: 'model', content: '¡Hola!' },
@@ -766,7 +802,7 @@ describe('useConversation', () => {
       });
 
       const { result } = renderHook(() =>
-        useConversation({ level: LEVEL, speed: 1 }),
+        useConversation({ level: LEVEL, language: LANGUAGE, speed: 1 }),
       );
       await takeTurn(result);
 
@@ -789,7 +825,7 @@ describe('useConversation', () => {
         .mockImplementationOnce(streamed('Vale.'));
 
       const { result } = renderHook(() =>
-        useConversation({ level: LEVEL, speed: 1 }),
+        useConversation({ level: LEVEL, language: LANGUAGE, speed: 1 }),
       );
       await takeTurn(result);
       await takeTurn(result);
@@ -817,7 +853,7 @@ describe('useConversation', () => {
         .mockReturnValueOnce(second.promise);
 
       const { result } = renderHook(() =>
-        useConversation({ level: LEVEL, speed: 1 }),
+        useConversation({ level: LEVEL, language: LANGUAGE, speed: 1 }),
       );
       await act(async () => {
         result.current.toggleRecording();
@@ -853,7 +889,7 @@ describe('useConversation', () => {
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
       const { result } = renderHook(() =>
-        useConversation({ level: LEVEL, speed: 1 }),
+        useConversation({ level: LEVEL, language: LANGUAGE, speed: 1 }),
       );
       await takeTurn(result);
 
@@ -874,7 +910,7 @@ describe('useConversation', () => {
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
       const { result } = renderHook(() =>
-        useConversation({ level: LEVEL, speed: 1 }),
+        useConversation({ level: LEVEL, language: LANGUAGE, speed: 1 }),
       );
       await takeTurn(result);
 
@@ -891,7 +927,7 @@ describe('useConversation', () => {
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
       const { result } = renderHook(() =>
-        useConversation({ level: LEVEL, speed: 1 }),
+        useConversation({ level: LEVEL, language: LANGUAGE, speed: 1 }),
       );
 
       await act(async () => {
@@ -915,7 +951,7 @@ describe('useConversation', () => {
       });
 
       const { result } = renderHook(() =>
-        useConversation({ level: LEVEL, speed: 1 }),
+        useConversation({ level: LEVEL, language: LANGUAGE, speed: 1 }),
       );
 
       act(() => {
@@ -933,7 +969,7 @@ describe('useConversation', () => {
       vi.mocked(generateMessage).mockResolvedValue('¡Hola!');
       speak.mockResolvedValue(GREETING_AUDIO);
       const hook = renderHook(() =>
-        useConversation({ level: LEVEL, speed: 1 }),
+        useConversation({ level: LEVEL, language: LANGUAGE, speed: 1 }),
       );
       await act(async () => {
         await hook.result.current.prepareGreeting();
@@ -949,7 +985,7 @@ describe('useConversation', () => {
     it('cannot repeat until the greeting has been played', async () => {
       vi.mocked(generateMessage).mockResolvedValue('¡Hola!');
       const { result } = renderHook(() =>
-        useConversation({ level: LEVEL, speed: 1 }),
+        useConversation({ level: LEVEL, language: LANGUAGE, speed: 1 }),
       );
       expect(result.current.canRepeat).toBe(false);
 
@@ -1010,7 +1046,7 @@ describe('useConversation', () => {
       speak.mockResolvedValueOnce(firstClip).mockResolvedValueOnce(secondClip);
 
       const { result } = renderHook(() =>
-        useConversation({ level: LEVEL, speed: 1 }),
+        useConversation({ level: LEVEL, language: LANGUAGE, speed: 1 }),
       );
       await takeTurn(result);
       await waitFor(() => expect(result.current.canRepeat).toBe(true));
@@ -1031,7 +1067,7 @@ describe('useConversation', () => {
       vi.mocked(generateMessage).mockImplementation(streamed('Uno. ', 'Dos.'));
 
       const { result } = renderHook(() =>
-        useConversation({ level: LEVEL, speed: 1 }),
+        useConversation({ level: LEVEL, language: LANGUAGE, speed: 1 }),
       );
       await takeTurn(result);
       await waitFor(() => expect(result.current.canRepeat).toBe(true));

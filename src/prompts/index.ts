@@ -7,20 +7,24 @@
  * the greeting needs on top goes in its trigger — sent in the student's place
  * for the opening message, and never part of the history.
  *
- * Nothing here should vary between calls for the same level, for the same
- * reason.
+ * Nothing here should vary between calls for the same level and language, for
+ * the same reason.
  */
 
+import type { LanguageId } from '#/config';
+import { LANGUAGE_SPECS, renderLanguageBlock } from './languages';
 import { renderLevelBlock, type CefrLevel } from './levels';
 
+export { LANGUAGE_SPECS, renderLanguageBlock } from './languages';
 export { LEVELS, renderLevelBlock, type CefrLevel } from './levels';
 
-export function buildSystemInstruction(level: CefrLevel): string {
-  return `You are a friendly, patient native speaker from Spain helping a student practise speaking Spanish.
+export function buildSystemInstruction(
+  level: CefrLevel,
+  language: LanguageId,
+): string {
+  return `You are a friendly, patient native speaker from ${LANGUAGE_SPECS[language].country} helping a student practise speaking Spanish.
 
-Language:
-- Always reply in Spanish as spoken in Spain, even if the student speaks English.
-- Address the student as tú.
+${renderLanguageBlock(language)}
 
 ${renderLevelBlock(level)}
 

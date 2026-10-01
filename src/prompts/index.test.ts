@@ -1,13 +1,17 @@
 import { describe, expect, it } from 'vitest';
 
+import type { LanguageId } from '#/config';
 import {
   buildSystemInstruction,
+  LANGUAGE_SPECS,
   LEVELS,
+  renderLanguageBlock,
   renderLevelBlock,
   type CefrLevel,
 } from '#/prompts';
 
 const ALL_LEVELS = Object.keys(LEVELS) as CefrLevel[];
+const ALL_LANGUAGES = Object.keys(LANGUAGE_SPECS) as LanguageId[];
 
 describe('renderLevelBlock', () => {
   it.each(ALL_LEVELS)('renders every line for %s', (level) => {
@@ -26,14 +30,46 @@ describe('renderLevelBlock', () => {
   });
 });
 
+describe('renderLanguageBlock', () => {
+  it.each(ALL_LANGUAGES)("speaks %s's Spanish, using tú", (language) => {
+    const block = renderLanguageBlock(language);
+
+    expect(block).toContain(
+      `Spanish as spoken in ${LANGUAGE_SPECS[language].country}`,
+    );
+    expect(block).toContain('Address the student as tú.');
+  });
+
+  it('includes extra rules only for languages that have them', () => {
+    expect(renderLanguageBlock('es-MX')).toContain('never vosotros');
+    expect(renderLanguageBlock('es-ES')).not.toContain('vosotros');
+  });
+});
+
 describe('buildSystemInstruction', () => {
   it('includes the level block', () => {
-    expect(buildSystemInstruction('B1')).toContain(renderLevelBlock('B1'));
+    expect(buildSystemInstruction('B1', 'es-ES')).toContain(
+      renderLevelBlock('B1'),
+    );
   });
+
+  it.each(ALL_LANGUAGES)(
+    'includes the language block, and a partner from there, for %s',
+    (language) => {
+      const instruction = buildSystemInstruction('B1', language);
+
+      expect(instruction).toContain(renderLanguageBlock(language));
+      expect(instruction).toContain(
+        `native speaker from ${LANGUAGE_SPECS[language].country}`,
+      );
+    },
+  );
 
   // The chat worker reuses a conversation only when the instruction matches
   // exactly, so anything random in it would rebuild the conversation per turn.
   it('is identical every time it is built', () => {
-    expect(buildSystemInstruction('A2')).toBe(buildSystemInstruction('A2'));
+    expect(buildSystemInstruction('A2', 'es-MX')).toBe(
+      buildSystemInstruction('A2', 'es-MX'),
+    );
   });
 });

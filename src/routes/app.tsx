@@ -7,6 +7,7 @@ import { SettingsMenu } from '#/components/SettingsMenu';
 import { UnsupportedOverlay } from '#/components/UnsupportedOverlay';
 import { usePreload } from '#/hooks/usePreload';
 import { useSettings } from '#/hooks/useSettings';
+import { DEFAULT_LANGUAGE } from '#/config';
 
 export const Route = createFileRoute('/app')({ ssr: false, component: App });
 
@@ -43,7 +44,13 @@ function App() {
         {/* Keyed by level: a new level is a new call, so everything from the
             last one — history, greeting, anything still in flight — goes. */}
         {phase !== 'checking' && (
-          <Conversation key={level} level={level} speed={speed} phase={phase} />
+          <Conversation
+            key={level}
+            level={level}
+            language={DEFAULT_LANGUAGE}
+            speed={speed}
+            phase={phase}
+          />
         )}
 
         <PreloadOverlay

@@ -28,7 +28,7 @@ import {
   GREETING_TRIGGER,
   type CefrLevel,
 } from '#/prompts';
-import { DEFAULT_LANGUAGE, LANGUAGES, voiceFor } from '#/config';
+import { LANGUAGES, voiceFor, type LanguageId } from '#/config';
 
 // 'loading' is the everyday one: preload put the model on disk, and this is
 // the wait while several gigabytes are read back off it. 'downloading' is
@@ -49,6 +49,8 @@ interface ConversationOptions {
    * caller remounts rather than passing a different one.
    */
   level: CefrLevel;
+  /** Fixed for the conversation's life, like `level`. */
+  language: LanguageId;
   /**
    * Can change mid-call. Each reply is spoken at the speed it started at, so
    * a change applies from the next one.
@@ -56,10 +58,14 @@ interface ConversationOptions {
   speed: number;
 }
 
-export function useConversation({ level, speed }: ConversationOptions) {
+export function useConversation({
+  level,
+  language,
+  speed,
+}: ConversationOptions) {
   const systemInstruction = useMemo(
-    () => buildSystemInstruction(level),
-    [level],
+    () => buildSystemInstruction(level, language),
+    [level, language],
   );
   // Read when a line is synthesised, which is after the render that set it.
   const speedRef = useRef(speed);
@@ -98,10 +104,10 @@ export function useConversation({ level, speed }: ConversationOptions) {
   // refused after that, so work still in flight can't open another.
   const getVoice = useCallback(() => {
     if (disposedRef.current) throw new Error('This conversation has ended.');
-    return (voiceRef.current ??= openVoice(voiceFor(DEFAULT_LANGUAGE), (p) =>
+    return (voiceRef.current ??= openVoice(voiceFor(language), (p) =>
       setStatus(`Downloading voice model… ${formatProgress(p.progress)}`),
     ));
-  }, []);
+  }, [language]);
 
   // Ending the call cuts off whatever is in flight, rather than leaving it to
   // play into the next one. A generate can't be aborted, so it runs on in the
@@ -261,7 +267,7 @@ export function useConversation({ level, speed }: ConversationOptions) {
       setStatus('Transcribing…');
       let sttTimings: TranscribeTimings | undefined;
       const text = await transcribe(audioBlob, {
-        language: LANGUAGES[DEFAULT_LANGUAGE].transcription,
+        language: LANGUAGES[language].transcription,
         onTimings: (t) => (sttTimings = t),
       });
       const transcribed = performance.now();
@@ -371,7 +377,7 @@ export function useConversation({ level, speed }: ConversationOptions) {
     } finally {
       busyRef.current = false;
     }
-  }, [getVoice, playVoice, report, systemInstruction]);
+  }, [getVoice, language, playVoice, report, systemInstruction]);
 
   const toggleRecording = useCallback(() => {
     unlock();
