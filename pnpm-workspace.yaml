@@ -11,5 +11,12 @@ allowBuilds:
   protobufjs: false
   sharp: false
 
-patchedDependencies:
-  '@mintplex-labs/piper-tts-web@1.0.5': patches/@mintplex-labs__piper-tts-web@1.0.5.patch
+packageExtensions:
+  # Transformers.js imports `Tensor` from onnxruntime-common without declaring
+  # it, and only resolved it while some other package happened to get it
+  # hoisted. Pinned to the onnxruntime-common our onnxruntime-web depends on,
+  # so both share one copy. Keyed to the version, so a bump drops this and the
+  # build fails until it is checked again.
+  '@huggingface/transformers@4.3.0':
+    dependencies:
+      onnxruntime-common: 1.31.0-dev.20260911-2a43ec07e

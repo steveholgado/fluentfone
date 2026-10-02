@@ -3,11 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { version as LITERT_VERSION } from '@litert-lm/core/package.json';
 import { MODELS_CACHE } from '#/lib/cache/names';
 import { CHAT_MODELS, DEFAULT_CHAT_MODEL } from '#/lib/chat/constants';
+import { ORT_VERSION } from '#/lib/ort';
 import { sweepStaleAssets } from '#/lib/preload/sweep';
-import {
-  MODEL_REVISION as WHISPER_REVISION,
-  TRANSFORMERS_ORT_VERSION,
-} from '#/lib/speech-to-text/constants';
+import { MODEL_REVISION as WHISPER_REVISION } from '#/lib/speech-to-text/constants';
 import {
   ONNX_WASM_BASE,
   PIPER_WASM_BASE,
@@ -23,7 +21,7 @@ const CURRENT = [
   `${location.origin}${PIPER_WASM_BASE}piper_phonemize.data`,
   `https://huggingface.co/onnx-community/whisper-small/resolve/${WHISPER_REVISION}/onnx/encoder_model.onnx`,
   `https://huggingface.co/onnx-community/whisper-small/resolve/${WHISPER_REVISION}/config.json`,
-  `https://cdn.jsdelivr.net/npm/onnxruntime-web@${TRANSFORMERS_ORT_VERSION}/dist/ort-wasm-simd-threaded.jsep.wasm`,
+  `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VERSION}/dist/ort-wasm-simd-threaded.jsep.wasm`,
   `https://cdn.jsdelivr.net/npm/@litert-lm/core@${LITERT_VERSION}/wasm/litertlm_wasm_internal.wasm`,
   DEFAULT_CHAT_MODEL,
 ];

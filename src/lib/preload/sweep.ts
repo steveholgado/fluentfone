@@ -21,10 +21,10 @@ import { version as LITERT_VERSION } from '@litert-lm/core/package.json';
 import { MODELS_CACHE } from '#/lib/cache/names';
 import { ruleFor } from '#/lib/cache/rules';
 import { DEFAULT_CHAT_MODEL } from '#/lib/chat/constants';
+import { ORT_VERSION } from '#/lib/ort';
 import {
   MODEL as WHISPER_MODEL,
   MODEL_REVISION as WHISPER_REVISION,
-  TRANSFORMERS_ORT_VERSION,
 } from '#/lib/speech-to-text/constants';
 import {
   ONNX_WASM_BASE,
@@ -79,7 +79,7 @@ const IS_STALE: Record<PreloadStepId, (url: URL) => boolean> = {
         !url.pathname.startsWith(
           `/${WHISPER_MODEL}/resolve/${WHISPER_REVISION}/`,
         )
-      : otherVersion(url, 'onnxruntime-web', TRANSFORMERS_ORT_VERSION),
+      : otherVersion(url, 'onnxruntime-web', ORT_VERSION),
   'chat-runtime': (url) => otherVersion(url, '@litert-lm/core', LITERT_VERSION),
   // One file, fetched by its exact URL (see fetchModel in lib/chat/engine.ts).
   chat: (url) => url.href !== CURRENT_CHAT_MODEL,
