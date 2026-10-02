@@ -83,6 +83,11 @@ export function usePreload(voiceId: string) {
         return;
       }
 
+      // On every load, whatever is cached: the first visit is asked before its
+      // download, and later visits are where Chrome and Safari actually tend
+      // to say yes. Not awaited: nothing below depends on the answer.
+      void requestPersistentStorage();
+
       // The worker has to be controlling this page for it to see the downloads
       // that follow, and on a first visit it only becomes so partway through
       // startup. A false here means no caching is available — the app still
@@ -153,11 +158,6 @@ export function usePreload(voiceId: string) {
     // The UI doesn't offer the button in this phase, but downloading gigabytes
     // onto a device that can't use them is worth refusing at the source too.
     if (phase === 'unsupported') return;
-
-    // First, while the click that got us here still counts as user activation
-    // — Firefox won't prompt without it. Not awaited: the download goes ahead
-    // whatever the answer.
-    void requestPersistentStorage();
 
     setIsPreloading(true);
     maxPercentRef.current = { index: 0, percent: 0 };

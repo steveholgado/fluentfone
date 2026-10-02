@@ -2,7 +2,6 @@ import { useCallback, useRef, useState } from 'react';
 
 import { LANGUAGES, type LanguageId } from '#/config';
 import { isVoicePackCached, preloadVoicePack } from '#/lib/preload';
-import { requestPersistentStorage } from '#/lib/persist';
 import type { PreloadPhase, PreloadProgress } from '#/hooks/usePreload';
 
 interface LanguageSwitchOptions {
@@ -54,11 +53,6 @@ export function useLanguageSwitch({
 
   const confirm = useCallback(async () => {
     if (!pending || isDownloading) return;
-
-    // First, while the click that got us here still counts as user activation
-    // — see usePreload. Not awaited: the download goes ahead whatever the
-    // answer.
-    void requestPersistentStorage();
 
     const { voiceIds } = LANGUAGES[pending];
     setIsDownloading(true);

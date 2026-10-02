@@ -4,12 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { LANGUAGES, type LanguageId } from '#/config';
 import { useLanguageSwitch } from '#/hooks/useLanguageSwitch';
 import type { PreloadPhase } from '#/hooks/usePreload';
-import { requestPersistentStorage } from '#/lib/persist';
 import { isVoicePackCached, preloadVoicePack } from '#/lib/preload';
-
-vi.mock('#/lib/persist', () => ({
-  requestPersistentStorage: vi.fn().mockResolvedValue(false),
-}));
 
 vi.mock('#/lib/preload', () => ({
   isVoicePackCached: vi.fn(),
@@ -107,25 +102,6 @@ describe('useLanguageSwitch', () => {
       expect(result.current.pending).toBeNull();
       expect(result.current.isDownloading).toBe(false);
       expect(result.current.failed).toBe(false);
-    });
-
-    it('asks for persistent storage before the download', async () => {
-      const order: string[] = [];
-      vi.mocked(requestPersistentStorage).mockImplementation(async () => {
-        order.push('persist');
-        return false;
-      });
-      vi.mocked(preloadVoicePack).mockImplementation(async () => {
-        order.push('download');
-      });
-      const { result } = renderSwitch();
-      await request(result, 'es-MX');
-
-      await act(async () => {
-        await result.current.confirm();
-      });
-
-      expect(order).toEqual(['persist', 'download']);
     });
 
     it('reports progress as a 1-based voice of the pack, never going backward', async () => {

@@ -99,6 +99,52 @@ describe('usePreload', () => {
     expect(preloadAll).toHaveBeenCalledWith(VOICE);
   });
 
+  describe('persistent storage', () => {
+    it('asks on mount when nothing is cached yet', async () => {
+      vi.mocked(checkPreloaded).mockResolvedValue(status(false));
+      vi.mocked(isFullyPreloaded).mockReturnValue(false);
+
+      const { result } = renderHook(() => usePreload(VOICE));
+      await waitFor(() => expect(result.current.phase).toBe('needed'));
+
+      expect(requestPersistentStorage).toHaveBeenCalledOnce();
+    });
+
+    it('asks on mount when everything is already cached', async () => {
+      // A grant covers bytes already on disk, and returning visits are where
+      // the browser's heuristics tend to say yes.
+      vi.mocked(checkPreloaded).mockResolvedValue(status(true));
+      vi.mocked(isFullyPreloaded).mockReturnValue(true);
+      vi.mocked(preloadAll).mockResolvedValue(undefined);
+
+      const { result } = renderHook(() => usePreload(VOICE));
+      await waitFor(() => expect(result.current.phase).toBe('ready'));
+
+      expect(requestPersistentStorage).toHaveBeenCalledOnce();
+    });
+
+    it('checks the cache without waiting on the answer', async () => {
+      vi.mocked(requestPersistentStorage).mockReturnValueOnce(
+        new Promise(() => {}),
+      );
+      vi.mocked(checkPreloaded).mockResolvedValue(status(false));
+      vi.mocked(isFullyPreloaded).mockReturnValue(false);
+
+      const { result } = renderHook(() => usePreload(VOICE));
+
+      await waitFor(() => expect(result.current.phase).toBe('needed'));
+    });
+
+    it('does not ask on an unsupported device', async () => {
+      vi.mocked(checkDeviceSupport).mockResolvedValue(UNSUPPORTED);
+
+      const { result } = renderHook(() => usePreload(VOICE));
+      await waitFor(() => expect(result.current.phase).toBe('unsupported'));
+
+      expect(requestPersistentStorage).not.toHaveBeenCalled();
+    });
+  });
+
   it('logs but does not throw when the background warm-up fails', async () => {
     vi.mocked(checkPreloaded).mockResolvedValue(status(true));
     vi.mocked(isFullyPreloaded).mockReturnValue(true);
@@ -396,45 +442,6 @@ describe('usePreload', () => {
       await act(async () => {
         resolvePreloadAll();
       });
-    });
-
-    it('asks for persistent storage when the download starts, not on mount', async () => {
-      vi.mocked(checkPreloaded).mockResolvedValue(status(false));
-      vi.mocked(isFullyPreloaded).mockReturnValue(false);
-      vi.mocked(preloadAll).mockResolvedValue(undefined);
-
-      const { result } = renderHook(() => usePreload(VOICE));
-      await waitFor(() => expect(result.current.phase).toBe('needed'));
-
-      // Firefox prompts for it, so it waits for the click that agrees to the
-      // download.
-      expect(requestPersistentStorage).not.toHaveBeenCalled();
-
-      await act(async () => {
-        await result.current.preload();
-      });
-
-      expect(requestPersistentStorage).toHaveBeenCalledOnce();
-    });
-
-    it('downloads without waiting on the persistent storage answer', async () => {
-      vi.mocked(checkPreloaded).mockResolvedValue(status(false));
-      vi.mocked(isFullyPreloaded).mockReturnValue(false);
-      vi.mocked(preloadAll).mockResolvedValue(undefined);
-      // A Firefox prompt the user never answers.
-      vi.mocked(requestPersistentStorage).mockReturnValueOnce(
-        new Promise(() => {}),
-      );
-
-      const { result } = renderHook(() => usePreload(VOICE));
-      await waitFor(() => expect(result.current.phase).toBe('needed'));
-
-      await act(async () => {
-        await result.current.preload();
-      });
-
-      expect(preloadAll).toHaveBeenCalled();
-      expect(result.current.cached).toEqual(status(true));
     });
 
     it('sets an error status and stops preloading on failure', async () => {

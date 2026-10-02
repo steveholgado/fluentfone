@@ -26,15 +26,24 @@ describe('requestPersistentStorage', () => {
     await expect(requestPersistentStorage()).resolves.toBe(false);
   });
 
-  it('asks synchronously, so the click still counts as user activation', () => {
-    // Firefox only shows its prompt while the click's activation is live.
-    // Anything awaited first would spend it.
+  it('does not ask again once already granted', async () => {
     const persist = vi.fn().mockResolvedValue(true);
-    vi.stubGlobal('navigator', { storage: { persist } });
+    vi.stubGlobal('navigator', {
+      storage: { persist, persisted: vi.fn().mockResolvedValue(true) },
+    });
+
+    await expect(requestPersistentStorage()).resolves.toBe(true);
+    expect(persist).not.toHaveBeenCalled();
+  });
+
+  it('asks when not yet granted', async () => {
+    const persist = vi.fn().mockResolvedValue(true);
+    vi.stubGlobal('navigator', {
+      storage: { persist, persisted: vi.fn().mockResolvedValue(false) },
+    });
     vi.spyOn(console, 'info').mockImplementation(() => {});
 
-    void requestPersistentStorage();
-
+    await expect(requestPersistentStorage()).resolves.toBe(true);
     expect(persist).toHaveBeenCalledOnce();
   });
 
