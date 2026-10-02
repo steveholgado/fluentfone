@@ -289,12 +289,17 @@ describe('openVoice', () => {
       loaded: 5,
       total: 10,
     });
+    // Waited for rather than assumed: BroadcastChannel delivery can take more
+    // than the one tick `report` allows when the machine is busy, and loading
+    // the voice first would stop the listening the report is meant to reach.
+    await vi.waitFor(() =>
+      expect(onProgress).toHaveBeenCalledWith(
+        expect.objectContaining({ loaded: 5 }),
+      ),
+    );
+
     FakeWorker.instances[0].emit({ id: 0, type: 'done' });
     await voice.ready;
-
-    expect(onProgress).toHaveBeenCalledWith(
-      expect.objectContaining({ loaded: 5 }),
-    );
   });
 
   it('stops listening once the voice has loaded', async () => {
