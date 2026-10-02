@@ -18,7 +18,7 @@ const BASE = {
   onAnswer: () => {},
   onToggleRecording: () => {},
   onRepeat: () => {},
-  onRepeatSlowly: () => {},
+  onShowText: () => {},
 };
 
 describe('ConversationScreen', () => {
@@ -81,6 +81,38 @@ describe('ConversationScreen', () => {
     expect(screen.getByText('Speaking…')).toHaveClass('sr-only');
   });
 
+  it("gives the waveform's place to the text while a line is repeated with it", () => {
+    const { container } = render(
+      <ConversationScreen
+        {...BASE}
+        hasGreeted
+        isAudioLive
+        transcript="¡Hola! ¿Qué tal?"
+        status="Speaking…"
+      />,
+    );
+
+    expect(screen.getByText('¡Hola! ¿Qué tal?')).toBeInTheDocument();
+    expect(container.querySelector('canvas')).toBeNull();
+    expect(screen.getByText('Speaking…')).toHaveClass('sr-only');
+  });
+
+  it('keeps the text up in place of the repeat buttons once the audio has stopped', () => {
+    render(
+      <ConversationScreen
+        {...BASE}
+        hasGreeted
+        canRepeat
+        transcript="¡Hola! ¿Qué tal?"
+      />,
+    );
+
+    expect(screen.getByText('¡Hola! ¿Qué tal?')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /Repeat|Show text/ }),
+    ).toBeNull();
+  });
+
   describe('repeat buttons', () => {
     it('take the status line once the agent has finished speaking', () => {
       render(<ConversationScreen {...BASE} hasGreeted canRepeat />);
@@ -89,7 +121,7 @@ describe('ConversationScreen', () => {
         screen.getByRole('button', { name: 'Repeat' }),
       ).toBeInTheDocument();
       expect(
-        screen.getByRole('button', { name: 'Repeat slowly' }),
+        screen.getByRole('button', { name: 'Show text' }),
       ).toBeInTheDocument();
     });
 
@@ -97,13 +129,17 @@ describe('ConversationScreen', () => {
       render(<ConversationScreen {...BASE} hasGreeted status="Generating…" />);
 
       expect(screen.getByText('Generating…')).toBeInTheDocument();
-      expect(screen.queryByRole('button', { name: /Repeat/ })).toBeNull();
+      expect(
+        screen.queryByRole('button', { name: /Repeat|Show text/ }),
+      ).toBeNull();
     });
 
     it('are hidden while audio is live', () => {
       render(<ConversationScreen {...BASE} hasGreeted canRepeat isAudioLive />);
 
-      expect(screen.queryByRole('button', { name: /Repeat/ })).toBeNull();
+      expect(
+        screen.queryByRole('button', { name: /Repeat|Show text/ }),
+      ).toBeNull();
     });
 
     it('give way to a status, such as a failed repeat', () => {
@@ -117,28 +153,30 @@ describe('ConversationScreen', () => {
       );
 
       expect(screen.getByText('Something went wrong')).toBeInTheDocument();
-      expect(screen.queryByRole('button', { name: /Repeat/ })).toBeNull();
+      expect(
+        screen.queryByRole('button', { name: /Repeat|Show text/ }),
+      ).toBeNull();
     });
 
     it('call their own handlers', () => {
       const onRepeat = vi.fn();
-      const onRepeatSlowly = vi.fn();
+      const onShowText = vi.fn();
       render(
         <ConversationScreen
           {...BASE}
           hasGreeted
           canRepeat
           onRepeat={onRepeat}
-          onRepeatSlowly={onRepeatSlowly}
+          onShowText={onShowText}
         />,
       );
 
       fireEvent.click(screen.getByRole('button', { name: 'Repeat' }));
       expect(onRepeat).toHaveBeenCalledTimes(1);
-      expect(onRepeatSlowly).not.toHaveBeenCalled();
+      expect(onShowText).not.toHaveBeenCalled();
 
-      fireEvent.click(screen.getByRole('button', { name: 'Repeat slowly' }));
-      expect(onRepeatSlowly).toHaveBeenCalledTimes(1);
+      fireEvent.click(screen.getByRole('button', { name: 'Show text' }));
+      expect(onShowText).toHaveBeenCalledTimes(1);
     });
   });
 });

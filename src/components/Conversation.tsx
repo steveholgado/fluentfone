@@ -29,6 +29,7 @@ export function Conversation({
     hasGreeted,
     isGreetingReady,
     canRepeat,
+    transcript,
     status,
     greet,
     prepareGreeting,
@@ -47,12 +48,13 @@ export function Conversation({
       hasGreeted={hasGreeted}
       isGreetingReady={isGreetingReady}
       canRepeat={canRepeat}
+      transcript={transcript}
       status={status}
       minimal={phase !== 'ready'}
       onAnswer={greet}
       onToggleRecording={toggleRecording}
       onRepeat={() => void repeatLastLine(false)}
-      onRepeatSlowly={() => void repeatLastLine(true)}
+      onShowText={() => void repeatLastLine(true)}
     />
   );
 }

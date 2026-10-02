@@ -14,12 +14,7 @@ import {
   type ChatMessage,
   type GenerateStage,
 } from '#/lib/chat';
-import {
-  openVoice,
-  slowRepeatSpeed,
-  type SpeakTimings,
-  type Voice,
-} from '#/lib/text-to-speech';
+import { openVoice, type SpeakTimings, type Voice } from '#/lib/text-to-speech';
 import { formatProgress } from '#/utils/formatProgress';
 import { formatTurnTimings } from '#/lib/utils/formatTurnTimings';
 import { createSentenceSplitter } from '#/lib/utils/sentenceSplitter';
@@ -43,6 +38,12 @@ const STAGE_STATUS: Record<GenerateStage, string> = {
   compiling: 'Warming up…',
   generating: 'Generating…',
 };
+
+/**
+ * How long a line's text stays up once its repeat has finished, so a reader
+ * still partway through isn't cut off mid-sentence.
+ */
+export const TRANSCRIPT_LINGER_MS = 2000;
 
 interface ConversationOptions {
   /**
@@ -77,6 +78,10 @@ export function useConversation({
   const [isGreetingReady, setIsGreetingReady] = useState(false);
   const [status, setStatus] = useState('');
   const [canRepeat, setCanRepeat] = useState(false);
+  // The line being repeated, while it's repeated with its text showing and
+  // for a moment after.
+  const [transcript, setTranscript] = useState<string | null>(null);
+  const transcriptTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const busyRef = useRef(false);
   // Set once the conversation has unmounted, i.e. the call has ended.
@@ -93,13 +98,10 @@ export function useConversation({
   } | null>(null);
   const voiceRef = useRef<Voice | null>(null);
   // The line the agent has just finished speaking, kept so it can be said
-  // again. The clips are the ones already played, at `speed`; the slow ones
-  // are only synthesised if asked for, then kept for any further repeats.
+  // again: the clips already played, and the text they were spoken from.
   const lastLineRef = useRef<{
     sentences: string[];
     clips: Blob[];
-    speed: number;
-    slowClips?: Promise<Blob>[];
   } | null>(null);
 
   // One voice for the whole conversation, so its session loads once rather
@@ -112,6 +114,11 @@ export function useConversation({
     ));
   }, [language]);
 
+  const hideTranscript = useCallback(() => {
+    clearTimeout(transcriptTimerRef.current);
+    setTranscript(null);
+  }, []);
+
   // Ending the call cuts off whatever is in flight, rather than leaving it to
   // play into the next one. A generate can't be aborted, so it runs on in the
   // chat worker, but nothing it produces is spoken: the voice is closed, and
@@ -120,6 +127,7 @@ export function useConversation({
     disposedRef.current = false;
     return () => {
       disposedRef.current = true;
+      clearTimeout(transcriptTimerRef.current);
       stopPlayback();
       void recorderRef.current?.stop().catch(() => {});
       recorderRef.current = null;
@@ -217,11 +225,7 @@ export function useConversation({
       // Only still synthesising if the speed was changed just before answering.
       const audio = await greeting.audio;
       await playVoice(audio);
-      lastLineRef.current = {
-        sentences: [greeting.text],
-        clips: [audio],
-        speed: greeting.speed,
-      };
+      lastLineRef.current = { sentences: [greeting.text], clips: [audio] };
       setCanRepeat(true);
       setStatus('');
     } catch (err) {
@@ -234,9 +238,11 @@ export function useConversation({
   const startRecording = useCallback(async () => {
     busyRef.current = true;
     // Only the line just spoken can be repeated; once the user starts their
-    // turn, it's gone until the next reply has been heard in full.
+    // turn, it's gone until the next reply has been heard in full. So is its
+    // text, even if it was still lingering.
     lastLineRef.current = null;
     setCanRepeat(false);
+    hideTranscript();
     try {
       const recorder = new AudioRecorder();
       await recorder.start();
@@ -253,7 +259,7 @@ export function useConversation({
     } finally {
       busyRef.current = false;
     }
-  }, [report]);
+  }, [hideTranscript, report]);
 
   const stopRecordingAndRespond = useCallback(async () => {
     const recorder = recorderRef.current;
@@ -348,11 +354,7 @@ export function useConversation({
       console.log(historyRef.current);
 
       await playback;
-      lastLineRef.current = {
-        sentences: spoken,
-        clips,
-        speed: replySpeed,
-      };
+      lastLineRef.current = { sentences: spoken, clips };
       setCanRepeat(true);
       setStatus('');
 
@@ -395,40 +397,36 @@ export function useConversation({
     }
   }, [isRecording, startRecording, stopRecordingAndRespond]);
 
+  // `withText` shows the line's text while the repeat plays and for
+  // TRANSCRIPT_LINGER_MS after. The linger is a timer rather than part of the
+  // repeat, so the user can start their turn without waiting it out.
   const repeatLastLine = useCallback(
-    async (slow: boolean) => {
+    async (withText: boolean) => {
       unlock();
       if (busyRef.current) return;
       const line = lastLineRef.current;
       if (!line) return;
       busyRef.current = true;
+      if (withText) setTranscript(line.sentences.join(' '));
       try {
         setStatus('Speaking…');
-        if (slow) {
-          // Every sentence goes to the voice at once, so later ones are
-          // synthesised while the first plays.
-          line.slowClips ??= line.sentences.map((sentence) => {
-            const audio = getVoice().speak(sentence, {
-              speed: slowRepeatSpeed(line.speed),
-            });
-            // Its failure surfaces below, when it's awaited in turn.
-            audio.catch(() => {});
-            return audio;
-          });
-          for (const clip of line.slowClips) await playVoice(await clip);
-        } else {
-          for (const clip of line.clips) await playVoice(clip);
-        }
+        for (const clip of line.clips) await playVoice(clip);
         setStatus('');
+        if (withText) {
+          transcriptTimerRef.current = setTimeout(
+            hideTranscript,
+            TRANSCRIPT_LINGER_MS,
+          );
+        }
       } catch (err) {
         report(err);
-        // So the next slow repeat tries the synthesis again.
-        line.slowClips = undefined;
+        // Straight away, so the error shows in its place.
+        hideTranscript();
       } finally {
         busyRef.current = false;
       }
     },
-    [getVoice, playVoice, report],
+    [hideTranscript, playVoice, report],
   );
 
   return {
@@ -437,6 +435,7 @@ export function useConversation({
     hasGreeted,
     isGreetingReady,
     canRepeat,
+    transcript,
     status,
     greet,
     prepareGreeting,

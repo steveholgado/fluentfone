@@ -17,7 +17,7 @@ import { RUNTIME_KEY, WASM_FILES, voiceUrls } from './constants';
 import type { TtsRequest, WorkerRequest, WorkerResponse } from './messages';
 import type { SpeakOptions } from './types';
 
-export { slowRepeatSpeed, VOICES } from './constants';
+export { VOICES } from './constants';
 export type { SpeakOptions, SpeakTimings } from './types';
 
 type DoneResponse = Extract<WorkerResponse, { type: 'done' }>;

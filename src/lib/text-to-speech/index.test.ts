@@ -13,9 +13,7 @@ import {
   VOICES,
 } from '#/lib/text-to-speech/index';
 import {
-  MIN_SPEED,
   RUNTIME_KEY,
-  slowRepeatSpeed,
   voiceUrls,
   WASM_FILES,
 } from '#/lib/text-to-speech/constants';
@@ -318,17 +316,6 @@ describe('openVoice', () => {
     });
 
     expect(onProgress).not.toHaveBeenCalled();
-  });
-});
-
-describe('slowRepeatSpeed', () => {
-  it('goes slower than the speed the line was spoken at', () => {
-    expect(slowRepeatSpeed(1)).toBeCloseTo(2 / 3);
-    expect(slowRepeatSpeed(0.85)).toBeLessThan(0.85);
-  });
-
-  it('never goes below the minimum speed', () => {
-    expect(slowRepeatSpeed(0.7)).toBe(MIN_SPEED);
   });
 });
 

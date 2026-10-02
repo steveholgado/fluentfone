@@ -6,12 +6,14 @@ interface ConversationScreenProps {
   hasGreeted: boolean;
   isGreetingReady: boolean;
   canRepeat: boolean;
+  /** The line being repeated, while its text is showing. */
+  transcript?: string | null;
   status: string;
   minimal?: boolean;
   onAnswer: () => void;
   onToggleRecording: () => void;
   onRepeat: () => void;
-  onRepeatSlowly: () => void;
+  onShowText: () => void;
 }
 
 const REPEAT_BUTTON_CLASS =
@@ -23,12 +25,13 @@ export function ConversationScreen({
   hasGreeted,
   isGreetingReady,
   canRepeat,
+  transcript = null,
   status,
   minimal = false,
   onAnswer,
   onToggleRecording,
   onRepeat,
-  onRepeatSlowly,
+  onShowText,
 }: ConversationScreenProps) {
   return (
     <div className="flex h-full w-full flex-col items-center justify-between px-8 py-16 sm:py-32">
@@ -55,9 +58,19 @@ export function ConversationScreen({
         </>
       ) : (
         <>
-          {isAudioLive ? (
+          {/* The text outlasts the audio by a moment, so it's checked first:
+              the repeat buttons only come back once it has gone. */}
+          {transcript !== null || isAudioLive ? (
             <>
-              <Waveform />
+              {transcript !== null ? (
+                // Scrolls rather than grows, so a long reply can't push the
+                // Start button around.
+                <p className="max-h-48 max-w-prose overflow-y-auto text-center text-xl">
+                  {transcript}
+                </p>
+              ) : (
+                <Waveform />
+              )}
               {/* The waveform has taken the status line's place, so the cue it
                   was carrying needs somewhere else to live. sr-only is out of
                   flow, so it costs the layout nothing. */}
@@ -68,8 +81,8 @@ export function ConversationScreen({
               <button onClick={onRepeat} className={REPEAT_BUTTON_CLASS}>
                 Repeat
               </button>
-              <button onClick={onRepeatSlowly} className={REPEAT_BUTTON_CLASS}>
-                Repeat slowly
+              <button onClick={onShowText} className={REPEAT_BUTTON_CLASS}>
+                Read along
               </button>
             </div>
           ) : (

@@ -1,12 +1,12 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { useConversation } from '#/hooks/useConversation';
+import { TRANSCRIPT_LINGER_MS, useConversation } from '#/hooks/useConversation';
 import { AudioRecorder } from '#/lib/audio/recorder';
 import { play, stopPlayback } from '#/lib/audio/player';
 import { transcribe } from '#/lib/speech-to-text';
 import { generateMessage } from '#/lib/chat';
-import { openVoice, slowRepeatSpeed, type Voice } from '#/lib/text-to-speech';
+import { openVoice, type Voice } from '#/lib/text-to-speech';
 import { markScenarioUsed, pickScenario } from '#/lib/scenarios';
 import {
   buildSystemInstruction,
@@ -33,13 +33,8 @@ vi.mock('#/lib/scenarios', () => ({
   pickScenario: vi.fn(),
   markScenarioUsed: vi.fn(),
 }));
-vi.mock('#/lib/text-to-speech', async () => ({
+vi.mock('#/lib/text-to-speech', () => ({
   openVoice: vi.fn(),
-  slowRepeatSpeed: (
-    await vi.importActual<typeof import('#/lib/text-to-speech/constants')>(
-      '#/lib/text-to-speech/constants',
-    )
-  ).slowRepeatSpeed,
   VOICES: {
     en_US: ['en_US-hfc_female-medium'],
     es_ES: ['es_ES-davefx-medium'],
@@ -129,6 +124,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllEnvs();
+  vi.useRealTimers();
 });
 
 describe('useConversation', () => {
@@ -380,21 +376,6 @@ describe('useConversation', () => {
       await waitFor(() => expect(result.current.canRepeat).toBe(true));
 
       expect(spokenSpeeds()).toEqual([1, 1, 0.7]);
-    });
-
-    it('repeats slowly relative to the speed the line was spoken at', async () => {
-      mockRecorderImpl();
-      vi.mocked(transcribe).mockResolvedValue('Hola');
-      vi.mocked(generateMessage).mockImplementation(streamed('Uno.'));
-
-      const { result } = renderAtSpeed(0.85);
-      await takeTurn(result);
-      await waitFor(() => expect(result.current.canRepeat).toBe(true));
-      await act(async () => {
-        await result.current.repeatLastLine(true);
-      });
-
-      expect(spokenSpeeds()).toEqual([0.85, slowRepeatSpeed(0.85)]);
     });
 
     it('synthesises the greeting again if the speed changes before the call is answered', async () => {
@@ -1108,10 +1089,13 @@ describe('useConversation', () => {
       expect(vi.mocked(play).mock.calls).toEqual([[firstClip], [secondClip]]);
     });
 
-    it('synthesises each sentence slowly, and only the first time', async () => {
+    it('shows the whole line while it is repeated with its text, and for a moment after', async () => {
       mockRecorderImpl();
       vi.mocked(transcribe).mockResolvedValue('Hola');
       vi.mocked(generateMessage).mockImplementation(streamed('Uno. ', 'Dos.'));
+      const firstClip = new Blob(['uno']);
+      const secondClip = new Blob(['dos']);
+      speak.mockResolvedValueOnce(firstClip).mockResolvedValueOnce(secondClip);
 
       const { result } = renderHook(() =>
         useConversation({ level: LEVEL, language: LANGUAGE, speed: 1 }),
@@ -1120,28 +1104,62 @@ describe('useConversation', () => {
       await waitFor(() => expect(result.current.canRepeat).toBe(true));
       speak.mockClear();
       vi.mocked(play).mockClear();
-      const slowFirst = new Blob(['uuuno']);
-      const slowSecond = new Blob(['dooos']);
-      speak.mockResolvedValueOnce(slowFirst).mockResolvedValueOnce(slowSecond);
+      const playing = deferred<void>();
+      vi.mocked(play).mockReturnValueOnce(playing.promise);
+      vi.useFakeTimers();
+
+      let repeat!: Promise<void>;
+      await act(async () => {
+        repeat = result.current.repeatLastLine(true);
+      });
+      expect(result.current.transcript).toBe('Uno. Dos.');
 
       await act(async () => {
-        await result.current.repeatLastLine(true);
-      });
-      await act(async () => {
-        await result.current.repeatLastLine(true);
+        playing.resolve();
+        await repeat;
       });
 
-      expect(speak.mock.calls).toEqual([
-        ['Uno.', { speed: slowRepeatSpeed(1) }],
-        ['Dos.', { speed: slowRepeatSpeed(1) }],
-      ]);
-      expect(vi.mocked(play).mock.calls).toEqual([
-        [slowFirst],
-        [slowSecond],
-        [slowFirst],
-        [slowSecond],
-      ]);
+      expect(speak).not.toHaveBeenCalled();
+      expect(vi.mocked(play).mock.calls).toEqual([[firstClip], [secondClip]]);
       expect(result.current.status).toBe('');
+      expect(result.current.transcript).toBe('Uno. Dos.');
+
+      act(() => vi.advanceTimersByTime(TRANSCRIPT_LINGER_MS - 1));
+      expect(result.current.transcript).toBe('Uno. Dos.');
+      act(() => vi.advanceTimersByTime(1));
+      expect(result.current.transcript).toBeNull();
+    });
+
+    it('drops the lingering text as soon as the user starts their turn', async () => {
+      mockRecorderImpl();
+      const { result } = await greeted();
+      vi.useFakeTimers();
+
+      await act(async () => {
+        await result.current.repeatLastLine(true);
+      });
+      expect(result.current.transcript).toBe('¡Hola!');
+
+      await act(async () => {
+        result.current.toggleRecording();
+      });
+      expect(result.current.transcript).toBeNull();
+      expect(result.current.isRecording).toBe(true);
+    });
+
+    it('shows no text for a plain repeat', async () => {
+      const { result } = await greeted();
+      const playing = deferred<void>();
+      vi.mocked(play).mockReturnValueOnce(playing.promise);
+
+      await act(async () => {
+        void result.current.repeatLastLine(false);
+      });
+      expect(result.current.transcript).toBeNull();
+
+      await act(async () => {
+        playing.resolve();
+      });
     });
 
     it('ignores a repeat while one is already playing', async () => {
@@ -1161,9 +1179,9 @@ describe('useConversation', () => {
       expect(speak).not.toHaveBeenCalled();
     });
 
-    it('sets an error status, and tries the slow synthesis again next time', async () => {
+    it('sets an error status and hides the text when playback fails', async () => {
       const { result } = await greeted();
-      speak.mockRejectedValueOnce(new Error('synth failed'));
+      vi.mocked(play).mockRejectedValueOnce(new Error('playback failed'));
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
       await act(async () => {
@@ -1171,15 +1189,8 @@ describe('useConversation', () => {
       });
 
       expect(result.current.status).toBe('Something went wrong');
+      expect(result.current.transcript).toBeNull();
       expect(errorSpy).toHaveBeenCalled();
-
-      await act(async () => {
-        await result.current.repeatLastLine(true);
-      });
-
-      expect(speak).toHaveBeenCalledTimes(2);
-      expect(play).toHaveBeenCalledTimes(1);
-      expect(result.current.status).toBe('');
 
       errorSpy.mockRestore();
     });

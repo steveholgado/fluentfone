@@ -62,24 +62,6 @@ export function voiceUrls(voiceId: string): { model: string; config: string } {
   return { model, config: `${model}.json` };
 }
 
-/**
- * Slower speech is synthesised rather than played back slower: Piper's
- * length_scale lengthens every phoneme and pause, which sounds like deliberate
- * speech rather than a stretched recording. A speed is its inverse, and
- * multiplies the voice's own value.
- *
- * "Repeat slowly" goes this much slower than the line was spoken, but never
- * below MIN_SPEED, past which Piper starts to drawl.
- */
-export const SLOW_REPEAT_FACTOR = 2 / 3;
-export const MIN_SPEED = 0.35;
-
-/** The speed to repeat a line at slowly, given the speed it was spoken at. */
-export function slowRepeatSpeed(speed: number): number {
-  console.log('SLOW:', Math.max(MIN_SPEED, speed * SLOW_REPEAT_FACTOR));
-  return Math.max(MIN_SPEED, speed * SLOW_REPEAT_FACTOR);
-}
-
 /** Self-hosted by vite-plugin-vendor-wasm-assets.ts; versioned by path. */
 export const ONNX_WASM_BASE = `/vendor/onnx/${ORT_VERSION}/`;
 export const PIPER_WASM_BASE = '/vendor/piper-wasm/1.0.0/';
