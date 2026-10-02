@@ -96,10 +96,14 @@ beforeEach(async () => {
   getOrLoadGlobalLiteRtLm.mockResolvedValue(undefined);
   createConversation.mockResolvedValue({ sendMessageStreaming });
   sendMessageStreaming.mockImplementation(() => streamOf('a reply'));
-  engineCreate.mockResolvedValue({
-    createConversation,
-    delete: engineDelete,
-  });
+  // Reads the model in, as the real one does — the 'compiling' stage waits on
+  // the stream running dry.
+  engineCreate.mockImplementation(
+    async ({ model }: { model: ReadableStream<Uint8Array> }) => {
+      await model.pipeTo(new WritableStream());
+      return { createConversation, delete: engineDelete };
+    },
+  );
 
   await import('#/lib/chat/worker');
 });
@@ -523,6 +527,25 @@ describe('stage reporting', () => {
     expect(stages()).toEqual(['loading', 'compiling', 'generating']);
   });
 
+  it('holds off on compiling until the model has been read in', async () => {
+    // The engine is handed the model as a stream and starts on it at once, so
+    // calling the wait 'compiling' from the start would mislabel a multi-
+    // gigabyte download or disk read for as long as it lasts.
+    let stagesAtCreate: string[] = [];
+    engineCreate.mockImplementation(
+      async ({ model }: { model: ReadableStream<Uint8Array> }) => {
+        stagesAtCreate = stages();
+        await model.pipeTo(new WritableStream());
+        return { createConversation, delete: engineDelete };
+      },
+    );
+
+    await post(generateRequest({ prompt: 'hi' }));
+
+    expect(stagesAtCreate).toEqual(['downloading']);
+    expect(stages()).toEqual(['downloading', 'compiling', 'generating']);
+  });
+
   it('skips straight to generating once the engine is live', async () => {
     await post(generateRequest({ prompt: 'first' }));
     postedMessages = [];
@@ -599,6 +622,16 @@ describe('preload', () => {
 
     expect(fetch).toHaveBeenCalledTimes(2);
     expect(engineCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it('hands the engine a stream rather than a Blob', async () => {
+    // The engine keeps whatever model it was given for its whole life. A Blob
+    // would be gigabytes pinned for the session; a spent stream is nothing.
+    await post(generateRequest({ prompt: 'hi' }));
+
+    expect(engineCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ model: expect.any(ReadableStream) }),
+    );
   });
 
   it('streams the model past rather than buffering it whole', async () => {

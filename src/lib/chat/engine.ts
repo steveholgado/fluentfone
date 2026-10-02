@@ -49,21 +49,34 @@ const GPU_ARTISAN_CONFIG: GpuArtisanConfig = {
 
 /**
  * The LiteRT-LM web SDK (early preview) doesn't persist a downloaded model
- * across page loads and `Engine.create()` takes a Blob rather than a URL, so
- * the file is fetched here and handed over.
+ * across page loads, so the file is fetched here and handed over.
+ *
+ * As a stream, not a Blob. GPU_ARTISAN reads the model in slices straight into
+ * the wasm heap, so the engine starts on the first bytes rather than after the
+ * last. A Blob would also outlive the load: the engine keeps whatever it was
+ * given in its `settings` for its whole life, and a spent stream holds nothing.
+ * Only GPU_ARTISAN streams — every other backend gathers the stream whole and
+ * copies it again, which is worse than a Blob.
+ *
+ * `onDrained` fires once every byte has passed, which is when the wait stops
+ * being the disk or the network and becomes the compile.
  *
  * Nothing is memoized. The service worker holds the bytes, so a second fetch
- * is a cache read rather than a download — and keeping a multi-gigabyte Blob
- * alive for the whole session to avoid it would be a poor trade.
+ * is a cache read rather than a download.
  */
-async function fetchModel(modelUrl: string): Promise<Blob> {
+async function fetchModel(
+  modelUrl: string,
+  onDrained: () => void,
+): Promise<ReadableStream<Uint8Array>> {
   const response = await fetch(modelUrl);
-  if (!response.ok) {
+  if (!response.ok || !response.body) {
     throw new Error(
       `Failed to download model (${response.status}): ${modelUrl}`,
     );
   }
-  return response.blob();
+  return response.body.pipeThrough(
+    new TransformStream<Uint8Array, Uint8Array>({ flush: onDrained }),
+  );
 }
 
 // The engine (and its loaded model weights) is expensive to create, so we
@@ -90,14 +103,16 @@ export function getEngine(
       // download misreported a disk read of several gigabytes as a fresh one.
       onStage?.((await hasAsset(modelUrl)) ? 'loading' : 'downloading');
 
-      const [modelBlob, { Backend, Engine: LiteRTEngine }] = await Promise.all([
-        fetchModel(modelUrl),
-        import('@litert-lm/core'),
-      ]);
+      const [modelStream, { Backend, Engine: LiteRTEngine }] =
+        await Promise.all([
+          fetchModel(modelUrl, () => onStage?.('compiling')),
+          import('@litert-lm/core'),
+        ]);
       const settings: EngineSettings = {
-        model: modelBlob,
+        model: modelStream,
         // Named rather than left to the library's default, since the config
-        // below only applies to this backend.
+        // below only applies to this backend — and because it is the one
+        // backend that streams the model in (see fetchModel).
         backend: Backend.GPU_ARTISAN,
         mainExecutorSettings: {
           maxNumTokens,
@@ -105,9 +120,9 @@ export function getEngine(
         },
       };
       // Engine.create() loads the wasm runtime (already on disk if preload
-      // ran), sets up the WebGPU device and compiles the model. Minutes of
-      // work on a cold start, none of it reported by the SDK.
-      onStage?.('compiling');
+      // ran), sets up the WebGPU device, reads the model in and compiles it.
+      // Minutes of work on a cold start, none of it reported by the SDK — the
+      // 'compiling' stage comes from the stream running dry, above.
       return LiteRTEngine.create(settings);
     })();
     enginePromises.set(key, promise);
