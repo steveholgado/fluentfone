@@ -60,7 +60,7 @@ export const MODEL_KEY = `${MODEL}@${MODEL_REVISION}:${
  * changes the pin fails there rather than having the sweep delete the runtime
  * on every visit.
  */
-export const TRANSFORMERS_ORT_VERSION = '1.26.0-dev.20260416-b7804b056c';
+export const TRANSFORMERS_ORT_VERSION = '1.31.0-dev.20260914-8d85527a0';
 
 /** What Whisper expects its input resampled to. */
 export const SAMPLE_RATE = 16000;

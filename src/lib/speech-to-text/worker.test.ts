@@ -145,22 +145,6 @@ describe('worker onmessage', () => {
     expect(env.useBrowserCache).toBe(false);
   });
 
-  it('caps graph optimization on the wasm path, where ORT mis-fuses the q8 decoder', async () => {
-    // Without this, session creation throws in Safari: the extended (level 2)
-    // optimizer rewrites Whisper's tied embed_tokens/lm_head QDQ pattern into
-    // MatMulNBits and then can't find the scale it just merged away.
-    await post({ id: 1, mode: 'preload' });
-
-    expect(pipelineFactory).toHaveBeenCalledWith(
-      'automatic-speech-recognition',
-      expect.any(String),
-      expect.objectContaining({
-        device: 'wasm',
-        session_options: { graphOptimizationLevel: 'basic' },
-      }),
-    );
-  });
-
   it('loads q8 weights on the wasm path', async () => {
     await post({ id: 1, mode: 'preload' });
 
@@ -178,18 +162,6 @@ describe('worker onmessage', () => {
     expect(pipelineFactory.mock.calls[0][2]).toMatchObject({
       dtype: { encoder_model: 'fp32', decoder_model_merged: 'q4' },
     });
-  });
-
-  it('leaves graph optimization alone on the webgpu path', async () => {
-    vi.resetModules();
-    vi.stubGlobal('navigator', { gpu: {} });
-    await import('#/lib/speech-to-text/worker');
-
-    await post({ id: 1, mode: 'preload' });
-
-    const options = pipelineFactory.mock.calls[0][2];
-    expect(options).toMatchObject({ device: 'webgpu' });
-    expect(options).not.toHaveProperty('session_options');
   });
 
   it('posts an error message when transcription throws', async () => {

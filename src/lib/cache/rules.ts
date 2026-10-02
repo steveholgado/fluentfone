@@ -85,7 +85,7 @@ export function ruleFor(url: URL): AssetRule | undefined {
  * Being wrong is cheap in both directions: too low and the observed total wins
  * (see `trackStep`), too high and the bar finishes a little short before the
  * step's terminal 100% snaps it up. Refresh on a dependency bump by taking the
- * Content-Length of each file; measured 2026-09-19.
+ * Content-Length of each file.
  *
  * Every step needs an entry, which is why this is a total record rather than a
  * partial one: the estimate is the progress bar's floor, so a step without one
@@ -102,7 +102,7 @@ export const EXPECTED_BYTES: Record<PreloadStepId, number> = {
   'text-to-speech': 63_206_000,
   // whisper-small's WebGPU weights (see speech-to-text/constants.ts), since the
   // app requires WebGPU.
-  'speech-to-text': 612_359_000,
+  'speech-to-text': 615_659_000,
   'chat-runtime': 20_140_000,
   // Unlike the others this is a single file, so its Content-Length is normally
   // known before the first byte and this estimate goes unused. It is here for
