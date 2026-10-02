@@ -72,10 +72,11 @@ export function voiceUrls(voiceId: string): { model: string; config: string } {
  * below MIN_SPEED, past which Piper starts to drawl.
  */
 export const SLOW_REPEAT_FACTOR = 2 / 3;
-export const MIN_SPEED = 0.5;
+export const MIN_SPEED = 0.35;
 
 /** The speed to repeat a line at slowly, given the speed it was spoken at. */
 export function slowRepeatSpeed(speed: number): number {
+  console.log('SLOW:', Math.max(MIN_SPEED, speed * SLOW_REPEAT_FACTOR));
   return Math.max(MIN_SPEED, speed * SLOW_REPEAT_FACTOR);
 }
 
