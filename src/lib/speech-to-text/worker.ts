@@ -1,11 +1,8 @@
 /**
- * Runs Whisper transcription off the main thread via Transformers.js. Unlike
- * text-to-speech/worker.ts, this worker is long-lived and reused across
- * requests: the whole point is to keep the compiled pipeline (`pipelinePromise`
- * below) resident in memory instead of rebuilding it per call. Don't copy the
- * "spawn a worker per call and terminate it" pattern from the TTS worker here
- * — that exists to work around a piper-tts-web caching bug that doesn't apply
- * to Transformers.js.
+ * Runs Whisper transcription off the main thread via Transformers.js. The
+ * worker is long-lived and reused across requests: the whole point is to keep
+ * the compiled pipeline (`pipelinePromise` below) resident in memory instead of
+ * rebuilding it per call.
  */
 
 import type { AutomaticSpeechRecognitionPipeline } from '@huggingface/transformers';

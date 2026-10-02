@@ -113,10 +113,10 @@ describe('trackStep', () => {
   });
 
   it('survives the voice download’s tiny-file-first ordering', async () => {
-    // TtsSession.create fetches the 5 KB voice config, awaits it, and only
-    // then fetches the 63 MB model. Without the estimate the first file would
-    // complete at 5033/5033 — 100% — and the bar, which never moves
-    // backwards, would sit there for the whole model.
+    // The voice's 5 KB config finishes long before the 63 MB model fetched
+    // alongside it. Without the estimate the config would complete at
+    // 4817/4817 — 100% — and the bar, which never moves backwards, would sit
+    // there for the whole model.
     const onProgress = vi.fn();
     stop = trackStep('text-to-speech', onProgress);
 

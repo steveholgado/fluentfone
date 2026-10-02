@@ -168,7 +168,7 @@ export function useConversation({
     preparingGreetingRef.current = true;
     try {
       // Opened now so the voice's session is built — wasm compiled, voice read
-      // back from OPFS — while the greeting is generated.
+      // back from the service worker's cache — while the greeting is generated.
       getVoice();
       setStatus(STAGE_STATUS.compiling);
       const scenario = pickScenario(level);

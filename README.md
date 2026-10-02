@@ -35,8 +35,8 @@ agreed to it.
   be in charge before anything is fetched, or it would see none of it
 - Delete files an older build downloaded and this one no longer uses (see
   [Changing a model or dependency](#changing-a-model-or-dependency))
-- Read four step markers from the `models-v1` cache
-- Read OPFS for the voice, which piper-tts-web owns and we can only observe
+- Read four step markers from the `models-v1` cache, and look up the voice's
+  two files there directly
 - No network, no workers, no libraries loaded
 - All five present → straight to the conversation; anything missing → preload
 
@@ -45,7 +45,7 @@ agreed to it.
 Only the missing steps run, smallest first, each with its own progress bar:
 
 1. Piper + ONNX wasm — self-hosted from `public/vendor/`
-2. Voice model → OPFS
+2. Voice model — Hugging Face, pinned to a commit
 3. ONNX wasm for Whisper + Whisper weights — jsDelivr and Hugging Face
 4. LiteRT wasm — jsDelivr
 5. Chat model → Hugging Face
@@ -85,8 +85,8 @@ One service worker (`src/sw.ts`) owns it all, and `src/lib/cache/` is the only
 place cache policy is written:
 
 - **`names.ts`** — the two bucket names
-- **`rules.ts`** — which URLs belong to which preload step, whether the worker
-  stores them, and roughly how big they are
+- **`rules.ts`** — which URLs belong to which preload step, and roughly how
+  big they are
 - **`markers.ts`** — reading and writing the markers that record a step as
   done, and the records of cache writes that failed
 - **`channel.ts`** — the byte-count message the worker broadcasts, and the
@@ -123,14 +123,14 @@ at `https://write-failed.invalid/<step>`, and the check believes that record
 over the marker, so the step shows as not downloaded. The record is cleared
 when the step next runs.
 
-The voice is the one exception. piper-tts-web writes it to OPFS and offers no
-way to point it elsewhere, so the worker counts those bytes without storing
-them, and the check reads OPFS directly.
+The voice has no marker. It is two files whose URLs are known up front, so the
+check asks the cache for both directly — and a cache entry can't exist unless
+its whole body was written.
 
 ### How a request is served
 
 Requests come from the page, the two web workers, and the libraries themselves
-(LiteRT-LM, Transformers.js, piper). All of them are controlled, so all of them
+(LiteRT-LM, Transformers.js, our Piper engine). All of them are controlled, so all of them
 land here.
 
 ```
@@ -144,8 +144,6 @@ fetch
  │    │                                                      (no bytes, no progress)
  │    └─ miss ─▶ network ─┬─ count bytes ─▶ BroadcastChannel ─▶ progress bar
  │                        └─ store in models-v1
- │                           …except the voice (cache:false) — counted only,
- │                             because piper writes it to OPFS itself
  │
  ├─ cross-origin, no rule ────────────────────────────────▶ network
  │
@@ -171,20 +169,20 @@ register /sw.js
                 → clients.claim()     ← now controls the page AND both web workers
   │
   ▼  checkPreloaded()
-4 marker probes in models-v1 + 1 OPFS listing  →  all miss
+4 marker probes + 2 voice file probes in models-v1  →  all miss
   │
   ▼  user clicks Download
 preloadAll() — five steps, strictly one at a time:
 
     tts-runtime  /vendor/*            → models-v1
-    voice        HF piper-voices      → OPFS          (counted, not stored)
+    voice        HF piper-voices      → models-v1
     whisper      jsDelivr + HF        → models-v1
     chat-runtime jsDelivr             → models-v1
     chat         HF litert-community  → models-v1     (~3 GB)
 
   each step:  library fetch ─▶ worker ─▶ network ─┬─▶ cache
                                                   └─▶ bytes ─▶ progress bar
-  each step ends: the page writes a marker into models-v1
+  each step ends: the page writes a marker into models-v1 (all but the voice)
   a store that fails: the worker writes write-failed.invalid/<step>
   │
   ▼
@@ -202,14 +200,13 @@ JS / CSS / worker chunks     ← shell-<build id>  ┘ worker controls from byte
   │                            one is waiting (see Updates), else returns
   ▼  sweepStaleAssets()      ← deletes what an older build left in models-v1;
   │                            usually nothing
-  ▼  checkPreloaded()        ← 4 markers hit + voice found in OPFS
+  ▼  checkPreloaded()        ← 4 markers hit + both voice files found
   │
   ▼
 preload screen skipped entirely → straight to the conversation
   │
   ▼  during the conversation
-model + runtime fetches      ← models-v1, no network
-voice                        ← OPFS, no fetch at all
+model, voice + runtime fetches ← models-v1, no network
 ```
 
 ### Where progress comes from
@@ -243,16 +240,17 @@ again, on every visit.
 
 What to do by hand:
 
-| Change                                                     | Handled for you                                                       | By hand                                                                                                                     |
-| ---------------------------------------------------------- | --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| Whisper `MODEL`                                            | Marker misses; old model's files deleted                              | Check the `speech-to-text` rule still matches the new URL (it looks for `onnx-community/whisper`); refresh `EXPECTED_BYTES` |
-| Whisper `MODEL_DTYPE`                                      | Marker misses                                                         | Nothing — but the old precision's files are **not** deleted                                                                 |
-| `DEFAULT_CHAT_MODEL`                                       | Marker misses; old model file deleted                                 | A model outside `CHAT_MODELS` needs its own `EXPECTED_BYTES` figure                                                         |
-| `@litert-lm/core`                                          | Version read from its package.json; marker, rule and sweep all follow | Refresh `EXPECTED_BYTES`                                                                                                    |
-| `@huggingface/transformers`                                | —                                                                     | Update `TRANSFORMERS_ORT_VERSION` in `speech-to-text/constants.ts`; a test fails until you do                               |
-| Piper's `onnxruntime-web` or `@diffusionstudio/piper-wasm` | The vendor plugin copies the files into a new version folder          | Update `ONNX_WASM_BASE` / `PIPER_WASM_BASE` in `text-to-speech/constants.ts` to match                                       |
-| `VOICE_ID`                                                 | The OPFS check misses and the new voice downloads                     | Nothing — but the old voice stays in OPFS; the sweep only covers `models-v1`                                                |
-| A new preload step                                         | The type checker asks for its `EXPECTED_BYTES` and `IS_STALE` entries | Add its rule to `rules.ts`                                                                                                  |
+| Change                        | Handled for you                                                        | By hand                                                                                                                                                                                                                               |
+| ----------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Whisper `MODEL`               | Marker misses; old model's files deleted                               | Check the `speech-to-text` rule still matches the new URL (it looks for `onnx-community/whisper`); refresh `EXPECTED_BYTES`                                                                                                           |
+| Whisper `MODEL_DTYPE`         | Marker misses                                                          | Nothing — but the old precision's files are **not** deleted                                                                                                                                                                           |
+| `DEFAULT_CHAT_MODEL`          | Marker misses; old model file deleted                                  | A model outside `CHAT_MODELS` needs its own `EXPECTED_BYTES` figure                                                                                                                                                                   |
+| `@litert-lm/core`             | Version read from its package.json; marker, rule and sweep all follow  | Refresh `EXPECTED_BYTES`                                                                                                                                                                                                              |
+| `@huggingface/transformers`   | —                                                                      | Set `ORT_VERSION` in `src/lib/ort.ts` and the app's own `onnxruntime-web` to the version it pins (a test fails until both match), then re-check the `packageExtensions` entry in `pnpm-workspace.yaml`, which is keyed to its version |
+| `onnxruntime-web`             | —                                                                      | Not on its own: it must match what Transformers.js pins (see above). The vendor plugin and `ONNX_WASM_BASE` follow `ORT_VERSION`                                                                                                      |
+| `@diffusionstudio/piper-wasm` | The vendor plugin copies the files into a new version folder           | Update `PIPER_WASM_BASE` in `text-to-speech/constants.ts` to match                                                                                                                                                                    |
+| `VOICES` or `VOICE_REVISION`  | A new voice misses and downloads; files off another commit are deleted | Nothing — but a voice dropped from `VOICES` is **not** deleted                                                                                                                                                                        |
+| A new preload step            | The type checker asks for its `EXPECTED_BYTES` and `IS_STALE` entries  | Add its rule to `rules.ts`                                                                                                                                                                                                            |
 
 Old markers are never deleted either. They're a few bytes each, and keyed by
 version, so nothing matches them again.

@@ -1,11 +1,11 @@
 // Drops the onnxruntime-web .wasm binaries that the bundler emits into
-// dist/client/assets and that nothing ever fetches — ~34 MiB across two files,
+// dist/client/assets and that nothing ever fetches — ~39 MiB across two files,
 // one of which is the largest single file in the build.
 //
-// This app carries two ORT versions, and both emit an orphan. piper-tts-web
-// pulls in onnxruntime-web 1.23.2 (peer dep, pinned by our own dependency
-// entry); @huggingface/transformers hard-pins 1.26.0-dev internally. Each
-// contains a
+// The app runs one ORT version (see src/lib/ort.ts) through two of its entry
+// points, and each emits an orphan: `onnxruntime-web/wasm`, which our Piper
+// engine imports, and `onnxruntime-web/webgpu`, which @huggingface/transformers
+// imports, with an asyncify build of its own. Each contains a
 //
 //   new URL('ort-wasm-simd-threaded[.asyncify].wasm', import.meta.url)
 //
@@ -18,9 +18,9 @@
 //   } else if (wasmPathOverride || wasmPrefixOverride) {
 //     config.locateFile = (fileName) => wasmPathOverride ?? wasmPrefixOverride + fileName;
 //
-// Neither library leaves it unset. piper-tts-web assigns the `onnxWasm` prefix
-// it is handed, which src/lib/text-to-speech/worker.ts always passes and its
-// test pins. transformers.js assigns a jsDelivr `{ mjs, wasm }` pair at module
+// Neither import leaves it unset. Our Piper engine assigns the vendored prefix
+// at module scope (src/lib/text-to-speech/piper.ts; its test pins it).
+// transformers.js assigns a jsDelivr `{ mjs, wasm }` pair at module
 // scope, before any session exists, and sets `wasm.proxy = false` — which also
 // rules out the second, proxy-worker occurrence of the same fallback.
 //
@@ -30,10 +30,9 @@
 // bundle. The .mjs loaders are unaffected — those are inlined into their
 // chunks rather than emitted as assets.
 //
-// Worth a plugin rather than living with the dead weight because the deploy
-// target is Cloudflare, which rejects any single file over 25 MiB. The larger
-// orphan is 22.48 MiB: both the heaviest thing uploaded and the one closest to
-// failing the deploy outright.
+// Not optional: the deploy target is Cloudflare, which rejects any single file
+// over 25 MiB, and the larger orphan — the asyncify build — is 25.62 MiB.
+// Without this plugin the deploy fails outright.
 import type { Plugin } from 'vite';
 
 /**

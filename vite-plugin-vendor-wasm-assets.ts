@@ -1,7 +1,7 @@
-// Self-hosts the wasm/data files that `@mintplex-labs/piper-tts-web` would
-// otherwise fetch from third-party CDNs (jsDelivr/cdnjs) at runtime, so TTS
-// doesn't depend on those CDNs being reachable; see
-// src/lib/text-to-speech/worker.ts for where they're pointed to.
+// Self-hosts the wasm/data files the Piper text-to-speech engine runs on —
+// onnxruntime-web's and piper-wasm's — so TTS doesn't depend on a CDN being
+// reachable at run time; see src/lib/text-to-speech/piper.ts for where they're
+// pointed to.
 //
 // This can't be a plain `?url` import (Vite's normal way of self-hosting a
 // node_modules file, with automatic content-hash cache-busting) for
