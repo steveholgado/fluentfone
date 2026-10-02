@@ -500,15 +500,14 @@ describe('models and runtimes', () => {
     expect(loaded).toEqual([...loaded].sort((a, b) => a - b));
   });
 
-  it('counts the voice without storing it', async () => {
-    // piper-tts-web keeps voices in OPFS and cannot be pointed elsewhere, so
-    // caching them here would pay for the voice twice.
+  it('stores the voice and counts it against its own step', async () => {
     stubDownload(4096);
 
     const seen = await captureProgress(() => fetchEvent(VOICE_URL));
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(seen.at(-1)?.step).toBe('text-to-speech');
-    expect(stored(MODELS_CACHE, VOICE_URL)).toBe(false);
+    expect(stored(MODELS_CACHE, VOICE_URL)).toBe(true);
   });
 
   it('does not store a failed download', async () => {

@@ -1,6 +1,6 @@
 /**
- * Which downloads belong to which preload step, whether the service worker
- * stores them, and roughly how big they are.
+ * Which downloads belong to which preload step, and roughly how big they are.
+ * The service worker stores and counts everything a rule matches.
  *
  * `lib/cache` is the bottom of the import graph on purpose. Both `sw.ts` and
  * the page import from it, so every file in this folder may import only from
@@ -15,11 +15,6 @@ export interface AssetRule {
   step: PreloadStepId;
   /** Recognises the step's downloads wherever they are issued from. */
   matches: (url: URL) => boolean;
-  /**
-   * Whether the service worker stores the bytes. False where another store
-   * already owns them and a second copy would just double the disk cost.
-   */
-  cache: boolean;
 }
 
 /**
@@ -32,17 +27,12 @@ export const ASSET_RULES: AssetRule[] = [
   {
     step: 'text-to-speech-runtime',
     matches: (url) => url.pathname.startsWith('/vendor/'),
-    cache: true,
   },
   {
     step: 'text-to-speech',
     matches: (url) =>
       url.hostname === 'huggingface.co' &&
       url.pathname.includes('piper-voices'),
-    // piper-tts-web writes voices to OPFS itself, and there is no way to point
-    // it elsewhere. Counting them without storing them keeps the progress bar
-    // honest without paying for the voice twice.
-    cache: false,
   },
   {
     step: 'speech-to-text',
@@ -51,21 +41,18 @@ export const ASSET_RULES: AssetRule[] = [
         url.pathname.includes('onnxruntime-web@')) ||
       (url.hostname === 'huggingface.co' &&
         url.pathname.includes('onnx-community/whisper')),
-    cache: true,
   },
   {
     step: 'chat-runtime',
     matches: (url) =>
       url.hostname === 'cdn.jsdelivr.net' &&
       url.pathname.includes('@litert-lm/core@'),
-    cache: true,
   },
   {
     step: 'chat',
     matches: (url) =>
       url.hostname === 'huggingface.co' &&
       url.pathname.includes('litert-community'),
-    cache: true,
   },
 ];
 
@@ -98,7 +85,7 @@ export function ruleFor(url: URL): AssetRule | undefined {
  * a new figure.
  */
 export const EXPECTED_BYTES: Record<PreloadStepId, number> = {
-  'text-to-speech-runtime': 30_638_000,
+  'text-to-speech-runtime': 33_002_000,
   'text-to-speech': 63_206_000,
   // whisper-small's WebGPU weights (see speech-to-text/constants.ts), since the
   // app requires WebGPU.

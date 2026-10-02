@@ -307,7 +307,6 @@ describe('bytesNeeded', () => {
   });
 
   it('comes to the whole app when nothing is cached', () => {
-    // The voice included, although it lands in OPFS rather than the cache.
     expect(bytesNeeded(status(false))).toBe(
       Object.values(EXPECTED_BYTES).reduce((sum, bytes) => sum + bytes, 0),
     );
@@ -416,7 +415,9 @@ describe('isVoicePackCached', () => {
   });
 
   it('treats a rejected check as not cached, without throwing', async () => {
-    vi.mocked(textToSpeech.isCached).mockRejectedValue(new Error('no OPFS'));
+    vi.mocked(textToSpeech.isCached).mockRejectedValue(
+      new Error('no Cache Storage'),
+    );
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
     await expect(isVoicePackCached(['a'])).resolves.toBe(false);

@@ -9,6 +9,8 @@ import { MODEL_REVISION as WHISPER_REVISION } from '#/lib/speech-to-text/constan
 import {
   ONNX_WASM_BASE,
   PIPER_WASM_BASE,
+  VOICE_REVISION,
+  voiceUrls,
 } from '#/lib/text-to-speech/constants';
 import { stubCacheStorage, type FakeCache } from '#/test-utils';
 
@@ -19,6 +21,8 @@ const OTHER_CHAT_MODEL =
 const CURRENT = [
   `${location.origin}${ONNX_WASM_BASE}ort-wasm-simd-threaded.wasm`,
   `${location.origin}${PIPER_WASM_BASE}piper_phonemize.data`,
+  voiceUrls('es_ES-davefx-medium').model,
+  voiceUrls('es_ES-davefx-medium').config,
   `https://huggingface.co/onnx-community/whisper-small/resolve/${WHISPER_REVISION}/onnx/encoder_model.onnx`,
   `https://huggingface.co/onnx-community/whisper-small/resolve/${WHISPER_REVISION}/config.json`,
   `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VERSION}/dist/ort-wasm-simd-threaded.jsep.wasm`,
@@ -66,6 +70,9 @@ describe('sweepStaleAssets', () => {
     const stale = [
       `${location.origin}/vendor/onnx/1.20.0/ort-wasm-simd-threaded.wasm`,
       `${location.origin}/vendor/piper-wasm/0.9.0/piper_phonemize.data`,
+      // A voice off `main`, as piper-tts-web fetched it, and off another commit.
+      'https://huggingface.co/diffusionstudio/piper-voices/resolve/main/es/es_ES/davefx/medium/es_ES-davefx-medium.onnx',
+      voiceUrls('es_ES-davefx-medium').model.replace(VOICE_REVISION, 'abc123'),
       // What every returning user still has from before the move to small.
       'https://huggingface.co/onnx-community/whisper-base/resolve/main/onnx/decoder_model_merged_quantized.onnx',
       // And from before the pin: the current model, but fetched off `main`.

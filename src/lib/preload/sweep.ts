@@ -29,6 +29,8 @@ import {
 import {
   ONNX_WASM_BASE,
   PIPER_WASM_BASE,
+  VOICE_REPO,
+  VOICE_REVISION,
 } from '#/lib/text-to-speech/constants';
 import type { PreloadStepId } from './steps';
 
@@ -70,8 +72,9 @@ const IS_STALE: Record<PreloadStepId, (url: URL) => boolean> = {
   'text-to-speech-runtime': (url) =>
     otherDir(url, '/vendor/onnx/', ONNX_WASM_BASE) ||
     otherDir(url, '/vendor/piper-wasm/', PIPER_WASM_BASE),
-  // Never stored here; piper-tts-web keeps voices in OPFS.
-  'text-to-speech': () => false,
+  // Any other commit, `main` included, or any other repo of piper voices.
+  'text-to-speech': (url) =>
+    !url.pathname.startsWith(`/${VOICE_REPO}/resolve/${VOICE_REVISION}/`),
   'speech-to-text': (url) =>
     url.hostname === 'huggingface.co'
       ? // Another commit of the same model is stale too, `main` included. The

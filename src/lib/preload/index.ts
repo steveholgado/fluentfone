@@ -101,9 +101,8 @@ async function runStep(
  *
  * Every step but one answers the same way: a marker in the service worker's
  * models cache, written when the step finished and stored alongside the bytes
- * it vouches for. The exception is the Piper voice, which piper-tts-web keeps
- * in OPFS where we can read it directly — a better answer than a marker, so
- * it is used instead.
+ * it vouches for. The exception is the Piper voice, two files whose URLs are
+ * known up front, so their cache entries are asked after directly instead.
  *
  * A "true" here means the *files* are on disk, not that the engine is
  * compiled and resident in memory.
@@ -194,7 +193,7 @@ export function voicePackBytes(voiceIds: readonly string[]): number {
   return voiceIds.length * EXPECTED_BYTES['text-to-speech'];
 }
 
-/** Treats a failed probe (no OPFS, no Cache Storage, …) as "not cached". */
+/** Treats a failed probe (no Cache Storage, …) as "not cached". */
 async function settle(check: Promise<boolean>): Promise<boolean> {
   try {
     return await check;

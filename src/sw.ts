@@ -243,26 +243,23 @@ async function serveShell(request: Request): Promise<Response> {
 }
 
 /**
- * A runtime or model file. Cache-first where the rule says we own the bytes,
- * and counted on the way in from the network — including for the voice, whose
- * bytes belong to OPFS but whose progress the bar still wants.
+ * A runtime or model file: cache-first, and counted on the way in from the
+ * network.
  */
 async function serveAsset(
   event: SwFetchEvent,
   request: Request,
   rule: AssetRule,
 ): Promise<Response> {
-  const cache = rule.cache ? await caches.open(MODELS_CACHE) : null;
+  const cache = await caches.open(MODELS_CACHE);
 
-  if (cache) {
-    const cached = await cache.match(request, { ignoreVary: true });
-    // Handed back untouched, so the browser streams it straight off disk.
-    // Counting would put every chunk of several gigabytes through this
-    // worker's JS on every warm-up, for a bar nobody is looking at — only a
-    // preload reports progress, and there `runStep` already opens each step
-    // at zero, so one that reports nothing just sits there until it's done.
-    if (cached) return cached;
-  }
+  const cached = await cache.match(request, { ignoreVary: true });
+  // Handed back untouched, so the browser streams it straight off disk.
+  // Counting would put every chunk of several gigabytes through this worker's
+  // JS on every warm-up, for a bar nobody is looking at — only a preload
+  // reports progress, and there `runStep` already opens each step at zero, so
+  // one that reports nothing just sits there until it's done.
+  if (cached) return cached;
 
   const response = await fetch(request);
 
@@ -273,12 +270,6 @@ async function serveAsset(
   }
 
   const total = contentLength(response);
-
-  // Keyed by the request, not `response.url` — huggingface.co 302-redirects
-  // to its LFS CDN, and the redirected URL is not what anything asks for.
-  if (!cache) {
-    return count(response, rule, request.url, total);
-  }
 
   // One body, two consumers: the caller gets a counted stream, the cache gets
   // the raw bytes. waitUntil keeps the worker alive for the write even if the
@@ -291,6 +282,9 @@ async function serveAsset(
     // it is recorded against the step, which `hasStep` believes over the
     // marker — otherwise the next visit would think the model is on disk and
     // quietly download it again.
+    //
+    // Keyed by the request, not `response.url` — huggingface.co 302-redirects
+    // to its LFS CDN, and the redirected URL is not what anything asks for.
     cache
       .put(request, new Response(forCache, responseInit(response)))
       .catch((err) => {
