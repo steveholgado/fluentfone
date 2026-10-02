@@ -1,24 +1,19 @@
-// `@mintplex-labs/piper-tts-web`'s `TtsSession` is a singleton: constructing
-// another — directly or via `TtsSession.create()` — hands back the first
-// (it logs "Reusing session for TTS!"), relabelled with the new voiceId but
-// with the first voice's ONNX session still behind it. So within one JS realm
-// a second voice silently speaks with the first one's model, and there's no
-// way round that through the library's public API.
+// Every voice gets a Web Worker of its own, kept for as long as the voice is
+// open — a whole conversation, normally. That ties a voice's session, and the
+// memory behind it, to one thing that can be terminated: closing the voice
+// frees all of it, and a worker that fails is thrown away and replaced rather
+// than repaired. One worker can serve a whole conversation because a
+// conversation never changes voice, and speed is a per-line option rather
+// than something baked into the session.
 //
-// The fix: every voice gets a Web Worker of its own. A worker has a completely
-// separate module registry, so nothing module-scoped inside piper-tts-web is
-// shared between two of them. A worker keeps its session for as long as it is
-// open — a whole conversation, normally — which is safe because a conversation
-// never changes voice, and speed is a per-`predict()` option rather than
-// something baked into the session.
-//
-// Voice files are cached in OPFS, which is scoped to the origin rather than
-// to a worker, so a fresh worker doesn't re-download a voice used before.
+// Voice files are stored by the service worker, which is scoped to the origin
+// rather than to a worker, so a fresh worker doesn't re-download a voice used
+// before.
 
-import { hasStep, markStep } from '#/lib/cache/markers';
+import { hasAsset, hasStep, markStep } from '#/lib/cache/markers';
 import { trackStep } from '#/lib/preload/track';
 import type { ProgressCallback } from '#/lib/progress';
-import { OPFS_VOICE_DIR, RUNTIME_KEY, WASM_FILES } from './constants';
+import { RUNTIME_KEY, WASM_FILES, voiceUrls } from './constants';
 import type { TtsRequest, WorkerRequest, WorkerResponse } from './messages';
 import type { SpeakOptions } from './types';
 
@@ -44,8 +39,8 @@ export interface Voice {
  * the first line needs speaking.
  *
  * `onProgress` hears about the voice's download while a worker is loading. It
- * is normally silent: after preload the voice is in OPFS and nothing is
- * fetched. It only reports where the conversation was reached without a
+ * is normally silent: after preload the voice is in the service worker's cache
+ * and nothing is fetched from the network. It only reports where the conversation was reached without a
  * preload, or the voice has been evicted since.
  *
  * A worker that fails — its session couldn't load, or the worker itself
@@ -108,8 +103,8 @@ export function openVoice(
       () => stop(),
       (err: Error) => {
         stop();
-        // Piper keeps a failed session as its singleton, so this worker can
-        // never load one now. See worker.ts.
+        // Replaced rather than asked again: the next speak() starts a fresh
+        // worker, which loads the voice from scratch.
         discard(spawned, err);
         throw err;
       },
@@ -163,38 +158,41 @@ export function openVoice(
 }
 
 /**
- * Pulls the piper/ONNX wasm through so the service worker stores it, ahead of
- * the voice itself and reported as its own step. Nothing is kept here — the
- * bytes are wanted on disk, not in memory. See ./runtime.ts for why this is
- * fetched by hand rather than left to the library.
+ * Fetches every file in full so the service worker stores it. Nothing is kept
+ * here — the bytes are wanted on disk, not in memory.
  */
-export async function preloadRuntime(): Promise<void> {
+async function pullThrough(urls: readonly string[], what: string) {
   await Promise.all(
-    WASM_FILES.map(async (url) => {
+    urls.map(async (url) => {
       const response = await fetch(url);
       if (!response.ok) {
         throw new Error(
-          `Failed to download tts runtime (${response.status}): ${url}`,
+          `Failed to download ${what} (${response.status}): ${url}`,
         );
       }
       await response.arrayBuffer();
     }),
   );
+}
 
+/**
+ * Pulls the piper/ONNX wasm through so the service worker stores it, ahead of
+ * the voice itself and reported as its own step. See ./constants.ts for why
+ * it is fetched up front rather than left to the first session.
+ */
+export async function preloadRuntime(): Promise<void> {
+  await pullThrough(WASM_FILES, 'tts runtime');
   await markStep('text-to-speech-runtime', RUNTIME_KEY);
 }
 
 /**
- * Gets the voice into OPFS by loading it once, in a worker that's closed
- * straight after. The conversation opens a voice of its own.
+ * Pulls a voice's model and config through so the service worker stores
+ * them. Only downloads: the session is built when the conversation opens the
+ * voice, so there is no worker to start or model to compile here.
  */
 export async function preload(voiceId: string): Promise<void> {
-  const voice = openVoice(voiceId);
-  try {
-    await voice.ready;
-  } finally {
-    voice.close();
-  }
+  const { model, config } = voiceUrls(voiceId);
+  await pullThrough([model, config], 'voice');
 }
 
 /** Whether the piper/ONNX wasm has already been downloaded. */
@@ -203,28 +201,18 @@ export async function isRuntimeCached(): Promise<boolean> {
 }
 
 /**
- * Whether the voice model is already stored in OPFS, i.e. usable without a
- * download. Only reads storage; never fetches.
+ * Whether the voice's model and config are both in the service worker's
+ * cache, i.e. usable without a download. Only reads storage; never fetches.
  *
- * This is the one asset the service worker does not own — piper-tts-web writes
- * voices to OPFS and offers no way to point it elsewhere, so caching them a
- * second time would just pay for the voice twice. Reading OPFS directly is a
- * better answer than a marker would be anyway, since it measures the bytes
- * rather than vouching for them.
- *
- * This is piper-tts-web's own `stored()` inlined — it is a plain OPFS
- * directory listing, and going through the library would mean spawning a
- * worker and loading its bundle during the check stage, before the user has
- * agreed to download anything. The tradeoff is that the layout below has to
- * track the library's; `stored()` in piper-tts-web.js is the reference.
+ * Asks after the files themselves rather than a step marker: there are only
+ * two, their URLs are known without loading anything, and a cache entry can't
+ * be there unless its whole body was written.
  */
 export async function isCached(voiceId: string): Promise<boolean> {
-  const root = await navigator.storage.getDirectory();
-  const dir = await root.getDirectoryHandle(OPFS_VOICE_DIR, { create: true });
-
-  for await (const name of dir.keys()) {
-    if (name.endsWith('.onnx') && name.split('.')[0] === voiceId) return true;
-  }
-
-  return false;
+  const { model, config } = voiceUrls(voiceId);
+  const [hasModel, hasConfig] = await Promise.all([
+    hasAsset(model),
+    hasAsset(config),
+  ]);
+  return hasModel && hasConfig;
 }

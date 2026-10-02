@@ -3,8 +3,8 @@
 export type TtsRequest =
   | { mode: 'speak'; voiceId: string; text: string; lengthScale?: number }
   /**
-   * Creates the worker's session, downloading the voice into OPFS first if it
-   * isn't there. Sent up front to warm a worker, and on its own to preload.
+   * Creates the worker's session, downloading the voice first if the service
+   * worker doesn't have it. Sent up front to warm a worker.
    */
   | { mode: 'load'; voiceId: string };
 
@@ -18,7 +18,7 @@ export type WorkerResponse =
       type: 'done';
       buffer?: ArrayBuffer;
       mimeType?: string;
-      /** Speak requests only: the `predict()` call's duration, in ms. */
+      /** Speak requests only: how long synthesis took, in ms. */
       synthesisMs?: number;
     }
   | { id: number; type: 'error'; message: string };

@@ -16,9 +16,11 @@ import {
   MIN_SPEED,
   RUNTIME_KEY,
   slowRepeatSpeed,
+  voiceUrls,
   WASM_FILES,
 } from '#/lib/text-to-speech/constants';
 import { hasStep, markStep } from '#/lib/cache/markers';
+import { MODELS_CACHE } from '#/lib/cache/names';
 import {
   PROGRESS_CHANNEL,
   type AssetProgressMessage,
@@ -229,8 +231,6 @@ describe('openVoice', () => {
   });
 
   it('replaces a worker whose voice failed to load', async () => {
-    // Piper keeps the failed session as its singleton, so that worker can
-    // never load one now.
     const voice = openVoice(VOICES.en_US[0]);
     const failed = FakeWorker.instances[0];
     const line = voice.speak('hello');
@@ -277,8 +277,9 @@ describe('openVoice', () => {
   });
 
   it('reports voice bytes streaming past the service worker while loading', async () => {
-    // Normally silent — after preload the voice is in OPFS. This is the path
-    // where the conversation was reached without one, or it has been evicted.
+    // Normally silent — after preload the voice comes out of the service
+    // worker's cache. This is the path where the conversation was reached
+    // without one, or it has been evicted.
     const onProgress = vi.fn();
     const voice = openVoice(VOICES.en_US[0], onProgress);
 
@@ -327,28 +328,32 @@ describe('slowRepeatSpeed', () => {
 });
 
 describe('preload', () => {
-  it('loads the voice once and closes the worker', async () => {
-    const promise = preload(VOICES.es_ES[0]);
-    const worker = FakeWorker.instances[0];
+  it('pulls the voice’s model and config through, without a worker', async () => {
+    // Downloading is all a preload needs; the session is built when the
+    // conversation opens the voice.
+    const fetchMock = vi.fn(
+      async (_url: string) => new Response(new Uint8Array([1])),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const { model, config } = voiceUrls(VOICES.es_ES[0]);
 
-    expect(worker.postedMessages).toEqual([
-      { id: 0, mode: 'load', voiceId: VOICES.es_ES[0] },
-    ]);
+    await preload(VOICES.es_ES[0]);
 
-    worker.emit({ id: 0, type: 'done' });
-
-    await expect(promise).resolves.toBeUndefined();
-    expect(worker.terminate).toHaveBeenCalled();
+    expect(fetchMock.mock.calls.map(([url]) => url).sort()).toEqual(
+      [model, config].sort(),
+    );
+    expect(FakeWorker.instances).toHaveLength(0);
   });
 
-  it('rejects, and still closes the worker, when the voice fails to load', async () => {
-    const promise = preload(VOICES.es_ES[0]);
-    const worker = FakeWorker.instances[0];
+  it('rejects when a file fails to download', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('nope', { status: 404 })),
+    );
 
-    worker.emit({ id: 0, type: 'error', message: 'download failed' });
-
-    await expect(promise).rejects.toThrow('download failed');
-    expect(worker.terminate).toHaveBeenCalled();
+    await expect(preload(VOICES.es_ES[0])).rejects.toThrow(
+      'Failed to download voice (404)',
+    );
   });
 });
 
@@ -360,7 +365,7 @@ describe('preloadRuntime', () => {
 
     await preloadRuntime();
 
-    // Fetched here rather than left to TtsSession.create(), so the wasm and
+    // Fetched here rather than left to the first session, so the wasm and
     // the voice each get their own progress sweep. Cheap to do because these
     // URLs are ours — there is no build variant to guess at.
     expect(fetchMock).toHaveBeenCalledTimes(WASM_FILES.length);
@@ -422,46 +427,48 @@ describe('isRuntimeCached', () => {
 });
 
 describe('isCached', () => {
-  /** Stubs OPFS with a `piper` directory holding the given file names. */
-  function stubOpfs(names: string[]) {
-    vi.stubGlobal('navigator', {
-      storage: {
-        getDirectory: async () => ({
-          getDirectoryHandle: async () => ({
-            keys: async function* () {
-              yield* names;
-            },
-          }),
-        }),
-      },
-    });
+  const VOICE_ID = 'es_ES-davefx-medium';
+
+  /** Puts the given files in the models cache, as the service worker would. */
+  async function stored(urls: string[]) {
+    stubCacheStorage();
+    const cache = await caches.open(MODELS_CACHE);
+    for (const url of urls) await cache.put(url, new Response('x'));
   }
 
-  it('resolves true when the voice model is in OPFS', async () => {
-    stubOpfs(['es_ES-davefx-medium.onnx', 'es_ES-davefx-medium.onnx.json']);
+  it('resolves true when the voice’s model and config are both cached', async () => {
+    const { model, config } = voiceUrls(VOICE_ID);
+    await stored([model, config]);
 
-    await expect(isCached('es_ES-davefx-medium')).resolves.toBe(true);
+    await expect(isCached(VOICE_ID)).resolves.toBe(true);
   });
 
-  it('resolves false when a different voice is stored', async () => {
-    stubOpfs(['en_US-hfc_female-medium.onnx']);
+  it('resolves false when only one of them is', async () => {
+    const { model, config } = voiceUrls(VOICE_ID);
 
-    await expect(isCached('es_ES-davefx-medium')).resolves.toBe(false);
+    await stored([model]);
+    await expect(isCached(VOICE_ID)).resolves.toBe(false);
+
+    await stored([config]);
+    await expect(isCached(VOICE_ID)).resolves.toBe(false);
   });
 
-  it('ignores the sidecar config file when no weights are present', async () => {
-    stubOpfs(['es_ES-davefx-medium.onnx.json']);
+  it('resolves false when a different voice is cached', async () => {
+    const { model, config } = voiceUrls('en_US-hfc_female-medium');
+    await stored([model, config]);
 
-    await expect(isCached('es_ES-davefx-medium')).resolves.toBe(false);
+    await expect(isCached(VOICE_ID)).resolves.toBe(false);
   });
 
-  it('does not spawn a worker', async () => {
-    // The check stage runs before the user has agreed to download anything,
-    // so it must not pull in piper-tts-web's bundle.
-    stubOpfs(['es_ES-davefx-medium.onnx']);
+  it('neither fetches nor spawns a worker', async () => {
+    // The check stage runs before the user has agreed to download anything.
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    await stored([]);
 
-    await isCached('es_ES-davefx-medium');
+    await isCached(VOICE_ID);
 
+    expect(fetchMock).not.toHaveBeenCalled();
     expect(FakeWorker.instances).toHaveLength(0);
   });
 });

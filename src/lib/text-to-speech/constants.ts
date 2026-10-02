@@ -101,6 +101,3 @@ export const WASM_FILES = [
  * matching it.
  */
 export const RUNTIME_KEY = `${ONNX_WASM_BASE}|${PIPER_WASM_BASE}`;
-
-/** Where the voice models live in OPFS, as piper-tts-web lays them out. */
-export const OPFS_VOICE_DIR = 'piper';
