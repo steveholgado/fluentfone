@@ -39,7 +39,7 @@ export const LEVELS = {
       'Everyday topics: daily routine, shopping, food, travel and holidays, the weekend, work and studies, health, directions, describing people and places.',
     length: 'Maximum 12 words per sentence.',
     questionStyle:
-      'Ask about habits, plans, or something the student did recently.',
+      'Ask about habits, plans, or something your friend did recently.',
     avoid:
       'Do not use the subjunctive. Do not use idioms. Do not use the imperfect to tell stories.',
   },
@@ -52,7 +52,7 @@ export const LEVELS = {
       'Opinions, feelings, past experiences, future plans, city life, media and technology, problems and complaints, work.',
     length: 'Maximum 20 words per sentence.',
     questionStyle:
-      "Ask for an opinion, a comparison, or a short story from the student's own experience.",
+      "Ask for an opinion, a comparison, or a short story from your friend's own experience.",
     avoid:
       'Do not use the imperfect subjunctive. Do not use regional slang. Only use very common idioms.',
   },
@@ -65,7 +65,7 @@ export const LEVELS = {
       'Abstract and current topics: work culture, the environment, education, politics in general terms, cultural differences, hypotheticals. Common idioms are welcome.',
     length: 'Maximum 25 words per sentence.',
     questionStyle:
-      'Ask an open question that invites the student to argue a point, speculate, or weigh two options.',
+      'Ask an open question that invites your friend to argue a point, speculate, or weigh two options.',
   },
 } satisfies Record<CefrLevel, LevelSpec>;
 
@@ -74,7 +74,7 @@ export function renderLevelBlock(level: CefrLevel): string {
   const spec: LevelSpec = LEVELS[level];
 
   const lines = [
-    `Student level: ${level} (${spec.label})`,
+    `Spanish level: ${level} (${spec.label})`,
     `- Grammar: ${spec.grammar}`,
     `- Vocabulary: ${spec.vocab}`,
     `- Length: ${spec.length}`,

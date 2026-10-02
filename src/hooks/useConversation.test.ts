@@ -7,10 +7,12 @@ import { play, stopPlayback } from '#/lib/audio/player';
 import { transcribe } from '#/lib/speech-to-text';
 import { generateMessage } from '#/lib/chat';
 import { openVoice, slowRepeatSpeed, type Voice } from '#/lib/text-to-speech';
+import { markScenarioUsed, pickScenario } from '#/lib/scenarios';
 import {
   buildSystemInstruction,
-  GREETING_TRIGGER,
+  greetingTrigger,
   type CefrLevel,
+  type Scenario,
 } from '#/prompts';
 import { voiceFor, type LanguageId } from '#/config';
 
@@ -26,6 +28,10 @@ vi.mock('#/lib/speech-to-text', () => ({
 }));
 vi.mock('#/lib/chat', () => ({
   generateMessage: vi.fn(),
+}));
+vi.mock('#/lib/scenarios', () => ({
+  pickScenario: vi.fn(),
+  markScenarioUsed: vi.fn(),
 }));
 vi.mock('#/lib/text-to-speech', async () => ({
   openVoice: vi.fn(),
@@ -50,6 +56,11 @@ const close = vi.fn();
 
 const AUDIO_BLOB = new Blob(['audio']);
 const GREETING_AUDIO = new Blob(['greeting']);
+
+const SCENARIO: Scenario = {
+  id: 'test-picnic',
+  reason: 'I want to invite you to a picnic.',
+};
 
 function mockRecorderImpl(overrides?: {
   start?: () => Promise<void>;
@@ -111,6 +122,7 @@ beforeEach(() => {
   });
   speak.mockResolvedValue(new Blob(['voice']));
   vi.mocked(play).mockResolvedValue(undefined);
+  vi.mocked(pickScenario).mockReturnValue(SCENARIO);
   // Every turn logs its stage timings in dev, which tests run as.
   vi.spyOn(console, 'info').mockImplementation(() => {});
 });
@@ -452,9 +464,10 @@ describe('useConversation', () => {
         await result.current.prepareGreeting();
       });
 
+      expect(pickScenario).toHaveBeenCalledWith(LEVEL);
       expect(generateMessage).toHaveBeenCalledWith({
         systemInstruction: buildSystemInstruction(LEVEL, LANGUAGE),
-        trigger: GREETING_TRIGGER,
+        trigger: greetingTrigger(SCENARIO),
         onStage: expect.any(Function),
       });
       expect(openVoice).toHaveBeenCalledWith(
@@ -464,6 +477,21 @@ describe('useConversation', () => {
       expect(speak).toHaveBeenCalledWith('¡Hola!', { speed: 1 });
       expect(result.current.isGreetingReady).toBe(true);
       expect(result.current.status).toBe('');
+    });
+
+    // The greeting is prepared as soon as the app is ready, whether or not
+    // the call is ever answered.
+    it('leaves the scenario unheard until the call is answered', async () => {
+      vi.mocked(generateMessage).mockResolvedValue('¡Hola!');
+
+      const { result } = renderHook(() =>
+        useConversation({ level: LEVEL, language: LANGUAGE, speed: 1 }),
+      );
+      await act(async () => {
+        await result.current.prepareGreeting();
+      });
+
+      expect(markScenarioUsed).not.toHaveBeenCalled();
     });
 
     it('instructs the model at the level it was given, for every line', async () => {
@@ -589,6 +617,25 @@ describe('useConversation', () => {
       expect(result.current.hasGreeted).toBe(true);
       expect(play).toHaveBeenCalledWith(GREETING_AUDIO);
       expect(result.current.status).toBe('');
+    });
+
+    it("counts the greeting's scenario as heard", async () => {
+      vi.mocked(generateMessage).mockResolvedValue('¡Hola!');
+
+      const { result } = renderHook(() =>
+        useConversation({ level: LEVEL, language: LANGUAGE, speed: 1 }),
+      );
+      await act(async () => {
+        await result.current.prepareGreeting();
+      });
+      await act(async () => {
+        await result.current.greet();
+      });
+
+      expect(markScenarioUsed).toHaveBeenCalledExactlyOnceWith(
+        LEVEL,
+        SCENARIO.id,
+      );
     });
 
     it('sets an error status and logs when playback fails', async () => {

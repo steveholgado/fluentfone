@@ -30,8 +30,8 @@ export function renderLanguageBlock(language: LanguageId): string {
 
   const lines = [
     'Language:',
-    `- Always reply in Spanish as spoken in ${spec.country}, even if the student speaks English.`,
-    '- Address the student as tú.',
+    `- Always reply in Spanish as spoken in ${spec.country}, even if your friend speaks English.`,
+    '- Address your friend as tú, without a name or nickname.',
     ...(spec.rules ?? []).map((rule) => `- ${rule}`),
   ];
 

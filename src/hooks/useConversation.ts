@@ -23,9 +23,10 @@ import {
 import { formatProgress } from '#/utils/formatProgress';
 import { formatTurnTimings } from '#/lib/utils/formatTurnTimings';
 import { createSentenceSplitter } from '#/lib/utils/sentenceSplitter';
+import { markScenarioUsed, pickScenario } from '#/lib/scenarios';
 import {
   buildSystemInstruction,
-  GREETING_TRIGGER,
+  greetingTrigger,
   type CefrLevel,
 } from '#/prompts';
 import { LANGUAGES, voiceFor, type LanguageId } from '#/config';
@@ -87,6 +88,8 @@ export function useConversation({
     text: string;
     audio: Promise<Blob>;
     speed: number;
+    /** Only counted as heard once the call is answered. */
+    scenarioId: string;
   } | null>(null);
   const voiceRef = useRef<Voice | null>(null);
   // The line the agent has just finished speaking, kept so it can be said
@@ -168,9 +171,10 @@ export function useConversation({
       // back from OPFS — while the greeting is generated.
       getVoice();
       setStatus(STAGE_STATUS.compiling);
+      const scenario = pickScenario(level);
       const opening = await generateMessage({
         systemInstruction,
-        trigger: GREETING_TRIGGER,
+        trigger: greetingTrigger(scenario),
         onStage: (stage) => setStatus(STAGE_STATUS[stage]),
       });
       const speed = speedRef.current;
@@ -179,6 +183,7 @@ export function useConversation({
         text: opening,
         audio: Promise.resolve(audio),
         speed,
+        scenarioId: scenario.id,
       };
       // In case the speed changed while that was being synthesised.
       matchGreetingSpeed();
@@ -189,7 +194,7 @@ export function useConversation({
     } finally {
       preparingGreetingRef.current = false;
     }
-  }, [getVoice, matchGreetingSpeed, report, systemInstruction]);
+  }, [getVoice, level, matchGreetingSpeed, report, systemInstruction]);
 
   useEffect(() => {
     speedRef.current = speed;
@@ -204,6 +209,7 @@ export function useConversation({
     const greeting = greetingRef.current;
     if (!greeting) return;
     busyRef.current = true;
+    markScenarioUsed(level, greeting.scenarioId);
     try {
       historyRef.current.push({ role: 'model', content: greeting.text });
       setHasGreeted(true);
@@ -223,7 +229,7 @@ export function useConversation({
     } finally {
       busyRef.current = false;
     }
-  }, [playVoice, report]);
+  }, [level, playVoice, report]);
 
   const startRecording = useCallback(async () => {
     busyRef.current = true;

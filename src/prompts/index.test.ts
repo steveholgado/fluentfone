@@ -3,10 +3,12 @@ import { describe, expect, it } from 'vitest';
 import type { LanguageId } from '#/config';
 import {
   buildSystemInstruction,
+  greetingTrigger,
   LANGUAGE_SPECS,
   LEVELS,
   renderLanguageBlock,
   renderLevelBlock,
+  SCENARIOS,
   type CefrLevel,
 } from '#/prompts';
 
@@ -17,7 +19,7 @@ describe('renderLevelBlock', () => {
   it.each(ALL_LEVELS)('renders every line for %s', (level) => {
     const block = renderLevelBlock(level);
 
-    expect(block).toContain(`Student level: ${level} (${LEVELS[level].label})`);
+    expect(block).toContain(`Spanish level: ${level} (${LEVELS[level].label})`);
     expect(block).toContain(`- Grammar: ${LEVELS[level].grammar}`);
     expect(block).toContain(`- Vocabulary: ${LEVELS[level].vocab}`);
     expect(block).toContain(`- Length: ${LEVELS[level].length}`);
@@ -37,7 +39,9 @@ describe('renderLanguageBlock', () => {
     expect(block).toContain(
       `Spanish as spoken in ${LANGUAGE_SPECS[language].country}`,
     );
-    expect(block).toContain('Address the student as tú.');
+    expect(block).toContain(
+      'Address your friend as tú, without a name or nickname.',
+    );
   });
 
   it('includes extra rules only for languages that have them', () => {
@@ -71,5 +75,39 @@ describe('buildSystemInstruction', () => {
     expect(buildSystemInstruction('A2', 'es-MX')).toBe(
       buildSystemInstruction('A2', 'es-MX'),
     );
+  });
+});
+
+describe('greetingTrigger', () => {
+  it('gives the reason for the call, bracketed as a direction', () => {
+    const trigger = greetingTrigger({
+      id: 'test',
+      reason: 'I have a new cat.',
+    });
+
+    expect(trigger).toMatch(/^\[.*\]$/);
+    expect(trigger).toContain('"I\'m calling because I have a new cat."');
+  });
+});
+
+describe('SCENARIOS', () => {
+  it.each(ALL_LEVELS)('has some for %s', (level) => {
+    expect(Object.keys(SCENARIOS[level]).length).toBeGreaterThan(0);
+  });
+
+  // Ids are what usage tracking stores. Within a level, the compiler already
+  // rejects a repeated key.
+  it('never uses an id twice, across all levels', () => {
+    const ids = ALL_LEVELS.flatMap((level) => Object.keys(SCENARIOS[level]));
+
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  // Each one finishes "I'm calling because …" in the trigger, which carries
+  // on after it.
+  it.each(ALL_LEVELS)('has reasons that end a sentence, for %s', (level) => {
+    for (const reason of Object.values(SCENARIOS[level])) {
+      expect(reason).toMatch(/^(I\b|[a-z]).*\.$/);
+    }
   });
 });
