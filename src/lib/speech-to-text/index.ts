@@ -37,6 +37,7 @@ function getWorker(): Worker {
   if (!worker) {
     worker = new Worker(new URL('./worker.ts', import.meta.url), {
       type: 'module',
+      name: 'speech-to-text',
     });
 
     worker.addEventListener(

@@ -78,6 +78,7 @@ export function openVoice(
   function spawn(): Worker {
     const spawned = new Worker(new URL('./worker.ts', import.meta.url), {
       type: 'module',
+      name: `text-to-speech: ${voiceId}`,
     });
     worker = spawned;
 
