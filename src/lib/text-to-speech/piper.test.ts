@@ -32,7 +32,11 @@ interface FakeOptions {
   print: (line: string) => void;
   printErr: (line: string) => void;
   locateFile: (path: string) => string;
+  getPreloadedPackage: (name: string, size: number) => ArrayBuffer;
 }
+
+const PHONEMIZER_DATA_URL = `${PIPER_WASM_BASE}piper_phonemize.data`;
+const PHONEMIZER_DATA = new Uint8Array([7, 8, 9]);
 
 const createPiperPhonemize = vi.hoisted(() => vi.fn());
 
@@ -74,10 +78,27 @@ function voiceWith(config: Partial<VoiceConfig> = {}) {
   return { voice, run };
 }
 
+// What every phonemizer is lent. loadVoice's tests stub their own.
+beforeEach(() => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => new Response(PHONEMIZER_DATA)),
+  );
+});
+
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.clearAllMocks();
 });
+
+/**
+ * piper.ts as if just loaded, so nothing it has cached carries over from an
+ * earlier test. The mocks above still apply.
+ */
+async function freshPiper() {
+  vi.resetModules();
+  return import('#/lib/text-to-speech/piper');
+}
 
 describe('ORT setup', () => {
   it('loads ORT’s wasm from our vendored copy, on one thread', () => {
@@ -145,26 +166,50 @@ describe('phonemize', () => {
   });
 
   it('loads the phonemizer’s wasm and data from our vendored copy', async () => {
+    const { phonemize } = await freshPiper();
     printsIds([1]);
 
     await phonemize('Hola', 'es');
 
-    const { locateFile } = createPiperPhonemize.mock.calls[0][0] as FakeOptions;
+    const { locateFile, getPreloadedPackage } = createPiperPhonemize.mock
+      .calls[0][0] as FakeOptions;
     expect(locateFile('piper_phonemize.wasm')).toBe(
       `${PIPER_WASM_BASE}piper_phonemize.wasm`,
     );
-    expect(locateFile('piper_phonemize.data')).toBe(
-      `${PIPER_WASM_BASE}piper_phonemize.data`,
-    );
+    expect(fetch).toHaveBeenCalledWith(PHONEMIZER_DATA_URL);
+    expect(
+      new Uint8Array(getPreloadedPackage('piper_phonemize.data', 3)),
+    ).toEqual(PHONEMIZER_DATA);
   });
 
-  it('starts a fresh phonemizer for every call', async () => {
+  // Reusing one phonemizer isn't safe — see `phonemize` — but its data is.
+  it('starts a fresh phonemizer for every call, lending each the same data', async () => {
+    const { phonemize } = await freshPiper();
     printsIds([1]);
 
     await phonemize('uno', 'es');
     await phonemize('dos', 'es');
 
     expect(createPiperPhonemize).toHaveBeenCalledTimes(2);
+    expect(fetch).toHaveBeenCalledOnce();
+    const [first, second] = createPiperPhonemize.mock.calls.map(([options]) =>
+      (options as FakeOptions).getPreloadedPackage('piper_phonemize.data', 3),
+    );
+    expect(second).toBe(first);
+  });
+
+  it('fetches the data again after a download that failed', async () => {
+    const { phonemize } = await freshPiper();
+    printsIds([1]);
+    vi.mocked(fetch).mockResolvedValueOnce(new Response('', { status: 404 }));
+
+    await expect(phonemize('uno', 'es')).rejects.toThrow(
+      'Failed to download phonemizer data (404)',
+    );
+    expect(createPiperPhonemize).not.toHaveBeenCalled();
+
+    await expect(phonemize('dos', 'es')).resolves.toEqual([1]);
+    expect(fetch).toHaveBeenCalledTimes(2);
   });
 
   it('rejects with what the phonemizer wrote to stderr when it prints nothing', async () => {

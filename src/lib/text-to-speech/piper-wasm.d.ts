@@ -9,6 +9,11 @@ declare module '@diffusionstudio/piper-wasm/build/piper_phonemize.js' {
     printErr?: (line: string) => void;
     /** Maps the .wasm and .data file names to the URLs to fetch them from. */
     locateFile?: (path: string) => string;
+    /**
+     * The .data package, already fetched, in place of fetching it. Its files
+     * are mounted as views of this buffer, not copies.
+     */
+    getPreloadedPackage?: (name: string, size: number) => ArrayBuffer;
   }
 
   interface PiperPhonemizeModule {

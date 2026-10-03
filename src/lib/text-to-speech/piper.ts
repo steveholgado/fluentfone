@@ -34,10 +34,10 @@ export interface PiperVoice {
   session: ort.InferenceSession;
 }
 
-async function download(url: string): Promise<Response> {
+async function download(url: string, what: string): Promise<Response> {
   const response = await fetch(url);
   if (!response.ok) {
-    throw new Error(`Failed to download voice (${response.status}): ${url}`);
+    throw new Error(`Failed to download ${what} (${response.status}): ${url}`);
   }
   return response;
 }
@@ -50,8 +50,10 @@ async function download(url: string): Promise<Response> {
 export async function loadVoice(voiceId: string): Promise<PiperVoice> {
   const urls = voiceUrls(voiceId);
   const [config, model] = await Promise.all([
-    download(urls.config).then((r) => r.json() as Promise<VoiceConfig>),
-    download(urls.model).then((r) => r.arrayBuffer()),
+    download(urls.config, 'voice').then(
+      (r) => r.json() as Promise<VoiceConfig>,
+    ),
+    download(urls.model, 'voice').then((r) => r.arrayBuffer()),
   ]);
 
   const session = await ort.InferenceSession.create(model, {
@@ -62,13 +64,39 @@ export async function loadVoice(voiceId: string): Promise<PiperVoice> {
 }
 
 /**
+ * espeak-ng's data, fetched once per worker and lent to every phonemizer.
+ * Emscripten mounts a package it is handed as views of that buffer rather
+ * than copies, and espeak only reads it, so one copy serves them all. Left to
+ * fetch their own, each phonemizer held a further 18 MB until it was
+ * collected — several at once, over a reply of several sentences.
+ *
+ * A failed fetch is forgotten, so the next call tries again.
+ */
+let phonemizerData: Promise<ArrayBuffer> | null = null;
+
+function loadPhonemizerData(): Promise<ArrayBuffer> {
+  if (!phonemizerData) {
+    const loading = download(
+      `${PIPER_WASM_BASE}piper_phonemize.data`,
+      'phonemizer data',
+    ).then((r) => r.arrayBuffer());
+    phonemizerData = loading;
+    loading.catch(() => {
+      if (phonemizerData === loading) phonemizerData = null;
+    });
+  }
+  return phonemizerData;
+}
+
+/**
  * Turns text into the phoneme IDs a voice's model reads, using the espeak-ng
  * voice the model was trained against.
  *
- * Starts a fresh phonemizer per call, as piper-tts-web did. Reusing one would
- * save instantiating its wasm and unpacking espeak's data each time, but the
- * program initialises espeak in `main`, and whether that survives running
- * twice in one module is untested.
+ * Starts a fresh phonemizer per call, as piper-tts-web did. Reusing one gives
+ * the same output, but every run of `main` leaks a little of the module's
+ * fixed 16 MB heap, and it traps after 80 to 90 runs — measured under Node,
+ * the number depending on the text. What each call does share is espeak's
+ * data, above.
  */
 export async function phonemize(
   text: string,
@@ -77,16 +105,13 @@ export async function phonemize(
   let output: string | undefined;
   const errors: string[] = [];
 
+  const data = await loadPhonemizerData();
   const phonemizer = await createPiperPhonemize({
     print: (line) => (output ??= line),
     printErr: (line) => errors.push(line),
-    locateFile: (path) => {
-      if (path.endsWith('.wasm'))
-        return `${PIPER_WASM_BASE}piper_phonemize.wasm`;
-      if (path.endsWith('.data'))
-        return `${PIPER_WASM_BASE}piper_phonemize.data`;
-      return path;
-    },
+    locateFile: (path) =>
+      path.endsWith('.wasm') ? `${PIPER_WASM_BASE}piper_phonemize.wasm` : path,
+    getPreloadedPackage: () => data,
   });
 
   // Synchronous: the build has no Asyncify, so anything the program prints
