@@ -114,7 +114,7 @@ describe('generateMessage', () => {
     expect(only().postedMessages[0]).toEqual(
       expect.objectContaining({
         modelUrl: DEFAULT_CHAT_MODEL,
-        maxNumTokens: 8192,
+        maxNumTokens: 4096,
         samplerParams: { temperature: 0.8, topK: 40, topP: 0.95 },
       }),
     );

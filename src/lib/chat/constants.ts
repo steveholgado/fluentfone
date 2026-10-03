@@ -30,7 +30,7 @@ export const CHAT_MODELS = {
 export const DEFAULT_CHAT_MODEL = CHAT_MODELS.e2b;
 
 /** Context window the engine is created with, and keyed by. */
-export const DEFAULT_MAX_TOKENS = 8192;
+export const DEFAULT_MAX_TOKENS = 4096;
 
 /**
  * The largest top-K any conversation can sample with. The engine is created
