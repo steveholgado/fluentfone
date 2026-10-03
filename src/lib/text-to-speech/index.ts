@@ -160,6 +160,10 @@ export function openVoice(
 /**
  * Fetches every file in full so the service worker stores it. Nothing is kept
  * here — the bytes are wanted on disk, not in memory.
+ *
+ * Drained rather than buffered, as the chat model is (see `preloadModel` in
+ * lib/chat/engine.ts): `arrayBuffer()` would hold each file whole on the main
+ * thread, the 63 MB voice included, only to throw it away.
  */
 async function pullThrough(urls: readonly string[], what: string) {
   await Promise.all(
@@ -170,7 +174,7 @@ async function pullThrough(urls: readonly string[], what: string) {
           `Failed to download ${what} (${response.status}): ${url}`,
         );
       }
-      await response.arrayBuffer();
+      await response.body?.pipeTo(new WritableStream());
     }),
   );
 }
