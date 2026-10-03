@@ -87,9 +87,12 @@ export function ruleFor(url: URL): AssetRule | undefined {
 export const EXPECTED_BYTES: Record<PreloadStepId, number> = {
   'text-to-speech-runtime': 33_002_000,
   'text-to-speech': 63_206_000,
-  // whisper-small's WebGPU weights (see speech-to-text/constants.ts), since the
-  // app requires WebGPU.
-  'speech-to-text': 615_659_000,
+  // whisper-small's WebGPU weights with the fp16 encoder (see
+  // speech-to-text/constants.ts): what a GPU with shader-f16 loads, which is
+  // most of them, and the app requires WebGPU. One without it loads the fp32
+  // encoder, 176 MB more, and its bar takes the larger total from the bytes
+  // it sees, as above.
+  'speech-to-text': 439_441_000,
   'chat-runtime': 20_140_000,
   // Unlike the others this is a single file, so its Content-Length is normally
   // known before the first byte and this estimate goes unused. It is here for

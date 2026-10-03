@@ -8,7 +8,7 @@
 import type { AutomaticSpeechRecognitionPipeline } from '@huggingface/transformers';
 import type { WorkerRequest, WorkerResponse } from './messages';
 import { HAS_WEBGPU } from '#/lib/device';
-import { MODEL, MODEL_DTYPE, MODEL_REVISION } from './constants';
+import { MODEL, MODEL_REVISION, modelDtype } from './constants';
 
 // DOM lib doesn't type worker-global `self`; the shape matches Worker's
 // instance side closely enough for postMessage's transfer-list overload.
@@ -46,7 +46,7 @@ ctx.onmessage = async (event: MessageEvent<WorkerRequest>) => {
         env.remotePathTemplate = `{model}/resolve/${MODEL_REVISION}/`;
 
         return pipeline('automatic-speech-recognition', MODEL, {
-          dtype: MODEL_DTYPE,
+          dtype: await modelDtype(),
           device,
         }) as Promise<AutomaticSpeechRecognitionPipeline>;
       })();

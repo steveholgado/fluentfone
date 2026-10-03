@@ -54,11 +54,17 @@ class FakeWorker {
 // `FakeWorker.instances`.
 const flush = () => Promise.resolve();
 
-// Spelled out rather than read from constants.ts, whose MODEL_KEY is fixed by
-// whichever backend the module saw when it loaded. The revision doesn't depend
-// on the backend, so that part is read.
+// Spelled out rather than read from constants.ts, whose modelKey() answers for
+// whichever GPU the test stubs. The revision doesn't depend on the GPU, so
+// that part is read. WEBGPU_KEY is a GPU without shader-f16, which is what
+// `{ gpu: {} }` amounts to: it has no adapter to ask.
 const Q8_KEY = `onnx-community/whisper-small@${MODEL_REVISION}:q8`;
 const WEBGPU_KEY = `onnx-community/whisper-small@${MODEL_REVISION}:fp32+q4`;
+const F16_KEY = `onnx-community/whisper-small@${MODEL_REVISION}:fp16+q4`;
+
+const F16_GPU = {
+  requestAdapter: async () => ({ features: new Set(['shader-f16']) }),
+};
 
 beforeEach(() => {
   FakeWorker.instances = [];
@@ -227,6 +233,21 @@ describe('preload', () => {
     await expect(hasStep('speech-to-text', WEBGPU_KEY)).resolves.toBe(true);
     await expect(hasStep('speech-to-text', Q8_KEY)).resolves.toBe(false);
   });
+
+  it('marks the fp16 encoder’s weights on a GPU with shader-f16', async () => {
+    vi.stubGlobal('navigator', { gpu: F16_GPU });
+    stubCacheStorage();
+    const { preload } = await import('#/lib/speech-to-text/index');
+    const { hasStep } = await import('#/lib/cache/markers');
+
+    const promise = preload();
+    await flush();
+    FakeWorker.instances[0].emit({ id: 0, type: 'done' });
+    await promise;
+
+    await expect(hasStep('speech-to-text', F16_KEY)).resolves.toBe(true);
+    await expect(hasStep('speech-to-text', WEBGPU_KEY)).resolves.toBe(false);
+  });
 });
 
 describe('isCached', () => {
@@ -276,6 +297,31 @@ describe('isCached', () => {
     stubCacheStorage();
     const { markStep } = await import('#/lib/cache/markers');
     await markStep('speech-to-text', Q8_KEY);
+
+    const { isCached } = await import('#/lib/speech-to-text/index');
+
+    await expect(isCached()).resolves.toBe(false);
+  });
+
+  it('is true when the fp16 marker is present on a GPU with shader-f16', async () => {
+    vi.stubGlobal('navigator', { gpu: F16_GPU });
+    stubCacheStorage();
+    const { markStep } = await import('#/lib/cache/markers');
+    await markStep('speech-to-text', F16_KEY);
+
+    const { isCached } = await import('#/lib/speech-to-text/index');
+
+    await expect(isCached()).resolves.toBe(true);
+  });
+
+  it('does not let an fp32 marker vouch for the fp16 weights', async () => {
+    // What a device that downloaded before the switch to fp16 holds: the
+    // fp16 encoder isn't on disk, and has to be downloaded at preload rather
+    // than mid-conversation.
+    vi.stubGlobal('navigator', { gpu: F16_GPU });
+    stubCacheStorage();
+    const { markStep } = await import('#/lib/cache/markers');
+    await markStep('speech-to-text', WEBGPU_KEY);
 
     const { isCached } = await import('#/lib/speech-to-text/index');
 

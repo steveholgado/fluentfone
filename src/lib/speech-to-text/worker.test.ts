@@ -151,10 +151,30 @@ describe('worker onmessage', () => {
     expect(pipelineFactory.mock.calls[0][2]).toMatchObject({ dtype: 'q8' });
   });
 
-  it('loads a full-precision encoder and q4 decoder on the webgpu path', async () => {
+  it('loads an fp16 encoder and q4 decoder on a GPU with shader-f16', async () => {
     // q8 runs on WebGPU but ~8× slower per utterance.
     vi.resetModules();
-    vi.stubGlobal('navigator', { gpu: {} });
+    vi.stubGlobal('navigator', {
+      gpu: {
+        requestAdapter: async () => ({ features: new Set(['shader-f16']) }),
+      },
+    });
+    await import('#/lib/speech-to-text/worker');
+
+    await post({ id: 1, mode: 'preload' });
+
+    expect(pipelineFactory.mock.calls[0][2]).toMatchObject({
+      dtype: { encoder_model: 'fp16', decoder_model_merged: 'q4' },
+    });
+  });
+
+  // Transformers.js refuses fp16 weights on such a GPU rather than falling
+  // back, so they mustn't be asked for.
+  it('loads an fp32 encoder and q4 decoder on a GPU without shader-f16', async () => {
+    vi.resetModules();
+    vi.stubGlobal('navigator', {
+      gpu: { requestAdapter: async () => ({ features: new Set() }) },
+    });
     await import('#/lib/speech-to-text/worker');
 
     await post({ id: 1, mode: 'preload' });

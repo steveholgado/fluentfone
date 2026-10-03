@@ -5,7 +5,7 @@
 
 import { toMonoPcm } from '#/lib/audio';
 import { hasStep, markStep } from '#/lib/cache/markers';
-import { MODEL_KEY, SAMPLE_RATE } from './constants';
+import { SAMPLE_RATE, modelKey } from './constants';
 import type { WorkerRequest, WorkerResponse } from './messages';
 import type { TranscribeOptions } from './types';
 
@@ -116,7 +116,7 @@ export async function transcribe(
  */
 export async function preload(): Promise<void> {
   await send({ id: nextRequestId++, mode: 'preload' });
-  await markStep('speech-to-text', MODEL_KEY);
+  await markStep('speech-to-text', await modelKey());
 }
 
 /**
@@ -126,5 +126,5 @@ export async function preload(): Promise<void> {
  */
 export async function isCached(): Promise<boolean> {
   if (pipelineReady) return true;
-  return hasStep('speech-to-text', MODEL_KEY);
+  return hasStep('speech-to-text', await modelKey());
 }

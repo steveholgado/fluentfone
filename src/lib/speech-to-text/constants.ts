@@ -1,10 +1,10 @@
 /**
  * Shared between worker.ts, which builds the pipeline, and index.ts, which
- * uses MODEL_KEY to key the step marker — so a model, revision or precision
+ * uses modelKey() to key the step marker — so a model, revision or precision
  * change misses the old marker rather than matching it.
  */
 
-import { HAS_WEBGPU } from '#/lib/device';
+import { HAS_WEBGPU, supportsShaderF16 } from '#/lib/device';
 
 export const MODEL = 'onnx-community/whisper-small';
 
@@ -23,7 +23,7 @@ export const MODEL_REVISION = '36050c46d777d46dc4b5f43f6d90574fc38f8732';
 /**
  * Selects which weight files Transformers.js downloads.
  *
- * WebGPU gets a full-precision encoder and a q4 decoder. q8 runs there, but
+ * WebGPU gets an unquantized encoder and a q4 decoder. q8 runs there, but
  * slowly — measured on whisper-base at ~3.2 s per utterance against ~0.4 s
  * for this split, which is Transformers.js' own recommendation for Whisper on
  * WebGPU. Most likely ORT's WebGPU EP doesn't take q8's quantized ops and runs
@@ -31,23 +31,36 @@ export const MODEL_REVISION = '36050c46d777d46dc4b5f43f6d90574fc38f8732';
  * size: more than twice q8's, because q4 quantizes only the MatMuls and leaves
  * the large token embedding at full precision where q8 shrinks it too.
  *
+ * The encoder is fp16 where the GPU has `shader-f16`, and fp32 only where it
+ * hasn't: half the size (177 MB against 353 MB at this revision), and so half
+ * the copy held while its session is built and half what the worker's wasm
+ * heap keeps afterwards. The decoder is the same either way, since this
+ * revision has no fp16 build of the q4 one (`q4f16`).
+ *
  * The wasm CPU path keeps q8, which is what that EP is built for. The app
  * requires WebGPU (see `lib/device`), so that path is a fallback rather than
  * one any supported device takes.
  */
-export const MODEL_DTYPE = HAS_WEBGPU
-  ? ({ encoder_model: 'fp32', decoder_model_merged: 'q4' } as const)
-  : 'q8';
+export async function modelDtype() {
+  if (!HAS_WEBGPU) return 'q8' as const;
+  return {
+    encoder_model: (await supportsShaderF16()) ? 'fp16' : 'fp32',
+    decoder_model_merged: 'q4',
+  } as const;
+}
 
 /**
- * Identifies this set of weights for the step marker, e.g.
- * `onnx-community/whisper-small@36050c4…:fp32+q4`.
+ * Identifies the weights this device loads, for the step marker, e.g.
+ * `onnx-community/whisper-small@36050c4…:fp16+q4`. A device that moves to
+ * other weights — fp16 on a GPU that had been loading fp32 — misses its old
+ * marker and downloads them.
  */
-export const MODEL_KEY = `${MODEL}@${MODEL_REVISION}:${
-  typeof MODEL_DTYPE === 'string'
-    ? MODEL_DTYPE
-    : Object.values(MODEL_DTYPE).join('+')
-}`;
+export async function modelKey(): Promise<string> {
+  const dtype = await modelDtype();
+  return `${MODEL}@${MODEL_REVISION}:${
+    typeof dtype === 'string' ? dtype : Object.values(dtype).join('+')
+  }`;
+}
 
 /** What Whisper expects its input resampled to. */
 export const SAMPLE_RATE = 16000;

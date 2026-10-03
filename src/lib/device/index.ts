@@ -63,6 +63,35 @@ export const HAS_WEBGPU = (() => {
   }
 })();
 
+/**
+ * Whether the GPU can run fp16 shaders (`shader-f16`), so that weights with
+ * an fp16 build can load at half their full-precision size.
+ *
+ * Asked exactly as Transformers.js asks it in `isWebGpuFp16Supported`: of the
+ * default adapter, with any failure counting as no. It refuses fp16 weights on
+ * a GPU its own check turns down, rather than falling back, so asking the same
+ * way is what makes the weights chosen here ones it will load.
+ *
+ * Unlike HAS_WEBGPU this requests an adapter. That is a handshake with the GPU
+ * but no device and no download, and the check stage needs the answer to know
+ * which weights a marker should vouch for. Asked once: the answer can't
+ * change during a page's life.
+ */
+let shaderF16: Promise<boolean> | null = null;
+
+export function supportsShaderF16(): Promise<boolean> {
+  shaderF16 ??= (async () => {
+    if (!HAS_WEBGPU) return false;
+    try {
+      const adapter = await navigator.gpu.requestAdapter();
+      return adapter?.features.has('shader-f16') ?? false;
+    } catch {
+      return false;
+    }
+  })();
+  return shaderF16;
+}
+
 const REQUIREMENTS: Requirement[] = [
   // Chat runs Gemma 4 through LiteRT-LM, which is WebGPU-only — the
   // GPU-compiled model has no CPU path to fall back to.
