@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { LanguageId } from '#/config';
 import {
   buildSystemInstruction,
+  finalTurnPrompt,
   greetingTrigger,
   LANGUAGE_SPECS,
   LEVELS,
@@ -87,6 +88,16 @@ describe('greetingTrigger', () => {
 
     expect(trigger).toMatch(/^\[.*\]$/);
     expect(trigger).toContain('"I\'m calling because I have a new cat."');
+  });
+});
+
+describe('finalTurnPrompt', () => {
+  it('keeps what the student said, then directs a goodbye in brackets', () => {
+    const prompt = finalTurnPrompt('Me voy a la playa.');
+
+    expect(prompt).toMatch(/^Me voy a la playa\.\n\n\[.*\]$/);
+    expect(prompt).toContain('say goodbye');
+    expect(prompt).toContain('Do not ask a question.');
   });
 });
 

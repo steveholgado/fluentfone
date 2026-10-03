@@ -13,11 +13,12 @@ import { openVoice, type Voice } from '#/lib/text-to-speech';
 import { markScenarioUsed, pickScenario } from '#/lib/scenarios';
 import {
   buildSystemInstruction,
+  finalTurnPrompt,
   greetingTrigger,
   type CefrLevel,
   type Scenario,
 } from '#/prompts';
-import { voiceFor, type LanguageId } from '#/config';
+import { MAX_USER_TURNS, voiceFor, type LanguageId } from '#/config';
 
 vi.mock('#/lib/audio/recorder', () => ({
   AudioRecorder: vi.fn(),
@@ -1049,6 +1050,121 @@ describe('useConversation', () => {
       });
 
       expect(start).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('ending the call', () => {
+    type Result = { current: ReturnType<typeof useConversation> };
+
+    /** Takes `count` turns, each reply heard in full before the next. */
+    async function takeTurns(result: Result, count: number) {
+      for (let i = 0; i < count; i++) {
+        await takeTurn(result);
+        await waitFor(() => expect(result.current.canRepeat).toBe(true));
+      }
+    }
+
+    const prompts = () =>
+      vi.mocked(generateMessage).mock.calls.map(([options]) => options?.prompt);
+
+    let recorder: ReturnType<typeof mockRecorderImpl>;
+
+    beforeEach(() => {
+      recorder = mockRecorderImpl();
+      vi.mocked(transcribe).mockResolvedValue('Hola');
+      vi.mocked(generateMessage).mockImplementation(streamed('Vale.'));
+    });
+
+    function render() {
+      return renderHook(() =>
+        useConversation({ level: LEVEL, language: LANGUAGE, speed: 1 }),
+      ).result;
+    }
+
+    it('sends every turn before the last as it was said', async () => {
+      const result = render();
+
+      await takeTurns(result, MAX_USER_TURNS - 1);
+
+      expect(prompts()).toEqual(Array(MAX_USER_TURNS - 1).fill('Hola'));
+      expect(result.current.hasEnded).toBe(false);
+    });
+
+    it('directs a goodbye on the last turn, leaving the history as it was said', async () => {
+      const result = render();
+
+      await takeTurns(result, MAX_USER_TURNS);
+
+      expect(prompts().at(-1)).toBe(finalTurnPrompt('Hola'));
+      const history =
+        vi.mocked(generateMessage).mock.lastCall?.[0]?.history ?? [];
+      expect(history.filter((turn) => turn.role === 'user')).toEqual(
+        Array(MAX_USER_TURNS - 1).fill({ role: 'user', content: 'Hola' }),
+      );
+    });
+
+    it('ends only once the goodbye has been heard in full', async () => {
+      const result = render();
+      await takeTurns(result, MAX_USER_TURNS - 1);
+      const goodbye = deferred<void>();
+      vi.mocked(play).mockImplementationOnce(() => goodbye.promise);
+
+      await takeTurn(result);
+      await waitFor(() => expect(play).toHaveBeenCalledTimes(MAX_USER_TURNS));
+      expect(result.current.hasEnded).toBe(false);
+
+      await act(async () => goodbye.resolve());
+
+      await waitFor(() => expect(result.current.hasEnded).toBe(true));
+    });
+
+    it('takes no more turns once the call has ended', async () => {
+      const result = render();
+      await takeTurns(result, MAX_USER_TURNS);
+      await waitFor(() => expect(result.current.hasEnded).toBe(true));
+
+      await act(async () => {
+        result.current.toggleRecording();
+      });
+
+      expect(recorder.start).toHaveBeenCalledTimes(MAX_USER_TURNS);
+      expect(result.current.isRecording).toBe(false);
+    });
+
+    it('still repeats the goodbye', async () => {
+      const result = render();
+      await takeTurns(result, MAX_USER_TURNS);
+      await waitFor(() => expect(result.current.hasEnded).toBe(true));
+      vi.mocked(play).mockClear();
+
+      await act(async () => {
+        await result.current.repeatLastLine(false);
+      });
+
+      expect(play).toHaveBeenCalledOnce();
+    });
+
+    it('does not end on a last turn that fails, and says goodbye on its retry', async () => {
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const result = render();
+      await takeTurns(result, MAX_USER_TURNS - 1);
+      vi.mocked(generateMessage).mockRejectedValueOnce(new Error('offline'));
+
+      await takeTurn(result);
+      await waitFor(() =>
+        expect(result.current.status).toBe('Something went wrong'),
+      );
+      expect(result.current.hasEnded).toBe(false);
+
+      await takeTurns(result, 1);
+
+      expect(prompts().slice(-2)).toEqual([
+        finalTurnPrompt('Hola'),
+        finalTurnPrompt('Hola'),
+      ]);
+      await waitFor(() => expect(result.current.hasEnded).toBe(true));
+
+      errorSpy.mockRestore();
     });
   });
 

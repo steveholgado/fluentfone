@@ -11,6 +11,8 @@ interface ConversationProps {
   language: LanguageId;
   speed: number;
   phase: PreloadPhase;
+  /** Asks for a new call, once this one has ended. */
+  onCallAgain: () => void;
 }
 
 /**
@@ -22,6 +24,7 @@ export function Conversation({
   language,
   speed,
   phase,
+  onCallAgain,
 }: ConversationProps) {
   const {
     isRecording,
@@ -29,6 +32,7 @@ export function Conversation({
     hasGreeted,
     isGreetingReady,
     canRepeat,
+    hasEnded,
     transcript,
     status,
     greet,
@@ -48,6 +52,7 @@ export function Conversation({
       hasGreeted={hasGreeted}
       isGreetingReady={isGreetingReady}
       canRepeat={canRepeat}
+      hasEnded={hasEnded}
       transcript={transcript}
       status={status}
       minimal={phase !== 'ready'}
@@ -55,6 +60,7 @@ export function Conversation({
       onToggleRecording={toggleRecording}
       onRepeat={() => void repeatLastLine(false)}
       onShowText={() => void repeatLastLine(true)}
+      onCallAgain={onCallAgain}
     />
   );
 }

@@ -25,10 +25,11 @@ import { createSentenceSplitter } from '#/lib/utils/sentenceSplitter';
 import { markScenarioUsed, pickScenario } from '#/lib/scenarios';
 import {
   buildSystemInstruction,
+  finalTurnPrompt,
   greetingTrigger,
   type CefrLevel,
 } from '#/prompts';
-import { LANGUAGES, voiceFor, type LanguageId } from '#/config';
+import { LANGUAGES, MAX_USER_TURNS, voiceFor, type LanguageId } from '#/config';
 
 // 'loading' is the everyday one: preload put the model on disk, and this is
 // the wait while several gigabytes are read back off it. 'downloading' is
@@ -82,6 +83,10 @@ export function useConversation({
   const [isGreetingReady, setIsGreetingReady] = useState(false);
   const [status, setStatus] = useState('');
   const [canRepeat, setCanRepeat] = useState(false);
+  // Once the goodbye has been spoken. Nothing more can be said, but the
+  // goodbye can still be repeated. Mirrored in a ref for the callbacks.
+  const [hasEnded, setHasEnded] = useState(false);
+  const endedRef = useRef(false);
   // The line being repeated, while it's repeated with its text showing and
   // for a moment after.
   const [transcript, setTranscript] = useState<string | null>(null);
@@ -308,6 +313,12 @@ export function useConversation({
       });
       const transcribed = performance.now();
       historyRef.current.push({ role: 'user', content: text });
+      // At or past the limit rather than exactly on it: a final turn that
+      // failed leaves its words in the history, and the retry is the final
+      // turn again.
+      const isLastTurn =
+        historyRef.current.filter((turn) => turn.role === 'user').length >=
+        MAX_USER_TURNS;
 
       // The reply is spoken a sentence at a time as it's generated: each
       // sentence goes to the voice the moment it's complete, and plays once
@@ -358,7 +369,9 @@ export function useConversation({
       let reply: string;
       try {
         reply = await generateMessage({
-          prompt: text,
+          // The goodbye's direction goes to the model only. The history keeps
+          // what the user said, and nothing follows to be compared with it.
+          prompt: isLastTurn ? finalTurnPrompt(text) : text,
           systemInstruction,
           history: historyRef.current.slice(0, -1),
           onStage: (stage) => {
@@ -375,12 +388,16 @@ export function useConversation({
       const generated = performance.now();
       sentences.end();
       historyRef.current.push({ role: 'model', content: reply });
-      console.log(historyRef.current);
 
       await playback;
       lastLineRef.current = { sentences: spoken, clips };
       setCanRepeat(true);
       setStatus('');
+      // Only once the goodbye has been heard in full.
+      if (isLastTurn) {
+        endedRef.current = true;
+        setHasEnded(true);
+      }
 
       if (
         import.meta.env.DEV &&
@@ -413,7 +430,7 @@ export function useConversation({
 
   const toggleRecording = useCallback(() => {
     unlock();
-    if (busyRef.current) return;
+    if (busyRef.current || endedRef.current) return;
     if (!isRecording) {
       void startRecording();
     } else {
@@ -459,6 +476,7 @@ export function useConversation({
     hasGreeted,
     isGreetingReady,
     canRepeat,
+    hasEnded,
     transcript,
     status,
     greet,

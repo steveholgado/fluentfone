@@ -14,11 +14,13 @@ const BASE = {
   hasGreeted: false,
   isGreetingReady: false,
   canRepeat: false,
+  hasEnded: false,
   status: '',
   onAnswer: () => {},
   onToggleRecording: () => {},
   onRepeat: () => {},
   onShowText: () => {},
+  onCallAgain: () => {},
 };
 
 describe('ConversationScreen', () => {
@@ -109,7 +111,7 @@ describe('ConversationScreen', () => {
 
     expect(screen.getByText('¡Hola! ¿Qué tal?')).toBeInTheDocument();
     expect(
-      screen.queryByRole('button', { name: /Repeat|Show text/ }),
+      screen.queryByRole('button', { name: /Repeat|Read along/ }),
     ).toBeNull();
   });
 
@@ -121,7 +123,7 @@ describe('ConversationScreen', () => {
         screen.getByRole('button', { name: 'Repeat' }),
       ).toBeInTheDocument();
       expect(
-        screen.getByRole('button', { name: 'Show text' }),
+        screen.getByRole('button', { name: 'Read along' }),
       ).toBeInTheDocument();
     });
 
@@ -130,7 +132,7 @@ describe('ConversationScreen', () => {
 
       expect(screen.getByText('Generating…')).toBeInTheDocument();
       expect(
-        screen.queryByRole('button', { name: /Repeat|Show text/ }),
+        screen.queryByRole('button', { name: /Repeat|Read along/ }),
       ).toBeNull();
     });
 
@@ -138,7 +140,7 @@ describe('ConversationScreen', () => {
       render(<ConversationScreen {...BASE} hasGreeted canRepeat isAudioLive />);
 
       expect(
-        screen.queryByRole('button', { name: /Repeat|Show text/ }),
+        screen.queryByRole('button', { name: /Repeat|Read along/ }),
       ).toBeNull();
     });
 
@@ -154,7 +156,7 @@ describe('ConversationScreen', () => {
 
       expect(screen.getByText('Something went wrong')).toBeInTheDocument();
       expect(
-        screen.queryByRole('button', { name: /Repeat|Show text/ }),
+        screen.queryByRole('button', { name: /Repeat|Read along/ }),
       ).toBeNull();
     });
 
@@ -175,8 +177,65 @@ describe('ConversationScreen', () => {
       expect(onRepeat).toHaveBeenCalledTimes(1);
       expect(onShowText).not.toHaveBeenCalled();
 
-      fireEvent.click(screen.getByRole('button', { name: 'Show text' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Read along' }));
       expect(onShowText).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('once the call has ended', () => {
+    it('says so, and offers Call again in place of the record button', () => {
+      render(<ConversationScreen {...BASE} hasGreeted canRepeat hasEnded />);
+
+      expect(screen.getByText('Call ended')).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: 'Call again' }),
+      ).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Start' })).toBeNull();
+    });
+
+    it('still lets the goodbye be repeated', () => {
+      render(<ConversationScreen {...BASE} hasGreeted canRepeat hasEnded />);
+
+      expect(
+        screen.getByRole('button', { name: 'Repeat' }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: 'Read along' }),
+      ).toBeInTheDocument();
+    });
+
+    it('calls onCallAgain', () => {
+      const onCallAgain = vi.fn();
+      render(
+        <ConversationScreen
+          {...BASE}
+          hasGreeted
+          canRepeat
+          hasEnded
+          onCallAgain={onCallAgain}
+        />,
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: 'Call again' }));
+
+      expect(onCallAgain).toHaveBeenCalledOnce();
+    });
+
+    it('gives way to the waveform while the goodbye is repeated', () => {
+      render(
+        <ConversationScreen
+          {...BASE}
+          hasGreeted
+          canRepeat
+          hasEnded
+          isAudioLive
+        />,
+      );
+
+      expect(screen.queryByText('Call ended')).toBeNull();
+      expect(
+        screen.getByRole('button', { name: 'Call again' }),
+      ).toBeInTheDocument();
     });
   });
 });

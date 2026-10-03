@@ -6,6 +6,8 @@ interface ConversationScreenProps {
   hasGreeted: boolean;
   isGreetingReady: boolean;
   canRepeat: boolean;
+  /** The goodbye has been spoken: no more turns, but it can be repeated. */
+  hasEnded: boolean;
   /** The line being repeated, while its text is showing. */
   transcript?: string | null;
   status: string;
@@ -14,10 +16,14 @@ interface ConversationScreenProps {
   onToggleRecording: () => void;
   onRepeat: () => void;
   onShowText: () => void;
+  onCallAgain: () => void;
 }
 
 const REPEAT_BUTTON_CLASS =
   'cursor-pointer rounded-lg border border-gray-300 px-4 py-1.5 text-base text-gray-200 hover:bg-white/10';
+
+const CALL_BUTTON_CLASS =
+  'min-w-48 cursor-pointer rounded-lg bg-gray-200 px-8 py-3 text-xl text-black hover:bg-gray-300';
 
 export function ConversationScreen({
   isRecording,
@@ -25,6 +31,7 @@ export function ConversationScreen({
   hasGreeted,
   isGreetingReady,
   canRepeat,
+  hasEnded,
   transcript = null,
   status,
   minimal = false,
@@ -32,6 +39,7 @@ export function ConversationScreen({
   onToggleRecording,
   onRepeat,
   onShowText,
+  onCallAgain,
 }: ConversationScreenProps) {
   return (
     <div className="flex h-full w-full flex-col items-center justify-between px-8 py-16 sm:py-32">
@@ -78,6 +86,9 @@ export function ConversationScreen({
             </>
           ) : canRepeat && !status ? (
             <div className="flex flex-col gap-3">
+              {hasEnded && (
+                <div className="mb-3 text-center text-2xl">Call ended</div>
+              )}
               <button onClick={onRepeat} className={REPEAT_BUTTON_CLASS}>
                 Repeat
               </button>
@@ -88,12 +99,15 @@ export function ConversationScreen({
           ) : (
             <div className="text-center text-2xl">{status}</div>
           )}
-          <button
-            onClick={onToggleRecording}
-            className="min-w-48 cursor-pointer rounded-lg bg-gray-200 px-8 py-3 text-xl text-black hover:bg-gray-300"
-          >
-            {isRecording ? 'Stop' : 'Start'}
-          </button>
+          {hasEnded ? (
+            <button onClick={onCallAgain} className={CALL_BUTTON_CLASS}>
+              Call again
+            </button>
+          ) : (
+            <button onClick={onToggleRecording} className={CALL_BUTTON_CLASS}>
+              {isRecording ? 'Stop' : 'Start'}
+            </button>
+          )}
         </>
       )}
     </div>

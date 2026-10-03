@@ -72,6 +72,12 @@ step showing as not downloaded, so the app never claims files it doesn't have.
 - **Downloading voice model… 45%** — the greeting is turned into speech
 - **Incoming call** — ready to answer
 
+A call lasts a fixed number of turns (`MAX_USER_TURNS` in `src/config.ts`).
+The reply to the last one says goodbye, and the screen then shows **Call
+ended**. The goodbye can still be repeated, and **Call again** starts a new
+call with a new greeting. The chat engine and Whisper stay loaded between
+calls.
+
 No downloads belong in this stage. If one happens anyway — a cache evicted
 since — it shows as **Downloading…** rather than sitting silent.
 

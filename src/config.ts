@@ -45,3 +45,11 @@ export const DEFAULT_SPEED: Record<CefrLevel, Speed> = {
   B1: 1,
   B2: 1,
 };
+
+/**
+ * How many turns the user gets before the call ends: the reply to the last
+ * one says goodbye. A small model follows its instruction less closely the
+ * longer a conversation runs, and a capped call needs only so much of the
+ * chat engine's context window.
+ */
+export const MAX_USER_TURNS = 10;

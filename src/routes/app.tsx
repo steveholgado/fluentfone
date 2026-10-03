@@ -1,4 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router';
+import { useState } from 'react';
 
 import { CheckScreen } from '#/components/CheckScreen';
 import { Conversation } from '#/components/Conversation';
@@ -27,6 +28,8 @@ function App() {
     start,
   } = usePreload(voiceFor(language));
   const languageSwitch = useLanguageSwitch({ phase, language, setLanguage });
+  // Counts calls made with Call again, so each has a key of its own.
+  const [callId, setCallId] = useState(0);
 
   return (
     <main className="min-h-screen sm:flex sm:items-center sm:justify-center sm:p-8">
@@ -54,14 +57,18 @@ function App() {
 
         {/* Keyed by language and level: a new one of either is a new call, so
             everything from the last one — history, greeting, anything still
-            in flight — goes. */}
+            in flight — goes. Call again does the same by bumping callId. The
+            chat engine and Whisper live in workers outside it, so they stay
+            loaded; the voice's worker is closed on unmount, before the new
+            call opens its own. */}
         {phase !== 'checking' && (
           <Conversation
-            key={`${language}:${level}`}
+            key={`${language}:${level}:${callId}`}
             level={level}
             language={language}
             speed={speed}
             phase={phase}
+            onCallAgain={() => setCallId((id) => id + 1)}
           />
         )}
 

@@ -59,3 +59,16 @@ Each reply:
 export function greetingTrigger(scenario: Scenario): string {
   return `[The conversation is starting. Greet your friend in one short sentence. Then tell your friend, in your own words, why you're calling: "I'm calling because ${scenario.reason}" In that, "I" and "my" mean you, and "you" means your friend. Then ask your friend one question about it.]`;
 }
+
+/**
+ * The student's last turn of the call, with a direction to say goodbye after
+ * it. Bracketed, like the greeting's trigger, so it reads as a direction
+ * rather than something the student said. It overrides the instruction's
+ * "ask one question" for this one reply, which would leave the call open.
+ *
+ * Added to the student's message because a turn sends exactly one, so there
+ * is nowhere else for it to go.
+ */
+export function finalTurnPrompt(text: string): string {
+  return `${text}\n\n[This is the end of the call. Reply to what your friend just said in one short sentence, then say goodbye warmly in one short sentence. Do not ask a question.]`;
+}
