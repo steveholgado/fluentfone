@@ -2,13 +2,35 @@ import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useSettings } from '#/hooks/useSettings';
-import { DEFAULT_LANGUAGE, DEFAULT_LEVEL, DEFAULT_SPEED } from '#/config';
+import {
+  DEFAULT_LANGUAGE,
+  DEFAULT_LEVEL,
+  DEFAULT_SPEED,
+  SPEEDS,
+  type Speed,
+} from '#/config';
 
 const STORAGE_KEY = 'settings';
 
 function stored() {
   return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null');
 }
+
+// Speeds are taken from config, so retuning them doesn't break these tests.
+// What a test needs is a speed that isn't some default — otherwise a speed
+// that was kept and one that was reset to the default look the same — so it
+// asks for exactly that, and fails loudly if config leaves no such speed.
+function speedOtherThan(...defaults: Speed[]): Speed {
+  const other = SPEEDS.find((speed) => !defaults.includes(speed.value));
+  if (!other) throw new Error(`No speed on offer besides ${defaults}`);
+  return other.value;
+}
+
+/**
+ * A speed in localStorage that isn't in the app config, as an older version
+ * of the app might have left behind.
+ */
+const NOT_A_SPEED = 0.123;
 
 beforeEach(() => {
   localStorage.clear();
@@ -34,23 +56,24 @@ describe('useSettings', () => {
 
   it('remembers a change for next time', () => {
     const { result } = renderHook(() => useSettings());
+    const speed = speedOtherThan(DEFAULT_SPEED.A2);
     act(() => result.current.setLevel('A2'));
-    act(() => result.current.setSpeed(1));
+    act(() => result.current.setSpeed(speed));
 
     const { result: next } = renderHook(() => useSettings());
 
     expect(next.current.level).toBe('A2');
-    expect(next.current.speed).toBe(1);
+    expect(next.current.speed).toBe(speed);
     expect(stored()).toEqual({
       language: DEFAULT_LANGUAGE,
       level: 'A2',
-      speed: 1,
+      speed,
     });
   });
 
   it('resets the speed to the new level’s own when the level changes', () => {
     const { result } = renderHook(() => useSettings());
-    act(() => result.current.setSpeed(0.85));
+    act(() => result.current.setSpeed(speedOtherThan(DEFAULT_SPEED.A1)));
     act(() => result.current.setLevel('A1'));
 
     expect(result.current.level).toBe('A1');
@@ -59,25 +82,27 @@ describe('useSettings', () => {
 
   it('leaves the speed alone when the current level is chosen again', () => {
     const { result } = renderHook(() => useSettings());
-    act(() => result.current.setSpeed(0.7));
+    const speed = speedOtherThan(DEFAULT_SPEED[DEFAULT_LEVEL]);
+    act(() => result.current.setSpeed(speed));
     act(() => result.current.setLevel(DEFAULT_LEVEL));
 
-    expect(result.current.speed).toBe(0.7);
+    expect(result.current.speed).toBe(speed);
   });
 
   it('keeps the level when only the speed changes', () => {
     const { result } = renderHook(() => useSettings());
+    const speed = speedOtherThan(DEFAULT_SPEED.B2);
     act(() => result.current.setLevel('B2'));
-    act(() => result.current.setSpeed(0.7));
+    act(() => result.current.setSpeed(speed));
 
     expect(result.current.level).toBe('B2');
-    expect(result.current.speed).toBe(0.7);
+    expect(result.current.speed).toBe(speed);
   });
 
   it('falls back to the defaults for anything saved that is no longer on offer', () => {
     localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ level: 'C2', speed: 0.5 }),
+      JSON.stringify({ level: 'C2', speed: NOT_A_SPEED }),
     );
 
     const { result } = renderHook(() => useSettings());
@@ -89,7 +114,7 @@ describe('useSettings', () => {
   it('keeps a saved level whose speed is no longer on offer, at its default speed', () => {
     localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ level: 'A1', speed: 0.5 }),
+      JSON.stringify({ level: 'A1', speed: NOT_A_SPEED }),
     );
 
     const { result } = renderHook(() => useSettings());
@@ -144,12 +169,16 @@ describe('useSettings', () => {
 
     it('keeps the level and speed when the language changes', () => {
       const { result } = renderHook(() => useSettings());
+      const speed = speedOtherThan(
+        DEFAULT_SPEED.A2,
+        DEFAULT_SPEED[DEFAULT_LEVEL],
+      );
       act(() => result.current.setLevel('A2'));
-      act(() => result.current.setSpeed(1));
+      act(() => result.current.setSpeed(speed));
       act(() => result.current.setLanguage('es-MX'));
 
       expect(result.current.level).toBe('A2');
-      expect(result.current.speed).toBe(1);
+      expect(result.current.speed).toBe(speed);
     });
 
     it('keeps the language when the level changes', () => {
@@ -172,7 +201,7 @@ describe('useSettings', () => {
       (language) => {
         localStorage.setItem(
           STORAGE_KEY,
-          JSON.stringify({ language, level: 'A1', speed: 0.7 }),
+          JSON.stringify({ language, level: 'A1', speed: DEFAULT_SPEED.A1 }),
         );
 
         const { result } = renderHook(() => useSettings());
@@ -183,16 +212,14 @@ describe('useSettings', () => {
     );
 
     it('keeps settings saved before there was a language, in the default', () => {
-      localStorage.setItem(
-        STORAGE_KEY,
-        JSON.stringify({ level: 'A2', speed: 0.85 }),
-      );
+      const speed = speedOtherThan(DEFAULT_SPEED.A2);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ level: 'A2', speed }));
 
       const { result } = renderHook(() => useSettings());
 
       expect(result.current.language).toBe(DEFAULT_LANGUAGE);
       expect(result.current.level).toBe('A2');
-      expect(result.current.speed).toBe(0.85);
+      expect(result.current.speed).toBe(speed);
     });
   });
 

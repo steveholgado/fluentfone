@@ -8,6 +8,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SettingsMenu } from '#/components/SettingsMenu';
+import { SPEEDS, type Speed } from '#/config';
 
 // See ConversationScreen.test.tsx: no globals, so no automatic cleanup.
 afterEach(cleanup);
@@ -31,10 +32,16 @@ function panel() {
     .closest('[popover]');
 }
 
+// Speeds are looked up by the label on their button, so retuning them in
+// config doesn't break these tests.
+function speedOf(label: (typeof SPEEDS)[number]['label']): Speed {
+  return SPEEDS.find((speed) => speed.label === label)!.value;
+}
+
 const BASE = {
   language: 'es-ES',
   level: 'B1',
-  speed: 1,
+  speed: speedOf('Natural'),
   onLanguageChange: () => {},
   onLevelChange: () => {},
   onSpeedChange: () => {},
@@ -60,7 +67,7 @@ describe('SettingsMenu', () => {
   });
 
   it('marks the current level and speed as pressed', () => {
-    render(<SettingsMenu {...BASE} level="A2" speed={0.85} />);
+    render(<SettingsMenu {...BASE} level="A2" speed={speedOf('Relaxed')} />);
 
     expect(button(/^A2/)).toHaveAttribute('aria-pressed', 'true');
     expect(button(/^B1/)).toHaveAttribute('aria-pressed', 'false');
@@ -111,7 +118,7 @@ describe('SettingsMenu', () => {
 
     fireEvent.click(button('Slow'));
 
-    expect(onSpeedChange).toHaveBeenCalledWith(0.7);
+    expect(onSpeedChange).toHaveBeenCalledWith(speedOf('Slow'));
     expect(hidePopover.mock.contexts).toEqual([panel()]);
   });
 
