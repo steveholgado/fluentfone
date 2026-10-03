@@ -31,8 +31,9 @@ export type { PreloadLabel, PreloadStatus, PreloadStepId };
  * engine — that's a separate, slower step left for generateMessage() to do on
  * demand, e.g. while generating the greeting.
  *
- * When preload isn't needed at all (everything's already cached), this is
- * still the only place warm up ever happens.
+ * When everything is already cached this doesn't run at all: the greeting
+ * builds the chat engine and the voice, and useConversation warms Whisper once
+ * the engine is done, so the loads don't overlap.
  */
 const START: LoadProgress = { loaded: 0, total: 1, progress: 0 };
 const DONE: LoadProgress = { loaded: 1, total: 1, progress: 1 };

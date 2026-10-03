@@ -75,9 +75,12 @@ step showing as not downloaded, so the app never claims files it doesn't have.
 No downloads belong in this stage. If one happens anyway — a cache evicted
 since — it shows as **Downloading…** rather than sitting silent.
 
-When the check passes fully, the five preload steps still run quietly in the
-background here. They're all cache reads at that point, and they're what gets
-the engine warm before the call is answered.
+When the check passes fully, nothing runs the preload steps. The greeting
+builds the chat engine and the voice, and Whisper is built once the chat engine
+has finished loading (when the greeting starts **Generating…**), since it
+isn't needed until the user's first turn. One after the other rather than all
+at once, because the three loads overlapping were the tab's peak memory. If the
+user stops recording before Whisper is ready, the transcription waits for it.
 
 ## Caching
 

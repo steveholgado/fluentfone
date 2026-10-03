@@ -107,13 +107,12 @@ export function usePreload(voiceId: string) {
       setCached(result);
 
       if (isFullyPreloaded(result)) {
+        // Nothing is warmed up from here. The greeting builds the chat engine
+        // and the voice, and useConversation warms Whisper once the engine is
+        // done — one after the other rather than all at once, which is what
+        // keeps the tab's peak memory down. Running preloadAll as well would
+        // only read the voice and runtimes through this thread a second time.
         setPhase('ready');
-        // Everything is downloaded, but the engines still have to be created
-        // and compiled. Do that now, off-screen, so the first conversation
-        // turn doesn't pay for it. Reads from cache, so no network cost.
-        void preloadAll(voiceId).catch((err) => {
-          console.error('Background warm-up failed:', err);
-        });
       } else {
         setPhase('needed');
       }

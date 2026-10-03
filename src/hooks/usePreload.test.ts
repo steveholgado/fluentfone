@@ -85,18 +85,19 @@ describe('usePreload', () => {
     expect(result.current.isPreloading).toBe(false);
   });
 
-  it('moves to ready and warms up in the background when everything is cached', async () => {
+  // Warm-up is the conversation's job, which builds one engine at a time
+  // rather than all of them at once.
+  it('moves to ready without warming anything up when everything is cached', async () => {
     const cached = status(true);
     vi.mocked(checkPreloaded).mockResolvedValue(cached);
     vi.mocked(isFullyPreloaded).mockReturnValue(true);
-    vi.mocked(preloadAll).mockResolvedValue(undefined);
 
     const { result } = renderHook(() => usePreload(VOICE));
 
     await waitFor(() => expect(result.current.phase).toBe('ready'));
 
     expect(result.current.cached).toEqual(cached);
-    expect(preloadAll).toHaveBeenCalledWith(VOICE);
+    expect(preloadAll).not.toHaveBeenCalled();
   });
 
   describe('persistent storage', () => {
@@ -115,7 +116,6 @@ describe('usePreload', () => {
       // the browser's heuristics tend to say yes.
       vi.mocked(checkPreloaded).mockResolvedValue(status(true));
       vi.mocked(isFullyPreloaded).mockReturnValue(true);
-      vi.mocked(preloadAll).mockResolvedValue(undefined);
 
       const { result } = renderHook(() => usePreload(VOICE));
       await waitFor(() => expect(result.current.phase).toBe('ready'));
@@ -143,25 +143,6 @@ describe('usePreload', () => {
 
       expect(requestPersistentStorage).not.toHaveBeenCalled();
     });
-  });
-
-  it('logs but does not throw when the background warm-up fails', async () => {
-    vi.mocked(checkPreloaded).mockResolvedValue(status(true));
-    vi.mocked(isFullyPreloaded).mockReturnValue(true);
-    vi.mocked(preloadAll).mockRejectedValue(new Error('warm-up failed'));
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-
-    const { result } = renderHook(() => usePreload(VOICE));
-
-    await waitFor(() => expect(result.current.phase).toBe('ready'));
-    await waitFor(() =>
-      expect(errorSpy).toHaveBeenCalledWith(
-        'Background warm-up failed:',
-        expect.any(Error),
-      ),
-    );
-
-    errorSpy.mockRestore();
   });
 
   it('moves to needed when some models are not cached, without warming up', async () => {

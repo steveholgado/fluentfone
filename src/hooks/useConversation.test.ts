@@ -4,7 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TRANSCRIPT_LINGER_MS, useConversation } from '#/hooks/useConversation';
 import { AudioRecorder } from '#/lib/audio/recorder';
 import { play, stopPlayback } from '#/lib/audio/player';
-import { transcribe } from '#/lib/speech-to-text';
+import {
+  preload as preloadSpeechToText,
+  transcribe,
+} from '#/lib/speech-to-text';
 import { generateMessage } from '#/lib/chat';
 import { openVoice, type Voice } from '#/lib/text-to-speech';
 import { markScenarioUsed, pickScenario } from '#/lib/scenarios';
@@ -24,6 +27,7 @@ vi.mock('#/lib/audio/player', () => ({
   stopPlayback: vi.fn(),
 }));
 vi.mock('#/lib/speech-to-text', () => ({
+  preload: vi.fn(),
   transcribe: vi.fn(),
 }));
 vi.mock('#/lib/chat', () => ({
@@ -116,6 +120,7 @@ beforeEach(() => {
     close,
   });
   speak.mockResolvedValue(new Blob(['voice']));
+  vi.mocked(preloadSpeechToText).mockResolvedValue(undefined);
   vi.mocked(play).mockResolvedValue(undefined);
   vi.mocked(pickScenario).mockReturnValue(SCENARIO);
   // Every turn logs its stage timings in dev, which tests run as.
@@ -563,6 +568,62 @@ describe('useConversation', () => {
       expect(errorSpy).toHaveBeenCalled();
 
       errorSpy.mockRestore();
+    });
+  });
+
+  describe('speech-to-text warm-up', () => {
+    it('starts once the chat engine has loaded, not alongside it', async () => {
+      let warmedWhileLoading: boolean | undefined;
+      vi.mocked(generateMessage).mockImplementation(async (options) => {
+        options?.onStage?.('loading');
+        options?.onStage?.('compiling');
+        warmedWhileLoading =
+          vi.mocked(preloadSpeechToText).mock.calls.length > 0;
+        options?.onStage?.('generating');
+        return '¡Hola!';
+      });
+
+      const { result } = renderHook(() =>
+        useConversation({ level: LEVEL, language: LANGUAGE, speed: 1 }),
+      );
+      await act(async () => {
+        await result.current.prepareGreeting();
+      });
+
+      expect(warmedWhileLoading).toBe(false);
+      expect(preloadSpeechToText).toHaveBeenCalledOnce();
+    });
+
+    it('still starts when the greeting fails before generating', async () => {
+      vi.mocked(generateMessage).mockRejectedValue(new Error('offline'));
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      const { result } = renderHook(() =>
+        useConversation({ level: LEVEL, language: LANGUAGE, speed: 1 }),
+      );
+      await act(async () => {
+        await result.current.prepareGreeting();
+      });
+
+      expect(preloadSpeechToText).toHaveBeenCalledOnce();
+
+      errorSpy.mockRestore();
+    });
+
+    // transcribe() builds the pipeline itself, and reports its own failure.
+    it('leaves the greeting alone when it fails', async () => {
+      vi.mocked(preloadSpeechToText).mockRejectedValue(new Error('no gpu'));
+      vi.mocked(generateMessage).mockImplementation(streamed('¡Hola!'));
+
+      const { result } = renderHook(() =>
+        useConversation({ level: LEVEL, language: LANGUAGE, speed: 1 }),
+      );
+      await act(async () => {
+        await result.current.prepareGreeting();
+      });
+
+      expect(result.current.isGreetingReady).toBe(true);
+      expect(result.current.status).toBe('');
     });
   });
 

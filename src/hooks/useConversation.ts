@@ -8,7 +8,11 @@ import {
   tapStream,
   unlock,
 } from '#/lib/audio';
-import { transcribe, type TranscribeTimings } from '#/lib/speech-to-text';
+import {
+  preload as preloadSpeechToText,
+  transcribe,
+  type TranscribeTimings,
+} from '#/lib/speech-to-text';
 import {
   generateMessage,
   type ChatMessage,
@@ -174,6 +178,20 @@ export function useConversation({
   const prepareGreeting = useCallback(async () => {
     if (preparingGreetingRef.current || greetingRef.current) return;
     preparingGreetingRef.current = true;
+
+    // Whisper isn't needed until the user's first turn, so it is built once
+    // the chat engine has finished loading rather than alongside it: the two
+    // loads at once were the tab's peak memory. Started at most once per
+    // greeting, and not awaited — if it isn't done by the time the user
+    // stops recording, transcribe() waits for it. Its failure surfaces there
+    // too.
+    let warmingSpeechToText = false;
+    const warmSpeechToText = () => {
+      if (warmingSpeechToText) return;
+      warmingSpeechToText = true;
+      preloadSpeechToText().catch(() => {});
+    };
+
     try {
       // Opened now so the voice's session is built — wasm compiled, voice read
       // back from the service worker's cache — while the greeting is generated.
@@ -183,7 +201,10 @@ export function useConversation({
       const opening = await generateMessage({
         systemInstruction,
         trigger: greetingTrigger(scenario),
-        onStage: (stage) => setStatus(STAGE_STATUS[stage]),
+        onStage: (stage) => {
+          if (stage === 'generating') warmSpeechToText();
+          setStatus(STAGE_STATUS[stage]);
+        },
       });
       const speed = speedRef.current;
       const audio = await getVoice().speak(opening, { speed });
@@ -200,6 +221,9 @@ export function useConversation({
     } catch (err) {
       report(err);
     } finally {
+      // A greeting that failed before it got to generating still leaves the
+      // user a call to have.
+      warmSpeechToText();
       preparingGreetingRef.current = false;
     }
   }, [getVoice, level, matchGreetingSpeed, report, systemInstruction]);
