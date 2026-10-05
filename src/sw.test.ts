@@ -580,7 +580,7 @@ describe('models and runtimes', () => {
       'litertlm_wasm_internal.wasm',
       'litertlm_wasm_compat_asyncify_internal.wasm',
     ]) {
-      const url = `https://cdn.jsdelivr.net/npm/@litert-lm/core@0.14.0/wasm/${file}`;
+      const url = `https://cdn.jsdelivr.net/npm/@litert-lm/core@0.17.1/wasm/${file}`;
       const seen = await captureProgress(() => fetchEvent(url));
       expect(seen.at(-1)?.step).toBe('chat-runtime');
     }

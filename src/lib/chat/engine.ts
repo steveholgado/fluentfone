@@ -27,13 +27,20 @@ import type { GenerateStage } from './types';
 
 /**
  * The WebGPU backend's (GPU_ARTISAN's) default config, as @litert-lm/core
- * 0.14.0 creates it — read back from a live engine. Restated in full because
+ * 0.17.1 creates it — read back from a live engine. Restated in full because
  * the library replaces the whole config when given one, rather than merging.
  *
- * `max_top_k` is the reason for passing it at all. It defaults to 1, and a
- * conversation whose sampler asks for a larger top-K fails outright ("Top-K
- * value 40 must be <= 1") — so left at its default, decoding can only ever be
- * greedy. Re-check these on a dependency bump.
+ * `max_top_k` is the reason for passing it at all. A conversation whose
+ * sampler asks for a larger top-K than the engine was created with fails
+ * outright ("Top-K value 40 must be <= 1"), and the library's default has
+ * moved before — it was 1, leaving decoding greedy, until it became the 64
+ * that MAX_TOP_K happens to match now. Passing it keeps that limit ours.
+ * Re-check these on a dependency bump.
+ *
+ * `use_autosized_ringbuffers` sizes local attention's ring buffers to fit
+ * rather than at full size, trading instant rewinding for memory. Off, as the
+ * default has it; nothing here rewinds, so it is a candidate to switch on if
+ * the context window needs to grow.
  */
 const GPU_ARTISAN_CONFIG: GpuArtisanConfig = {
   num_output_candidates: 1,
@@ -45,6 +52,7 @@ const GPU_ARTISAN_CONFIG: GpuArtisanConfig = {
   enable_decode_logits: false,
   enable_external_embeddings: false,
   use_submodel: false,
+  use_autosized_ringbuffers: false,
 };
 
 /**

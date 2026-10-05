@@ -270,8 +270,8 @@ importers:
         specifier: 4.3.0
         version: 4.3.0(@types/node@22.20.1)
       '@litert-lm/core':
-        specifier: 0.14.0
-        version: 0.14.0
+        specifier: 0.17.1
+        version: 0.17.1
       '@tanstack/react-router':
         specifier: 1.170.35
         version: 1.170.35(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -676,8 +676,8 @@ packages:
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
 
-  '@litert-lm/core@0.14.0':
-    resolution: {integrity: sha512-JQhvU6o6JY/Hyg5D59Xblp2H/Ynu4+a6omjekV3a+N2weh9pLnI3+ZP8AlkTbTjJjST893p3VuXd7O8dWelDCA==}
+  '@litert-lm/core@0.17.1':
+    resolution: {integrity: sha512-eUxw6ggqZrvNA8Uk/w0TwglRWryn/clrjqHYyfxQWRl0uz5Txmte+qss0u3Dt+X6W/io4G8ADk97LmjMxVRHUg==}
 
   '@litertjs/wasm-utils@2.5.3':
     resolution: {integrity: sha512-4fJiw6tBQnIs+0jH/OQ16nYOiSl8/+zZnn5h2ul8aTKHi05sVqZW580Tmk78pC2kT39A9OYBVdFawteZ/sI1kQ==}
@@ -2438,7 +2438,7 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.6.0
 
-  '@litert-lm/core@0.14.0':
+  '@litert-lm/core@0.17.1':
     dependencies:
       '@litertjs/wasm-utils': 2.5.3
 

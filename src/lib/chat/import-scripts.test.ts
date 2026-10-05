@@ -110,11 +110,11 @@ describe('installClassicScriptLoader', () => {
     installClassicScriptLoader();
 
     scope.importScripts?.(
-      'https://cdn.example/npm/@litert-lm/core@0.14.0/wasm/litertlm_wasm_internal.js',
+      'https://cdn.example/npm/@litert-lm/core@0.17.1/wasm/litertlm_wasm_internal.js',
     );
 
     expect(scope.Module?.locateFile?.('litertlm_wasm_internal.wasm')).toBe(
-      'https://cdn.example/npm/@litert-lm/core@0.14.0/wasm/litertlm_wasm_internal.wasm',
+      'https://cdn.example/npm/@litert-lm/core@0.17.1/wasm/litertlm_wasm_internal.wasm',
     );
   });
 

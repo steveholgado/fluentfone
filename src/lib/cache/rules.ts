@@ -93,7 +93,7 @@ export const EXPECTED_BYTES: Record<PreloadStepId, number> = {
   // encoder, 176 MB more, and its bar takes the larger total from the bytes
   // it sees, as above.
   'speech-to-text': 439_441_000,
-  'chat-runtime': 20_140_000,
+  'chat-runtime': 21_996_000,
   // Unlike the others this is a single file, so its Content-Length is normally
   // known before the first byte and this estimate goes unused. It is here for
   // the case where it isn't: a response that declares no length would
