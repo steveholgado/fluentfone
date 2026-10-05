@@ -62,5 +62,12 @@ export async function modelKey(): Promise<string> {
   }`;
 }
 
+/**
+ * Whether Whisper's weights are handed to ORT as external data on WebGPU,
+ * which keeps them out of the worker's wasm heap (see external-weights.ts).
+ * False loads the models exactly as Transformers.js does on its own.
+ */
+export const EXTERNAL_WEIGHTS = true;
+
 /** What Whisper expects its input resampled to. */
 export const SAMPLE_RATE = 16000;

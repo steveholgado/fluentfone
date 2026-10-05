@@ -12,6 +12,11 @@ vi.mock('@huggingface/transformers', () => ({
   env,
 }));
 
+const createSession = vi.fn();
+const InferenceSession = { create: createSession };
+
+vi.mock('onnxruntime-web/webgpu', () => ({ InferenceSession }));
+
 let postedMessages: unknown[] = [];
 let onmessage: ((event: MessageEvent<WorkerRequest>) => void) | undefined;
 
@@ -22,6 +27,7 @@ function post(request: WorkerRequest) {
 beforeEach(async () => {
   postedMessages = [];
   env.useBrowserCache = true;
+  InferenceSession.create = createSession;
   pipelineFactory.mockResolvedValue(transcriberFn);
   transcriberFn.mockResolvedValue({ text: '  hello world  ' });
 
@@ -143,6 +149,22 @@ describe('worker onmessage', () => {
     await post({ id: 1, mode: 'preload' });
 
     expect(env.useBrowserCache).toBe(false);
+  });
+
+  it('hands ORT the weights as external data on WebGPU', async () => {
+    vi.resetModules();
+    vi.stubGlobal('navigator', { gpu: {} });
+    await import('#/lib/speech-to-text/worker');
+
+    await post({ id: 1, mode: 'preload' });
+
+    expect(InferenceSession.create).not.toBe(createSession);
+  });
+
+  it('leaves ORT alone on the wasm path', async () => {
+    await post({ id: 1, mode: 'preload' });
+
+    expect(InferenceSession.create).toBe(createSession);
   });
 
   it('loads q8 weights on the wasm path', async () => {

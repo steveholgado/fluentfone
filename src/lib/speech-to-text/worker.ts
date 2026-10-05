@@ -8,7 +8,13 @@
 import type { AutomaticSpeechRecognitionPipeline } from '@huggingface/transformers';
 import type { WorkerRequest, WorkerResponse } from './messages';
 import { HAS_WEBGPU } from '#/lib/device';
-import { MODEL, MODEL_REVISION, modelDtype } from './constants';
+import {
+  EXTERNAL_WEIGHTS,
+  MODEL,
+  MODEL_REVISION,
+  modelDtype,
+} from './constants';
+import { loadWeightsExternally } from './external-weights';
 
 // DOM lib doesn't type worker-global `self`; the shape matches Worker's
 // instance side closely enough for postMessage's transfer-list overload.
@@ -44,6 +50,14 @@ ctx.onmessage = async (event: MessageEvent<WorkerRequest>) => {
         // visit, and with it the ability to start offline. Every Hub URL the
         // library builds goes through this template, so nothing can miss it.
         env.remotePathTemplate = `{model}/resolve/${MODEL_REVISION}/`;
+
+        // The same module Transformers.js builds its sessions on. Only the
+        // GPU gains from it: on the wasm EP the weights land in the heap
+        // either way.
+        if (EXTERNAL_WEIGHTS && device === 'webgpu') {
+          const { InferenceSession } = await import('onnxruntime-web/webgpu');
+          loadWeightsExternally(InferenceSession);
+        }
 
         return pipeline('automatic-speech-recognition', MODEL, {
           dtype: await modelDtype(),
