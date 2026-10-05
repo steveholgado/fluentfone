@@ -268,6 +268,31 @@ describe('splitWeights, transposing a weight', () => {
     expect(new Float32Array(files[1].data.slice().buffer)).toEqual(expected);
   });
 
+  it('frees the copy it makes of a weight that starts unaligned', () => {
+    const transfer = vi.spyOn(
+      ArrayBuffer.prototype as unknown as {
+        transfer: (length: number) => ArrayBuffer;
+      },
+      'transfer',
+    );
+    const expected = splitWeights(transposingModel()).externalData[1].data;
+
+    // An ir_version of 2 to 5 bytes ahead of the graph moves the weight, the
+    // model's last bytes, through every alignment.
+    for (const version of [1, 200, 20000, 3000000]) {
+      const model = concat(int(1, version), transposingModel());
+      const unaligned = (model.length - VALUES.byteLength) % 4 !== 0;
+      transfer.mockClear();
+
+      const { externalData: files } = splitWeights(model);
+
+      expect(files[1].data).toEqual(expected);
+      expect(transfer).toHaveBeenCalledTimes(unaligned ? 1 : 0);
+    }
+
+    transfer.mockRestore();
+  });
+
   it('still moves the weight being transposed', () => {
     const embed = readBranches(
       splitWeights(transposingModel()).graph,

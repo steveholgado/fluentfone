@@ -400,8 +400,10 @@ function transpose(
     size === 4 ? Uint32Array : size === 2 ? Uint16Array : Uint8Array;
   let source = bytes.subarray(weight.start, weight.start + weight.length);
   // A typed array over the file needs the weight to start element-aligned,
-  // which nothing in the format promises.
-  if (source.byteOffset % size !== 0) source = source.slice();
+  // which nothing in the format promises. The copy is released once read,
+  // like the file itself: for the decoder's embedding it is 159 MB.
+  const copied = source.byteOffset % size !== 0;
+  if (copied) source = source.slice();
   const from = new View(source.buffer, source.byteOffset, rows * cols);
   const to = new View(out.buffer, out.byteOffset + offset, rows * cols);
 
@@ -416,6 +418,7 @@ function transpose(
       }
     }
   }
+  if (copied) release(source);
 }
 
 /** A TensorProto for a fold's result, with its data in TRANSPOSED_PATH. */
