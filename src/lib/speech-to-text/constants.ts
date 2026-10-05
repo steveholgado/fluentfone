@@ -33,8 +33,9 @@ export const MODEL_REVISION = '36050c46d777d46dc4b5f43f6d90574fc38f8732';
  *
  * The encoder is fp16 where the GPU has `shader-f16`, and fp32 only where it
  * hasn't: half the size (177 MB against 353 MB at this revision), and so half
- * the copy held while its session is built and half what the worker's wasm
- * heap keeps afterwards. The decoder is the same either way, since this
+ * the download, half the copy held while its session is built, and half the
+ * GPU memory it takes. (The wasm heap no longer holds it either way: see
+ * EXTERNAL_WEIGHTS.) The decoder is the same either way, since this
  * revision has no fp16 build of the q4 one (`q4f16`).
  *
  * The wasm CPU path keeps q8, which is what that EP is built for. The app
@@ -65,6 +66,8 @@ export async function modelKey(): Promise<string> {
 /**
  * Whether Whisper's weights are handed to ORT as external data on WebGPU,
  * which keeps them out of the worker's wasm heap (see external-weights.ts).
+ * Measured with the fp16 encoder and q4 decoder, it takes the worker's wasm
+ * heap from ~1.1 GB to ~35 MB with transcription time unchanged.
  * False loads the models exactly as Transformers.js does on its own.
  */
 export const EXTERNAL_WEIGHTS = true;

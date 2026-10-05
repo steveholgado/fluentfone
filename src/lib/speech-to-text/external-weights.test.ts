@@ -188,6 +188,111 @@ describe('splitWeights', () => {
   it('throws on a truncated model', () => {
     expect(() => splitWeights(MODEL.subarray(0, 100))).toThrow(/Truncated/);
   });
+
+  it('hands over only the original file when nothing is transposed', () => {
+    expect(splitWeights(MODEL).externalData).toEqual([
+      { path: 'weights', data: MODEL },
+    ]);
+  });
+});
+
+describe('splitWeights, transposing a weight', () => {
+  const ROWS = 16;
+  const COLS = 32;
+  const VALUES = Float32Array.from({ length: ROWS * COLS }, (_, i) => i);
+
+  // The decoder's shape: a main-graph weight transposed by the same node, to
+  // the same name, in each branch of an If. `perm` as attribute bytes, if any.
+  function transposingModel(perm?: Uint8Array) {
+    const node = concat(
+      len(1, 'embed'),
+      len(2, 'embed_t'),
+      len(4, 'Transpose'),
+      ...(perm ? [len(5, len(1, 'perm'), perm)] : []),
+    );
+    const branch = (name: string) => len(5, len(1, name), len(6, len(1, node)));
+    return concat(
+      len(
+        7,
+        len(1, len(4, 'If'), branch('then_branch'), branch('else_branch')),
+        len(
+          5,
+          int(1, ROWS),
+          int(1, COLS),
+          int(2, 1), // FLOAT
+          len(8, 'embed'),
+          len(9, new Uint8Array(VALUES.buffer)),
+        ),
+      ),
+    );
+  }
+
+  function readBranches(graph: Uint8Array) {
+    const main = message(decode(graph), 7);
+    const node = decode(main.get(1)![0] as Uint8Array);
+    const initializers = (main.get(5) as Uint8Array[]).map(decode);
+    return {
+      branches: (node.get(5) as Uint8Array[]).map((a) => message(decode(a), 6)),
+      initializer: (name: string) =>
+        initializers.find((tensor) => text(tensor, 8) === name),
+    };
+  }
+
+  it('drops the Transpose from both branches', () => {
+    const { branches } = readBranches(splitWeights(transposingModel()).graph);
+
+    expect(branches.map((branch) => branch.has(1))).toEqual([false, false]);
+  });
+
+  it('puts one transposed copy in the main graph, as external data', () => {
+    const model = transposingModel();
+    const { graph, externalData: files } = splitWeights(model);
+    const transposed = readBranches(graph).initializer('embed_t')!;
+
+    expect(transposed.get(1)).toEqual([COLS, ROWS]);
+    expect(transposed.get(2)).toEqual([1]);
+    expect(externalData(transposed)).toEqual({
+      location: 'transposed',
+      offset: '0',
+      length: String(VALUES.byteLength),
+    });
+
+    const expected = new Float32Array(ROWS * COLS);
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        expected[c * ROWS + r] = VALUES[r * COLS + c];
+      }
+    }
+    expect(files).toHaveLength(2);
+    expect(files[1].path).toBe('transposed');
+    expect(new Float32Array(files[1].data.slice().buffer)).toEqual(expected);
+  });
+
+  it('still moves the weight being transposed', () => {
+    const embed = readBranches(
+      splitWeights(transposingModel()).graph,
+    ).initializer('embed')!;
+
+    expect(externalData(embed).location).toBe('weights');
+  });
+
+  it('does the same for an explicit perm of [1, 0]', () => {
+    const { externalData: files } = splitWeights(
+      transposingModel(len(8, Uint8Array.of(1, 0))),
+    );
+
+    expect(files).toHaveLength(2);
+  });
+
+  it('leaves any other perm to ORT', () => {
+    const model = transposingModel(len(8, Uint8Array.of(0, 1)));
+    const { graph, externalData: files } = splitWeights(model);
+
+    expect(files).toHaveLength(1);
+    expect(readBranches(graph).branches.map((branch) => branch.has(1))).toEqual(
+      [true, true],
+    );
+  });
 });
 
 describe('loadWeightsExternally', () => {
