@@ -296,31 +296,68 @@ describe('splitWeights, transposing a weight', () => {
 });
 
 describe('loadWeightsExternally', () => {
-  function factory() {
-    const create = vi.fn().mockResolvedValue('session');
+  interface File {
+    path: string;
+    data: Uint8Array;
+  }
+
+  interface Call {
+    model: unknown;
+    options: { externalData?: File[]; [key: string]: unknown };
+  }
+
+  /**
+   * `create` records each call twice over: as it was handed the arguments,
+   * and as copies taken there and then, since the originals are detached once
+   * the session is built.
+   */
+  function factory(result: () => Promise<unknown> = async () => 'session') {
+    const handed: Call[] = [];
+    const copied: Call[] = [];
+    const create = vi.fn(async (model: unknown, options: Call['options']) => {
+      handed.push({ model, options });
+      copied.push({
+        model: model instanceof Uint8Array ? model.slice() : model,
+        options: {
+          ...options,
+          ...(options.externalData && {
+            externalData: options.externalData.map((file) => ({
+              ...file,
+              data: file.data.slice(),
+            })),
+          }),
+        },
+      });
+      return result();
+    });
     const session = { create } as unknown as typeof InferenceSession;
     loadWeightsExternally(session);
-    return { session, create };
+    return { session, create, handed, copied };
   }
 
   it('creates a session from bytes with the weights as external data', async () => {
-    const { session, create } = factory();
+    const { session, copied } = factory();
 
-    await session.create(MODEL, { executionProviders: ['webgpu'] });
+    await session.create(MODEL.slice(), { executionProviders: ['webgpu'] });
 
-    expect(create).toHaveBeenCalledWith(splitWeights(MODEL).graph, {
-      executionProviders: ['webgpu'],
-      externalData: [{ path: 'weights', data: MODEL }],
-    });
+    expect(copied).toEqual([
+      {
+        model: splitWeights(MODEL).graph,
+        options: {
+          executionProviders: ['webgpu'],
+          externalData: [{ path: 'weights', data: MODEL }],
+        },
+      },
+    ]);
   });
 
   it('keeps external data it was already given', async () => {
-    const { session, create } = factory();
+    const { session, copied } = factory();
     const other = { path: 'other', data: new Uint8Array(1) };
 
-    await session.create(MODEL, { externalData: [other] });
+    await session.create(MODEL.slice(), { externalData: [other] });
 
-    expect(create.mock.calls[0][1].externalData).toEqual([
+    expect(copied[0].options.externalData).toEqual([
       other,
       { path: 'weights', data: MODEL },
     ]);
@@ -334,5 +371,47 @@ describe('loadWeightsExternally', () => {
     expect(create).toHaveBeenCalledWith('model.onnx', {
       executionProviders: ['webgpu'],
     });
+  });
+
+  it('frees the bytes it was given and made once the session is built', async () => {
+    const { session, handed } = factory();
+    const model = MODEL.slice();
+
+    await session.create(model);
+
+    expect(model.byteLength).toBe(0);
+    expect((handed[0].model as Uint8Array).byteLength).toBe(0);
+    for (const file of handed[0].options.externalData!) {
+      expect(file.data.byteLength).toBe(0);
+    }
+  });
+
+  it('frees them when the session fails to build too', async () => {
+    const { session } = factory(() => Promise.reject(new Error('no gpu')));
+    const model = MODEL.slice();
+
+    await expect(session.create(model)).rejects.toThrow('no gpu');
+
+    expect(model.byteLength).toBe(0);
+  });
+
+  it('leaves alone bytes that share their buffer', async () => {
+    const { session } = factory();
+    const shared = new Uint8Array(MODEL.length + 8);
+    shared.set(MODEL);
+    const model = shared.subarray(0, MODEL.length);
+
+    await session.create(model);
+
+    expect(model).toEqual(MODEL);
+  });
+
+  it('leaves alone external data it was already given', async () => {
+    const { session } = factory();
+    const other = { path: 'other', data: new Uint8Array(1) };
+
+    await session.create(MODEL.slice(), { externalData: [other] });
+
+    expect(other.data.byteLength).toBe(1);
   });
 });

@@ -542,17 +542,48 @@ export function splitWeights(model: Uint8Array): {
 type Create = (model: unknown, ...rest: unknown[]) => Promise<InferenceSession>;
 
 /**
+ * Frees `bytes` now rather than at the worker's next garbage collection, by
+ * detaching its buffer. Once Whisper is built the worker sits idle, and an
+ * idle worker isn't collected until something prompts it: its ~570 MB of
+ * model files and transposed weights stayed on the tab's footprint, on top of
+ * the chat engine, until then.
+ *
+ * Only a view that spans its whole buffer: anything less shares the buffer
+ * with bytes this doesn't own. `transfer` is ES2024, so where it is missing
+ * the bytes are left to the collector as before.
+ */
+function release(bytes: Uint8Array) {
+  const buffer = bytes.buffer as ArrayBufferLike & {
+    transfer?: (length: number) => ArrayBuffer;
+  };
+  if (
+    buffer.byteLength === 0 ||
+    bytes.byteOffset !== 0 ||
+    bytes.byteLength !== buffer.byteLength
+  ) {
+    return;
+  }
+  buffer.transfer?.(0);
+}
+
+/**
  * Builds every session made from bytes on `factory` through splitWeights.
  *
  * Transformers.js creates each of Whisper's sessions with
  * `InferenceSession.create(bytes, options)` on the same onnxruntime-web module
  * the worker imports, so patching `create` there reaches them without
  * changing how the library fetches or picks anything.
+ *
+ * Once a session is built, the bytes it was built from are released: ORT has
+ * copied the graph into its heap and the weights to the GPU by then, and
+ * Transformers.js keeps no reference to the file it fetched. Anything that
+ * did read them afterwards would find them detached and fail, rather than
+ * read the wrong bytes.
  */
 export function loadWeightsExternally(factory: typeof InferenceSession) {
   const create = factory.create.bind(factory) as Create;
 
-  factory.create = ((model: unknown, ...rest: unknown[]) => {
+  factory.create = (async (model: unknown, ...rest: unknown[]) => {
     // The other overloads (a URL, or bytes with an offset) aren't ones
     // Transformers.js uses.
     if (!(model instanceof Uint8Array) || rest.length > 1) {
@@ -560,9 +591,16 @@ export function loadWeightsExternally(factory: typeof InferenceSession) {
     }
     const options = (rest[0] ?? {}) as InferenceSession.SessionOptions;
     const { graph, externalData } = splitWeights(model);
-    return create(graph, {
-      ...options,
-      externalData: [...(options.externalData ?? []), ...externalData],
-    });
+    try {
+      return await create(graph, {
+        ...options,
+        externalData: [...(options.externalData ?? []), ...externalData],
+      });
+    } finally {
+      // Not the caller's own external data, which isn't ours to free. The
+      // model is among `externalData` too, hence the set.
+      const ours = new Set([model, graph, ...externalData.map((f) => f.data)]);
+      for (const bytes of ours) release(bytes);
+    }
   }) as typeof factory.create;
 }
