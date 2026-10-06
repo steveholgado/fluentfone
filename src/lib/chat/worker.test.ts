@@ -96,8 +96,7 @@ beforeEach(async () => {
   getOrLoadGlobalLiteRtLm.mockResolvedValue(undefined);
   createConversation.mockResolvedValue({ sendMessageStreaming });
   sendMessageStreaming.mockImplementation(() => streamOf('a reply'));
-  // Reads the model in, as the real one does — the 'compiling' stage waits on
-  // the stream running dry.
+  // Reads the model in, as the real one does.
   engineCreate.mockImplementation(
     async ({ model }: { model: ReadableStream<Uint8Array> }) => {
       await model.pipeTo(new WritableStream());
@@ -505,13 +504,13 @@ describe('conversation reuse', () => {
 });
 
 describe('stage reporting', () => {
-  it('reports downloading, then compiling, then generating', async () => {
+  it('reports downloading, then generating', async () => {
     // Engine.create() loads the wasm runtime, sets up a WebGPU device and
     // compiles the model, reporting nothing throughout — so this is the only
     // signal the UI has to distinguish that work from a hang.
     await post(generateRequest({ prompt: 'hi' }));
 
-    expect(stages()).toEqual(['downloading', 'compiling', 'generating']);
+    expect(stages()).toEqual(['downloading', 'generating']);
   });
 
   it('reports loading, not downloading, when the bytes are already on disk', async () => {
@@ -524,26 +523,41 @@ describe('stage reporting', () => {
 
     await post(generateRequest({ prompt: 'hi' }));
 
-    expect(stages()).toEqual(['loading', 'compiling', 'generating']);
+    expect(stages()).toEqual(['loading', 'generating']);
   });
 
-  it('holds off on compiling until the model has been read in', async () => {
-    // The engine is handed the model as a stream and starts on it at once, so
-    // calling the wait 'compiling' from the start would mislabel a multi-
-    // gigabyte download or disk read for as long as it lasts.
-    let stagesAtCreate: string[] = [];
+  it('reports nothing more when the engine reads the rest of the model later', async () => {
+    // The real engine reads the last of the file during the first generate,
+    // after 'generating'. A stage keyed to the stream running dry would arrive
+    // then, and take the status backwards.
+    let finishReading: Promise<void> | undefined;
     engineCreate.mockImplementation(
       async ({ model }: { model: ReadableStream<Uint8Array> }) => {
-        stagesAtCreate = stages();
-        await model.pipeTo(new WritableStream());
+        finishReading = model.pipeTo(new WritableStream());
         return { createConversation, delete: engineDelete };
       },
     );
 
     await post(generateRequest({ prompt: 'hi' }));
+    await finishReading;
 
-    expect(stagesAtCreate).toEqual(['downloading']);
-    expect(stages()).toEqual(['downloading', 'compiling', 'generating']);
+    expect(stages()).toEqual(['downloading', 'generating']);
+  });
+
+  it('hands the engine the response body itself', async () => {
+    // Nothing between them, so the engine gets the byte stream it reads with
+    // a BYOB reader where it can.
+    const body = new ReadableStream<Uint8Array>();
+    vi.mocked(fetch).mockResolvedValueOnce(new Response(body));
+    let handed: unknown;
+    engineCreate.mockImplementation(async ({ model }: { model: unknown }) => {
+      handed = model;
+      return { createConversation, delete: engineDelete };
+    });
+
+    await post(generateRequest({ prompt: 'hi' }));
+
+    expect(handed).toBe(body);
   });
 
   it('skips straight to generating once the engine is live', async () => {

@@ -32,15 +32,15 @@ import {
 import { LANGUAGES, MAX_USER_TURNS, voiceFor, type LanguageId } from '#/config';
 
 // 'loading' is the everyday one: preload put the model on disk, and this is
-// the wait while several gigabytes are read back off it. 'downloading' is
-// reserved for bytes actually crossing the network — a first run that skipped
-// preload, or a browser that has evicted the model since. Worth separating,
-// because one of them is a reason to check your connection and the other
-// isn't.
+// the wait while several gigabytes are read back off it and compiled. It is
+// labelled like the Whisper and voice loads before it, so the whole wait reads
+// as one. 'downloading' is reserved for bytes actually crossing the network —
+// a first run that skipped preload, or a browser that has evicted the model
+// since. Worth separating, because one of them is a reason to check your
+// connection and the other isn't.
 const STAGE_STATUS: Record<GenerateStage, string> = {
   downloading: 'Downloading…',
-  loading: 'Loading…',
-  compiling: 'Warming up…',
+  loading: 'Warming up…',
   generating: 'Generating…',
 };
 
@@ -194,7 +194,7 @@ export function useConversation({
       //
       // Settled rather than all succeeded: a failure surfaces where the model
       // is next used, in transcribe() or speak(), each of which tries again.
-      setStatus(STAGE_STATUS.compiling);
+      setStatus(STAGE_STATUS.loading);
       await Promise.allSettled([preloadSpeechToText(), getVoice().ready]);
       // The call can end during that, and the engine shouldn't then be built
       // for it.

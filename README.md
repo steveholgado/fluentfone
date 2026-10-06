@@ -67,7 +67,8 @@ step showing as not downloaded, so the app never claims files it doesn't have.
 ### Conversation
 
 - **Connecting** — briefly, before the first stage reports
-- **Warming up…** — the engine compiles the chat model
+- **Warming up…** — Whisper and the voice load, then the chat engine reads
+  and compiles the chat model
 - **Generating…** — the greeting is written
 - **Downloading voice model… 45%** — the greeting is turned into speech
 - **Incoming call** — ready to answer

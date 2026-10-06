@@ -66,10 +66,11 @@ export interface GenerateMessageOptions {
    * waiting on instead of showing one undifferentiated wait.
    *
    * Preload normally gets the model and the wasm runtime onto disk ahead of
-   * time, so the usual sequence is 'loading' (reading the file back off disk),
-   * 'compiling', 'generating'. 'downloading' appears in its place only when
-   * the bytes really are being fetched — a first run that skipped preload, or
-   * a browser that has evicted them since.
+   * time, so the usual sequence is 'loading' (reading the file back off disk
+   * and compiling it, which the engine reports nothing to tell apart), then
+   * 'generating'. 'downloading' appears in its place only when the bytes
+   * really are being fetched — a first run that skipped preload, or a browser
+   * that has evicted them since.
    */
   onStage?: (stage: GenerateStage) => void;
   /**
@@ -80,5 +81,4 @@ export interface GenerateMessageOptions {
   onChunk?: (text: string) => void;
 }
 
-export type GenerateStage =
-  'downloading' | 'loading' | 'compiling' | 'generating';
+export type GenerateStage = 'downloading' | 'loading' | 'generating';

@@ -66,15 +66,16 @@ const GPU_ARTISAN_CONFIG: GpuArtisanConfig = {
  * Only GPU_ARTISAN streams — every other backend gathers the stream whole and
  * copies it again, which is worse than a Blob.
  *
- * `onDrained` fires once every byte has passed, which is when the wait stops
- * being the disk or the network and becomes the compile.
+ * Handed over as the response gave it. The stream used to pass through a
+ * TransformStream whose flush marked the start of the compile, but the engine
+ * doesn't read the whole file before Engine.create() resolves: the last of it
+ * is read during the first generate, so that signal came after 'generating'.
  *
  * Nothing is memoized. The service worker holds the bytes, so a second fetch
  * is a cache read rather than a download.
  */
 async function fetchModel(
   modelUrl: string,
-  onDrained: () => void,
 ): Promise<ReadableStream<Uint8Array>> {
   const response = await fetch(modelUrl);
   if (!response.ok || !response.body) {
@@ -82,9 +83,7 @@ async function fetchModel(
       `Failed to download model (${response.status}): ${modelUrl}`,
     );
   }
-  return response.body.pipeThrough(
-    new TransformStream<Uint8Array, Uint8Array>({ flush: onDrained }),
-  );
+  return response.body;
 }
 
 // The engine (and its loaded model weights) is expensive to create, so we
@@ -112,10 +111,7 @@ export function getEngine(
       onStage?.((await hasAsset(modelUrl)) ? 'loading' : 'downloading');
 
       const [modelStream, { Backend, Engine: LiteRTEngine }] =
-        await Promise.all([
-          fetchModel(modelUrl, () => onStage?.('compiling')),
-          import('@litert-lm/core'),
-        ]);
+        await Promise.all([fetchModel(modelUrl), import('@litert-lm/core')]);
       const settings: EngineSettings = {
         model: modelStream,
         // Named rather than left to the library's default, since the config
@@ -129,8 +125,8 @@ export function getEngine(
       };
       // Engine.create() loads the wasm runtime (already on disk if preload
       // ran), sets up the WebGPU device, reads the model in and compiles it.
-      // Minutes of work on a cold start, none of it reported by the SDK — the
-      // 'compiling' stage comes from the stream running dry, above.
+      // Minutes of work on a cold start, none of it reported by the SDK, so
+      // all of it is one stage: 'loading', or 'downloading' above.
       return LiteRTEngine.create(settings);
     })();
     enginePromises.set(key, promise);

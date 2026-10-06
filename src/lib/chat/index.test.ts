@@ -146,12 +146,11 @@ describe('generateMessage', () => {
       onStage: (stage) => stages.push(stage),
     });
     only().emit({ id: 0, type: 'stage', stage: 'loading' });
-    only().emit({ id: 0, type: 'stage', stage: 'compiling' });
     only().emit({ id: 0, type: 'stage', stage: 'generating' });
     only().emit({ id: 0, type: 'done', text: 'done' });
     await promise;
 
-    expect(stages).toEqual(['loading', 'compiling', 'generating']);
+    expect(stages).toEqual(['loading', 'generating']);
   });
 
   it('passes each chunk to onChunk, and still resolves with the whole reply', async () => {
