@@ -13,16 +13,9 @@
  */
 
 import type { Engine, EngineSettings, GpuArtisanConfig } from '@litert-lm/core';
-// Keys the runtime marker written below, so a dependency bump misses the old
-// marker rather than matching it. ./index.ts reads that marker back and so
-// imports the same version the same way — from the package manifest, which the
-// `exports` map does expose, rather than from the library itself, whose 20 MB
-// of wasm must not be dragged in to answer a question about whether it is
-// cached. Not in ./constants.ts either, which `sw.ts` can reach through
-// `lib/cache/rules.ts` and which must therefore stay free of this package.
-import { version as LITERT_VERSION } from '@litert-lm/core/package.json';
-import { hasAsset, markStep } from '#/lib/cache/markers';
-import { MAX_TOP_K } from './constants';
+import { hasAsset } from '#/lib/cache/markers';
+import { pullThrough } from '#/lib/cache/pull-through';
+import { MAX_TOP_K, engineKey } from './constants';
 import type { GenerateStage } from './types';
 
 /**
@@ -91,10 +84,6 @@ async function fetchModel(
 // reuse it across calls to generateMessage() for the rest of the page load.
 // Nothing deletes one: ending a call drops its conversation, not the engine.
 const enginePromises = new Map<string, Promise<Engine>>();
-
-function engineKey(modelUrl: string, maxNumTokens: number): string {
-  return `${modelUrl}::${maxNumTokens}`;
-}
 
 export function getEngine(
   modelUrl: string,
@@ -179,8 +168,6 @@ export function preloadRuntime(): Promise<void> {
     // Engine.create() calls this same memoizing getter, which returns whatever
     // is already loading rather than starting a second copy.
     await getOrLoadGlobalLiteRtLm();
-
-    await markStep('chat-runtime', LITERT_VERSION);
   })().catch((err) => {
     // Don't cache a failure — a later attempt (or the engine itself) should
     // be free to retry.
@@ -211,27 +198,9 @@ export async function preloadModel(modelUrl: string): Promise<void> {
   // Asked of the cache rather than of the marker: the marker is what a failed
   // cache write leaves behind looking like success, and skipping the download
   // on its word is exactly the mistake that would cost the bytes.
-  if (await hasAsset(modelUrl)) {
-    // Written even so. The bytes being present while the marker is missing is
-    // the interrupted-run case, and the marker is what the preload screen
-    // reads.
-    await markStep('chat', modelUrl);
-    return;
-  }
+  if (await hasAsset(modelUrl)) return;
 
-  const response = await fetch(modelUrl);
-  if (!response.ok) {
-    throw new Error(
-      `Failed to download model (${response.status}): ${modelUrl}`,
-    );
-  }
-
-  // Drained, not buffered. The bytes only need to stream past the service
-  // worker so it can store and count them; `arrayBuffer()` would additionally
-  // demand a single contiguous ~3 GB allocation, which fails often enough that
-  // the step would reject after a successful download — leaving the marker
-  // unwritten and the screen still offering the download.
-  await response.body?.pipeTo(new WritableStream());
-
-  await markStep('chat', modelUrl);
+  // Drained, not buffered: a single contiguous ~3 GB allocation fails often
+  // enough that the step would reject after a successful download.
+  await pullThrough([modelUrl], 'chat model');
 }

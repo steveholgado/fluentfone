@@ -1,8 +1,10 @@
+/**
+ * Runs one Piper voice off the main thread, for the worker's whole life — see
+ * the comment at the top of index.ts for why.
+ */
+
 import type { WorkerRequest, WorkerResponse } from './messages';
 import { loadVoice, synthesize, toWav, type PiperVoice } from './piper';
-
-// One voice per worker, for the worker's whole life — see the comment at the
-// top of index.ts for why.
 
 // DOM lib doesn't type worker-global `self`; the shape matches Worker's
 // instance side closely enough for postMessage's transfer-list overload.

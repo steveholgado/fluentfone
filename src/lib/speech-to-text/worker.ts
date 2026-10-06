@@ -99,7 +99,7 @@ async function download(): Promise<void> {
 
   await pullThrough(
     [...runtime, ...files.map((file) => MODEL_BASE + file)],
-    'speech-to-text',
+    'Whisper',
   );
 }
 

@@ -33,6 +33,14 @@ export const DEFAULT_CHAT_MODEL = CHAT_MODELS.e2b;
 export const DEFAULT_MAX_TOKENS = 4096;
 
 /**
+ * Identifies an engine. The worker caches engines under it, and the main
+ * thread mirrors which of them are warm.
+ */
+export function engineKey(modelUrl: string, maxNumTokens: number): string {
+  return `${modelUrl}::${maxNumTokens}`;
+}
+
+/**
  * The largest top-K any conversation can sample with. The engine is created
  * with it, and rejects a sampler asking for more.
  */

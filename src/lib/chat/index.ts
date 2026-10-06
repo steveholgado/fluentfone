@@ -12,19 +12,20 @@
  * ./messages.ts; the configuration values are in ./constants.ts.
  */
 
-// Keyed on by `isRuntimeCached` below, and imported the same way ./engine.ts
-// imports it: from the package manifest, which the `exports` map does expose,
-// rather than from the library itself, whose 20 MB of wasm must not be dragged
-// in to answer a question about whether it is cached. Not in ./constants.ts
-// either, which `sw.ts` can reach through `lib/cache/rules.ts` and which must
-// therefore stay free of this package.
+// Keys the runtime's step marker, so a dependency bump misses the old marker
+// rather than matching it. Imported from the package manifest, which the
+// `exports` map does expose, rather than from the library itself, whose 20 MB
+// of wasm must not be dragged in to answer a question about whether it is
+// cached. Not in ./constants.ts either, which `sw.ts` can reach through
+// `lib/cache/rules.ts` and which must therefore stay free of this package.
 import { version as LITERT_VERSION } from '@litert-lm/core/package.json';
-import { hasStep } from '#/lib/cache/markers';
+import { hasStep, markStep } from '#/lib/cache/markers';
 import { send } from './client';
 import {
   DEFAULT_CHAT_MODEL,
   DEFAULT_MAX_TOKENS,
   DEFAULT_SAMPLER_PARAMS,
+  engineKey,
 } from './constants';
 import type { GenerateMessageOptions } from './types';
 
@@ -48,10 +49,6 @@ export type {
  */
 const liveEngineKeys = new Set<string>();
 let runtimeReady = false;
-
-function engineKey(modelUrl: string, maxNumTokens: number): string {
-  return `${modelUrl}::${maxNumTokens}`;
-}
 
 /**
  * Generate the next model response, optionally grounded with a system
@@ -111,11 +108,16 @@ export async function generateMessage({
  * thread. The service worker still counts the bytes and broadcasts them, and a
  * BroadcastChannel is scoped to the origin rather than to a client, so the
  * preload screen hears them from here exactly as it did before.
+ *
+ * The step is marked whether the worker downloaded the file or found it
+ * already on disk: bytes present with no marker is what an interrupted run
+ * leaves behind, and the marker is what the preload screen reads.
  */
 export async function preload(
   modelUrl: string = DEFAULT_CHAT_MODEL,
 ): Promise<void> {
   await send({ mode: 'preload', modelUrl });
+  await markStep('chat', modelUrl);
 }
 
 /**
@@ -128,6 +130,7 @@ export async function preload(
  */
 export async function preloadRuntime(): Promise<void> {
   await send({ mode: 'preload-runtime' });
+  await markStep('chat-runtime', LITERT_VERSION);
   runtimeReady = true;
 }
 

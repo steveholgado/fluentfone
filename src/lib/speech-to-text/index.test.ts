@@ -163,6 +163,32 @@ describe('transcribe', () => {
     await expect(promise).rejects.toThrow('transcription failed');
   });
 
+  it('rejects everything in flight when the worker itself fails', async () => {
+    const { transcribe } = await import('#/lib/speech-to-text/index');
+
+    const first = transcribe(new Blob(['a']));
+    const second = transcribe(new Blob(['b']));
+    await flush();
+    FakeWorker.instances[0].emitError(
+      new ErrorEvent('error', { message: 'worker died' }),
+    );
+
+    await expect(first).rejects.toThrow('worker died');
+    await expect(second).rejects.toThrow('worker died');
+  });
+
+  it('says the worker failed when its error carries no message', async () => {
+    // A worker that fails to load reports an ErrorEvent with no message, which
+    // must not reach the UI as "[object ErrorEvent]".
+    const { transcribe } = await import('#/lib/speech-to-text/index');
+
+    const promise = transcribe(new Blob(['audio']));
+    await flush();
+    FakeWorker.instances[0].emitError(new ErrorEvent('error'));
+
+    await expect(promise).rejects.toThrow('Speech-to-text worker failed.');
+  });
+
   it('resolves overlapping calls to their own results', async () => {
     const { transcribe } = await import('#/lib/speech-to-text/index');
 

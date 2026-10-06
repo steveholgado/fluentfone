@@ -341,9 +341,7 @@ describe('worker onmessage', () => {
         {
           id: 2,
           type: 'error',
-          message: expect.stringContaining(
-            'Failed to download speech-to-text (404)',
-          ),
+          message: expect.stringContaining('Failed to download Whisper (404)'),
         },
       ]);
     });

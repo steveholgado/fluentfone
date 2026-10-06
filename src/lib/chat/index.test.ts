@@ -193,10 +193,21 @@ describe('generateMessage', () => {
 
     const first = generateMessage({ prompt: 'a' });
     const second = generateMessage({ prompt: 'b' });
-    only().emitError(new Error('worker died'));
+    only().emitError(new ErrorEvent('error', { message: 'worker died' }));
 
     await expect(first).rejects.toThrow('worker died');
     await expect(second).rejects.toThrow('worker died');
+  });
+
+  it('says the worker failed when its error carries no message', async () => {
+    // A worker that fails to load reports an ErrorEvent with no message, which
+    // must not reach the UI as "[object ErrorEvent]".
+    const { generateMessage } = await import('#/lib/chat/index');
+
+    const promise = generateMessage({ prompt: 'a' });
+    only().emitError(new ErrorEvent('error'));
+
+    await expect(promise).rejects.toThrow('Chat worker failed.');
   });
 
   it('keeps overlapping calls and their stages apart', async () => {
@@ -256,6 +267,33 @@ describe('preload', () => {
       modelUrl: DEFAULT_CHAT_MODEL,
     });
   });
+
+  it('marks the step once the worker has answered', async () => {
+    stubCacheStorage();
+    const { preload } = await import('#/lib/chat/index');
+    const { DEFAULT_CHAT_MODEL } = await import('#/lib/chat/constants');
+    const { hasStep } = await import('#/lib/cache/markers');
+
+    const promise = preload();
+    await expect(hasStep('chat', DEFAULT_CHAT_MODEL)).resolves.toBe(false);
+    only().emit({ id: 0, type: 'done' });
+    await promise;
+
+    await expect(hasStep('chat', DEFAULT_CHAT_MODEL)).resolves.toBe(true);
+  });
+
+  it('does not mark the step if the download fails', async () => {
+    stubCacheStorage();
+    const { preload } = await import('#/lib/chat/index');
+    const { DEFAULT_CHAT_MODEL } = await import('#/lib/chat/constants');
+    const { hasStep } = await import('#/lib/cache/markers');
+
+    const promise = preload();
+    only().emit({ id: 0, type: 'error', message: 'Failed to download' });
+
+    await expect(promise).rejects.toThrow('Failed to download');
+    await expect(hasStep('chat', DEFAULT_CHAT_MODEL)).resolves.toBe(false);
+  });
 });
 
 describe('preloadRuntime', () => {
@@ -270,6 +308,30 @@ describe('preloadRuntime', () => {
       id: 0,
       mode: 'preload-runtime',
     });
+  });
+
+  it('marks the step, keyed by package version, once the worker has answered', async () => {
+    stubCacheStorage();
+    const { preloadRuntime } = await import('#/lib/chat/index');
+    const { hasStep } = await import('#/lib/cache/markers');
+
+    const promise = preloadRuntime();
+    only().emit({ id: 0, type: 'done' });
+    await promise;
+
+    await expect(hasStep('chat-runtime', LITERT_VERSION)).resolves.toBe(true);
+  });
+
+  it('does not mark the step if loading fails', async () => {
+    stubCacheStorage();
+    const { preloadRuntime, isRuntimeCached } =
+      await import('#/lib/chat/index');
+
+    const promise = preloadRuntime();
+    only().emit({ id: 0, type: 'error', message: 'wasm unavailable' });
+
+    await expect(promise).rejects.toThrow('wasm unavailable');
+    await expect(isRuntimeCached()).resolves.toBe(false);
   });
 });
 

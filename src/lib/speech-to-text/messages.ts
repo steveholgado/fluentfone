@@ -2,17 +2,18 @@
 
 import type { TranscribeDevice, TranscribeOptions } from './types';
 
-export type WorkerRequest =
+export type SttRequest =
   | ({
-      id: number;
       mode: 'transcribe';
       audio: Float32Array;
       // `onTimings` stays behind: a function can't be structured-cloned.
     } & Pick<TranscribeOptions, 'language' | 'task'>)
   /** Downloads the runtime and weights, without building the pipeline. */
-  | { id: number; mode: 'preload' }
+  | { mode: 'preload' }
   /** Builds the pipeline, so the first transcription doesn't wait for it. */
-  | { id: number; mode: 'load' };
+  | { mode: 'load' };
+
+export type WorkerRequest = SttRequest & { id: number };
 
 // No progress message: the service worker counts the bytes as they stream
 // past and broadcasts them, so they no longer have to be relayed through here.

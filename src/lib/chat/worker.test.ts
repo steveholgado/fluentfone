@@ -633,15 +633,24 @@ describe('stage reporting', () => {
 });
 
 describe('preload', () => {
-  it('pulls the model file down and marks the step, without warming up the engine', async () => {
-    const { hasStep } = await import('#/lib/cache/markers');
-
+  it('pulls the model file down, without warming up the engine', async () => {
     await post({ mode: 'preload', modelUrl: DEFAULT_CHAT_MODEL });
 
     expect(fetch).toHaveBeenCalledWith(expect.stringContaining('litertlm'));
     expect(engineCreate).not.toHaveBeenCalled();
-    await expect(hasStep('chat', DEFAULT_CHAT_MODEL)).resolves.toBe(true);
     expect(replies()).toEqual([{ id: 0, type: 'done' }]);
+  });
+
+  it('leaves the step marker to the main thread', async () => {
+    // As speech-to-text and text-to-speech do: the worker does the work, and
+    // index.ts records the step once it has answered.
+    const { hasStep } = await import('#/lib/cache/markers');
+
+    await post({ mode: 'preload', modelUrl: DEFAULT_CHAT_MODEL });
+    await post({ mode: 'preload-runtime' });
+
+    await expect(hasStep('chat', DEFAULT_CHAT_MODEL)).resolves.toBe(false);
+    await expect(hasStep('chat-runtime', LITERT_VERSION)).resolves.toBe(false);
   });
 
   it('does no work when the bytes are already cached', async () => {
@@ -656,19 +665,6 @@ describe('preload', () => {
     await post({ mode: 'preload', modelUrl: DEFAULT_CHAT_MODEL });
 
     expect(fetch).not.toHaveBeenCalled();
-  });
-
-  it('marks the step when it finds the bytes already cached', async () => {
-    // Bytes present with no marker is what an interrupted run leaves behind,
-    // and the marker is what the preload screen reads.
-    const { MODELS_CACHE } = await import('#/lib/cache/names');
-    const { hasStep } = await import('#/lib/cache/markers');
-    const cache = await caches.open(MODELS_CACHE);
-    await cache.put(DEFAULT_CHAT_MODEL, new Response('weights'));
-
-    await post({ mode: 'preload', modelUrl: DEFAULT_CHAT_MODEL });
-
-    await expect(hasStep('chat', DEFAULT_CHAT_MODEL)).resolves.toBe(true);
   });
 
   it('downloads on the word of the cache, not of the marker', async () => {
@@ -720,21 +716,17 @@ describe('preload', () => {
       }),
     );
 
-    const { hasStep } = await import('#/lib/cache/markers');
-
     await post({ mode: 'preload', modelUrl: DEFAULT_CHAT_MODEL });
 
     expect(arrayBuffer).not.toHaveBeenCalled();
     expect(replies()).toEqual([{ id: 0, type: 'done' }]);
-    await expect(hasStep('chat', DEFAULT_CHAT_MODEL)).resolves.toBe(true);
   });
 
-  it('does not mark the step if the download fails', async () => {
+  it('reports a failed download', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => new Response(null, { status: 503 })),
     );
-    const { hasStep } = await import('#/lib/cache/markers');
 
     await post({ mode: 'preload', modelUrl: DEFAULT_CHAT_MODEL });
 
@@ -742,17 +734,14 @@ describe('preload', () => {
       {
         id: 0,
         type: 'error',
-        message: expect.stringContaining('Failed to download model'),
+        message: expect.stringContaining('Failed to download chat model (503)'),
       },
     ]);
-    await expect(hasStep('chat', DEFAULT_CHAT_MODEL)).resolves.toBe(false);
   });
 });
 
 describe('preload-runtime', () => {
-  it('lets the library load its own wasm, then marks the step', async () => {
-    const { hasStep } = await import('#/lib/cache/markers');
-
+  it('lets the library load its own wasm', async () => {
     await post({ mode: 'preload-runtime' });
 
     // We no longer reproduce LiteRT-LM's four-way build selection to fetch
@@ -763,7 +752,7 @@ describe('preload-runtime', () => {
     // Loading the runtime must not drag the model compile along with it;
     // that stays where it was, in the generate request.
     expect(engineCreate).not.toHaveBeenCalled();
-    await expect(hasStep('chat-runtime', LITERT_VERSION)).resolves.toBe(true);
+    expect(replies()).toEqual([{ id: 0, type: 'done' }]);
   });
 
   it('does not cache a failure, so a later attempt can retry', async () => {

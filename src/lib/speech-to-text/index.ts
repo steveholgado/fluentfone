@@ -6,7 +6,7 @@
 import { toMonoPcm } from '#/lib/audio';
 import { hasStep, markStep } from '#/lib/cache/markers';
 import { SAMPLE_RATE, modelKey } from './constants';
-import type { WorkerRequest, WorkerResponse } from './messages';
+import type { SttRequest, WorkerRequest, WorkerResponse } from './messages';
 import type { TranscribeOptions } from './types';
 
 export type {
@@ -57,20 +57,20 @@ function getWorker(): Worker {
       },
     );
 
-    worker.addEventListener('error', (err) => {
-      for (const [id, request] of pending) {
-        request.reject(err instanceof Error ? err : new Error(String(err)));
-        pending.delete(id);
-      }
+    worker.addEventListener('error', (event) => {
+      const err = new Error(event.message || 'Speech-to-text worker failed.');
+      for (const request of pending.values()) request.reject(err);
+      pending.clear();
     });
   }
   return worker;
 }
 
-function send(request: WorkerRequest): Promise<DoneResponse> {
+function send(request: SttRequest): Promise<DoneResponse> {
   return new Promise((resolve, reject) => {
-    pending.set(request.id, { resolve, reject });
-    getWorker().postMessage(request);
+    const id = nextRequestId++;
+    pending.set(id, { resolve, reject });
+    getWorker().postMessage({ ...request, id } satisfies WorkerRequest);
   });
 }
 
@@ -88,7 +88,6 @@ export async function transcribe(
   const decode = performance.now() - decodeStart;
 
   const response = await send({
-    id: nextRequestId++,
     mode: 'transcribe',
     audio: audioData,
     language,
@@ -116,7 +115,7 @@ export async function transcribe(
  * share a progress bar.
  */
 export async function preload(): Promise<void> {
-  await send({ id: nextRequestId++, mode: 'preload' });
+  await send({ mode: 'preload' });
   await markStep('speech-to-text', await modelKey());
 }
 
@@ -125,7 +124,7 @@ export async function preload(): Promise<void> {
  * the files off disk after a preload, and downloads them otherwise.
  */
 export async function load(): Promise<void> {
-  await send({ id: nextRequestId++, mode: 'load' });
+  await send({ mode: 'load' });
   pipelineReady = true;
 }
 

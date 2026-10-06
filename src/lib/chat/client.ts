@@ -2,10 +2,10 @@
  * The main thread's end of the channel to worker.ts: one long-lived worker,
  * requests matched to replies by id.
  *
- * Long-lived rather than spawned per call (the pattern text-to-speech uses)
- * because keeping a compiled engine resident is the whole point of the worker —
- * terminating between calls would throw away the minutes of model compile this
- * exists to keep off the main thread in the first place.
+ * Kept for the whole page session, not just for one call as text-to-speech's
+ * voices are, because keeping a compiled engine resident is the whole point of
+ * the worker — terminating between calls would throw away the minutes of model
+ * compile this exists to keep off the main thread in the first place.
  */
 
 import type { ChatRequest, WorkerRequest, WorkerResponse } from './messages';
@@ -62,11 +62,10 @@ function getWorker(): Worker {
       },
     );
 
-    worker.addEventListener('error', (err) => {
-      for (const [id, request] of pending) {
-        request.reject(err instanceof Error ? err : new Error(String(err)));
-        pending.delete(id);
-      }
+    worker.addEventListener('error', (event) => {
+      const err = new Error(event.message || 'Chat worker failed.');
+      for (const request of pending.values()) request.reject(err);
+      pending.clear();
     });
   }
   return worker;

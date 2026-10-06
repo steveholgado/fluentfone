@@ -1,14 +1,18 @@
-// Every voice gets a Web Worker of its own, kept for as long as the voice is
-// open — a whole conversation, normally. That ties a voice's session, and the
-// memory behind it, to one thing that can be terminated: closing the voice
-// frees all of it, and a worker that fails is thrown away and replaced rather
-// than repaired. One worker can serve a whole conversation because a
-// conversation never changes voice, and speed is a per-line option rather
-// than something baked into the session.
-//
-// Voice files are stored by the service worker, which is scoped to the origin
-// rather than to a worker, so a fresh worker doesn't re-download a voice used
-// before.
+/**
+ * Browser-based text-to-speech using Piper voices, each run in a Web Worker.
+ *
+ * Every voice gets a worker of its own, kept for as long as the voice is open
+ * — a whole conversation, normally. That ties a voice's session, and the
+ * memory behind it, to one thing that can be terminated: closing the voice
+ * frees all of it, and a worker that fails is thrown away and replaced rather
+ * than repaired. One worker can serve a whole conversation because a
+ * conversation never changes voice, and speed is a per-line option rather
+ * than something baked into the session.
+ *
+ * Voice files are stored by the service worker, which is scoped to the origin
+ * rather than to a worker, so a fresh worker doesn't re-download a voice used
+ * before.
+ */
 
 import { hasAsset, hasStep, markStep } from '#/lib/cache/markers';
 import { pullThrough } from '#/lib/cache/pull-through';
@@ -165,7 +169,7 @@ export function openVoice(
  * it is fetched up front rather than left to the first session.
  */
 export async function preloadRuntime(): Promise<void> {
-  await pullThrough(WASM_FILES, 'tts runtime');
+  await pullThrough(WASM_FILES, 'text-to-speech runtime');
   await markStep('text-to-speech-runtime', RUNTIME_KEY);
 }
 

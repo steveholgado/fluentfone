@@ -2,10 +2,10 @@
  * Fetches every file in full so the service worker stores it. Nothing is kept
  * here — the bytes are wanted on disk, not in memory.
  *
- * Drained rather than buffered, as the chat model is (see `preloadModel` in
- * lib/chat/engine.ts): `arrayBuffer()` would hold each file whole only to
- * throw it away — Whisper's encoder and decoder are hundreds of megabytes
- * each.
+ * Drained rather than buffered: `arrayBuffer()` would hold each file whole
+ * only to throw it away, and for the chat model that means one contiguous
+ * allocation of gigabytes, which fails often enough to reject a download that
+ * succeeded. Whisper's encoder and decoder are hundreds of megabytes each.
  *
  * `what` names the download in the error a failed file rejects with.
  */
