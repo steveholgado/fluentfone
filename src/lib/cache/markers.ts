@@ -16,9 +16,10 @@ import type { PreloadStepId } from '#/lib/preload/steps';
  * it: a Cache Storage write either lands whole or rejects, so an entry's
  * presence means the complete response is there — whereas a marker is written
  * by a separate call that runs happily after the write it vouches for has
- * failed. Ask this where the bytes themselves are what matters; ask `hasStep`
- * where the question is whether a step's work was done (its bytes may live
- * somewhere else entirely, as the voice's do).
+ * failed. Ask this where the bytes themselves are what matters and their URLs
+ * are known up front; ask `hasStep` where the question is whether a step's
+ * work was done — a step of many files, or of files whose URLs only a library
+ * knows.
  *
  * Cheap: a match reads headers, not the body, so this does not touch the
  * gigabytes it reports on.
@@ -43,9 +44,9 @@ export async function hasAsset(url: string): Promise<boolean> {
  * bytes it vouches for, which is what makes it trustworthy: browsers evict
  * storage per origin, not per entry, so a marker cannot outlive its bytes.
  *
- * `key` carries whatever makes the download distinct — a voice id, a model
- * URL, a version-stamped path — so switching model or bumping a dependency
- * misses rather than matching a stale marker.
+ * `key` carries whatever makes the download distinct — a model URL, a package
+ * version, a version-stamped path — so switching model or bumping a
+ * dependency misses rather than matching a stale marker.
  *
  * Cache Storage keys have to be requests, so this maps onto a URL that is
  * never fetched.
@@ -79,7 +80,7 @@ export async function markStep(
  * Per step rather than per key — the service worker knows which step a URL
  * belongs to, but not the version a marker is keyed by — and on its own host
  * so no marker key can collide with it. Cleared at the start of each run of
- * the step (see `runStep` in lib/preload), which is what makes either order
+ * the step (see `runTogether` in lib/preload), which is what makes either order
  * safe: a failure recorded after the marker still wins, and a retry starts
  * clean but records any write of its own that fails.
  */

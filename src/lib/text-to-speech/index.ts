@@ -45,8 +45,9 @@ export interface Voice {
  *
  * `onProgress` hears about the voice's download while a worker is loading. It
  * is normally silent: after preload the voice is in the service worker's cache
- * and nothing is fetched from the network. It only reports where the conversation was reached without a
- * preload, or the voice has been evicted since.
+ * and nothing is fetched from the network. It only reports where the
+ * conversation was reached without a preload, or the voice has been evicted
+ * since.
  *
  * A worker that fails — its session couldn't load, or the worker itself
  * crashed — is thrown away, and the next `speak()` starts a new one.

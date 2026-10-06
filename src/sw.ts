@@ -257,8 +257,9 @@ async function serveAsset(
   // Handed back untouched, so the browser streams it straight off disk.
   // Counting would put every chunk of several gigabytes through this worker's
   // JS on every warm-up, for a bar nobody is looking at — only a preload
-  // reports progress, and there `runStep` already opens each step at zero, so
-  // one that reports nothing just sits there until it's done.
+  // reports progress, and there `runTogether` in lib/preload fills a step's
+  // share of the bar when it finishes, so one that reports nothing still
+  // completes it.
   if (cached) return cached;
 
   const response = await fetch(request);

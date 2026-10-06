@@ -1,10 +1,10 @@
 /**
  * Runs Gemma through LiteRT-LM off the main thread.
  *
- * Like speech-to-text's worker and unlike text-to-speech's, this one is
- * long-lived and reused across requests: ./engine.ts keeps a compiled engine
- * resident in this worker's memory, and rebuilding it per call would cost
- * minutes.
+ * Like speech-to-text's worker, this one lasts the whole page session and
+ * serves every request, where text-to-speech's last only as long as their
+ * voice: ./engine.ts keeps a compiled engine resident in this worker's memory,
+ * and rebuilding it per call would cost minutes.
  *
  * What moving here buys is responsiveness rather than throughput — decode is
  * GPU-bound and the library runs single-threaded wherever it is called from.

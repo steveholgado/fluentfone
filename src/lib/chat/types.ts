@@ -5,9 +5,10 @@ export interface ChatMessage {
 }
 
 /**
- * Sampling/decoding parameters. Without these, the engine defaults to greedy
- * decoding (always picking the single most likely token), which is why
- * output is fully deterministic until you set these explicitly.
+ * Sampling/decoding parameters. Any left out take their value from
+ * DEFAULT_SAMPLER_PARAMS in ./constants.ts rather than the engine's own
+ * default, which is greedy decoding (always the single most likely token) and
+ * gives the same reply to the same input every time.
  */
 export interface SamplerParams {
   /** Higher = more random/creative, lower = more focused/deterministic. Try 0.6–1.0 for chat. */
@@ -53,7 +54,7 @@ export interface GenerateMessageOptions {
   history?: ChatMessage[];
   /** URL of the .litertlm model file. */
   modelUrl?: string;
-  /** Max context window tokens for the engine. Defaults to 8192. */
+  /** Max context window tokens for the engine. Defaults to DEFAULT_MAX_TOKENS. */
   maxNumTokens?: number;
   /**
    * Sampling parameters controlling randomness. Defaults to a general-purpose
