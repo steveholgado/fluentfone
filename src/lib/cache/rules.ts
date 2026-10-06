@@ -23,7 +23,7 @@ export interface AssetRule {
  * build-variant selection logic, so these must match every variant a browser
  * might pick.
  */
-export const ASSET_RULES: AssetRule[] = [
+const ASSET_RULES: AssetRule[] = [
   {
     step: 'text-to-speech-runtime',
     matches: (url) => url.pathname.startsWith('/vendor/'),

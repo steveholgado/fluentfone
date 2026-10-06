@@ -29,7 +29,6 @@ import {
 } from './constants';
 import type { GenerateMessageOptions } from './types';
 
-export { CHAT_MODELS, DEFAULT_CHAT_MODEL } from './constants';
 export type {
   ChatMessage,
   GenerateMessageOptions,

@@ -8,11 +8,10 @@ import { trackDownload, type StepEstimates } from './track';
 import { DOWNLOAD_ORDER, STEPS_BY_LABEL } from './steps';
 import type { PreloadLabel, PreloadStatus, PreloadStepId } from './steps';
 
-// This file is the preload tier's public API, so the step vocabulary defined
-// next door in steps.ts is re-exported through it — the UI reads
-// DOWNLOAD_ORDER and PreloadStatus from `#/lib/preload` alongside everything
-// else here, rather than reaching past it.
-export { DOWNLOAD_ORDER, STEPS_BY_LABEL };
+// This file is the preload tier's public API, so the step types defined next
+// door in steps.ts are re-exported through it — the UI reads PreloadStatus and
+// PreloadLabel from `#/lib/preload` alongside everything else here, rather
+// than reaching past it.
 export type { PreloadLabel, PreloadStatus, PreloadStepId };
 
 /**
