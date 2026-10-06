@@ -572,32 +572,70 @@ describe('useConversation', () => {
     });
   });
 
-  describe('speech-to-text warm-up', () => {
-    it('starts once the chat engine has loaded, not alongside it', async () => {
-      let warmedWhileLoading: boolean | undefined;
-      vi.mocked(generateMessage).mockImplementation(async (options) => {
-        options?.onStage?.('loading');
-        options?.onStage?.('compiling');
-        warmedWhileLoading =
-          vi.mocked(preloadSpeechToText).mock.calls.length > 0;
-        options?.onStage?.('generating');
-        return '¡Hola!';
-      });
+  describe('warm-up order', () => {
+    it('builds Whisper before the chat engine starts loading', async () => {
+      const whisper = deferred<void>();
+      vi.mocked(preloadSpeechToText).mockReturnValue(whisper.promise);
+      vi.mocked(generateMessage).mockResolvedValue('¡Hola!');
 
       const { result } = renderHook(() =>
         useConversation({ level: LEVEL, language: LANGUAGE, speed: 1 }),
       );
-      await act(async () => {
-        await result.current.prepareGreeting();
+      let preparing!: Promise<void>;
+      act(() => {
+        preparing = result.current.prepareGreeting();
       });
 
-      expect(warmedWhileLoading).toBe(false);
       expect(preloadSpeechToText).toHaveBeenCalledOnce();
+      expect(generateMessage).not.toHaveBeenCalled();
+      expect(result.current.status).toBe('Warming up…');
+
+      await act(async () => {
+        whisper.resolve();
+        await preparing;
+      });
+
+      expect(generateMessage).toHaveBeenCalledOnce();
+      expect(result.current.isGreetingReady).toBe(true);
     });
 
-    it('still starts when the greeting fails before generating', async () => {
-      vi.mocked(generateMessage).mockRejectedValue(new Error('offline'));
-      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    it('waits for the voice to load before the chat engine too', async () => {
+      const voice = deferred<void>();
+      vi.mocked(openVoice).mockReturnValue({
+        ready: voice.promise,
+        speak,
+        close,
+      });
+      vi.mocked(generateMessage).mockResolvedValue('¡Hola!');
+
+      const { result } = renderHook(() =>
+        useConversation({ level: LEVEL, language: LANGUAGE, speed: 1 }),
+      );
+      let preparing!: Promise<void>;
+      act(() => {
+        preparing = result.current.prepareGreeting();
+      });
+      // Long enough for Whisper's (already resolved) build to have settled.
+      await act(async () => {});
+
+      expect(generateMessage).not.toHaveBeenCalled();
+
+      await act(async () => {
+        voice.resolve();
+        await preparing;
+      });
+
+      expect(generateMessage).toHaveBeenCalledOnce();
+    });
+
+    // speak() starts a fresh worker, and reports its own failure.
+    it('still greets when the voice fails to load', async () => {
+      vi.mocked(openVoice).mockReturnValue({
+        ready: Promise.reject(new Error('no voice')),
+        speak,
+        close,
+      });
+      vi.mocked(generateMessage).mockResolvedValue('¡Hola!');
 
       const { result } = renderHook(() =>
         useConversation({ level: LEVEL, language: LANGUAGE, speed: 1 }),
@@ -606,13 +644,32 @@ describe('useConversation', () => {
         await result.current.prepareGreeting();
       });
 
-      expect(preloadSpeechToText).toHaveBeenCalledOnce();
+      expect(result.current.isGreetingReady).toBe(true);
+      expect(result.current.status).toBe('');
+    });
 
-      errorSpy.mockRestore();
+    it('builds nothing more if the call ends during the warm-up', async () => {
+      const whisper = deferred<void>();
+      vi.mocked(preloadSpeechToText).mockReturnValue(whisper.promise);
+
+      const { result, unmount } = renderHook(() =>
+        useConversation({ level: LEVEL, language: LANGUAGE, speed: 1 }),
+      );
+      let preparing!: Promise<void>;
+      act(() => {
+        preparing = result.current.prepareGreeting();
+      });
+      unmount();
+      await act(async () => {
+        whisper.resolve();
+        await preparing;
+      });
+
+      expect(generateMessage).not.toHaveBeenCalled();
     });
 
     // transcribe() builds the pipeline itself, and reports its own failure.
-    it('leaves the greeting alone when it fails', async () => {
+    it('leaves the greeting alone when Whisper fails', async () => {
       vi.mocked(preloadSpeechToText).mockRejectedValue(new Error('no gpu'));
       vi.mocked(generateMessage).mockImplementation(streamed('¡Hola!'));
 

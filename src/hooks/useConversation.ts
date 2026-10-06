@@ -184,32 +184,27 @@ export function useConversation({
     if (preparingGreetingRef.current || greetingRef.current) return;
     preparingGreetingRef.current = true;
 
-    // Whisper isn't needed until the user's first turn, so it is built once
-    // the chat engine has finished loading rather than alongside it: the two
-    // loads at once were the tab's peak memory. Started at most once per
-    // greeting, and not awaited — if it isn't done by the time the user
-    // stops recording, transcribe() waits for it. Its failure surfaces there
-    // too.
-    let warmingSpeechToText = false;
-    const warmSpeechToText = () => {
-      if (warmingSpeechToText) return;
-      warmingSpeechToText = true;
-      preloadSpeechToText().catch(() => {});
-    };
-
     try {
-      // Opened now so the voice's session is built — wasm compiled, voice read
-      // back from the service worker's cache — while the greeting is generated.
-      getVoice();
+      // Whisper and the voice are built first, together, and the chat engine
+      // only once both have finished. Each load holds far more while it runs
+      // than it keeps, and what it held lingers as garbage in a worker that
+      // then sits idle, so whatever loads last does so on top of everything
+      // before it. Last, then, is the chat engine, which keeps ~2 GB: built
+      // after it, Whisper's load added ~1.3 GB to the tab's peak.
+      //
+      // Settled rather than all succeeded: a failure surfaces where the model
+      // is next used, in transcribe() or speak(), each of which tries again.
       setStatus(STAGE_STATUS.compiling);
+      await Promise.allSettled([preloadSpeechToText(), getVoice().ready]);
+      // The call can end during that, and the engine shouldn't then be built
+      // for it.
+      if (disposedRef.current) return;
+
       const scenario = pickScenario(level);
       const opening = await generateMessage({
         systemInstruction,
         trigger: greetingTrigger(scenario),
-        onStage: (stage) => {
-          if (stage === 'generating') warmSpeechToText();
-          setStatus(STAGE_STATUS[stage]);
-        },
+        onStage: (stage) => setStatus(STAGE_STATUS[stage]),
       });
       const speed = speedRef.current;
       const audio = await getVoice().speak(opening, { speed });
@@ -226,9 +221,6 @@ export function useConversation({
     } catch (err) {
       report(err);
     } finally {
-      // A greeting that failed before it got to generating still leaves the
-      // user a call to have.
-      warmSpeechToText();
       preparingGreetingRef.current = false;
     }
   }, [getVoice, level, matchGreetingSpeed, report, systemInstruction]);

@@ -82,11 +82,12 @@ No downloads belong in this stage. If one happens anyway — a cache evicted
 since — it shows as **Downloading…** rather than sitting silent.
 
 When the check passes fully, nothing runs the preload steps. The greeting
-builds the chat engine and the voice, and Whisper is built once the chat engine
-has finished loading (when the greeting starts **Generating…**), since it
-isn't needed until the user's first turn. One after the other rather than all
-at once, because the three loads overlapping were the tab's peak memory. If the
-user stops recording before Whisper is ready, the transcription waits for it.
+builds Whisper and the voice together, then the chat engine once both are done,
+all under **Warming up…**. Each load holds far more while it runs than it
+keeps afterwards, so whatever loads last does so on top of everything before
+it. The chat engine keeps ~2 GB, so it goes last: built after it, Whisper's
+load added ~1.3 GB to the tab's peak. A failed Whisper or voice load doesn't
+hold up the greeting. Each is tried again where it is next used.
 
 ## Caching
 
