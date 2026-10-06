@@ -29,8 +29,8 @@ let worker: Worker | null = null;
 let nextRequestId = 0;
 const pending = new Map<number, PendingRequest>();
 
-// Set once a 'done' response has come back at least once, so `isCached()`
-// can short-circuit without touching storage.
+// Set once the pipeline has been built — by `load()` or a transcription — so
+// `isCached()` can short-circuit without touching storage.
 let pipelineReady = false;
 
 function getWorker(): Worker {
@@ -48,7 +48,6 @@ function getWorker(): Worker {
         if (!request) return;
 
         if (message.type === 'done') {
-          pipelineReady = true;
           pending.delete(message.id);
           request.resolve(message);
         } else if (message.type === 'error') {
@@ -95,6 +94,7 @@ export async function transcribe(
     language,
     task,
   });
+  pipelineReady = true;
 
   onTimings?.({
     decode,
@@ -106,18 +106,27 @@ export async function transcribe(
 }
 
 /**
- * Warms up the Whisper model cache so the first real `transcribe()` call is
- * instant.
+ * Downloads Whisper — its ONNX Runtime wasm and its weights — so the
+ * conversation finds them on disk. Only downloads, like the other preloads:
+ * the pipeline is built by `load()` when the conversation starts.
  *
- * This is one step rather than two, unlike the other capabilities: nothing in
- * the Transformers.js API downloads its ONNX Runtime wasm without also
- * building the pipeline, so the runtime and the weights arrive together and
- * share a progress bar. Splitting them again would mean predicting the wasm
- * URLs — reproducing a build-variant choice that is Transformers.js' to make.
+ * This is one step rather than two, unlike the other capabilities: the
+ * runtime's URLs are only known once Transformers.js has loaded and chosen
+ * them, in the worker, so the runtime and the weights download together and
+ * share a progress bar.
  */
 export async function preload(): Promise<void> {
   await send({ id: nextRequestId++, mode: 'preload' });
   await markStep('speech-to-text', await modelKey());
+}
+
+/**
+ * Builds the pipeline, so the first `transcribe()` doesn't wait for it. Reads
+ * the files off disk after a preload, and downloads them otherwise.
+ */
+export async function load(): Promise<void> {
+  await send({ id: nextRequestId++, mode: 'load' });
+  pipelineReady = true;
 }
 
 /**

@@ -11,6 +11,7 @@
 // before.
 
 import { hasAsset, hasStep, markStep } from '#/lib/cache/markers';
+import { pullThrough } from '#/lib/cache/pull-through';
 import { trackStep } from '#/lib/preload/track';
 import type { ProgressCallback } from '#/lib/progress';
 import { RUNTIME_KEY, WASM_FILES, voiceUrls } from './constants';
@@ -156,28 +157,6 @@ export function openVoice(
       if (worker) discard(worker, new Error('This voice has been closed.'));
     },
   };
-}
-
-/**
- * Fetches every file in full so the service worker stores it. Nothing is kept
- * here — the bytes are wanted on disk, not in memory.
- *
- * Drained rather than buffered, as the chat model is (see `preloadModel` in
- * lib/chat/engine.ts): `arrayBuffer()` would hold each file whole on the main
- * thread, the 63 MB voice included, only to throw it away.
- */
-async function pullThrough(urls: readonly string[], what: string) {
-  await Promise.all(
-    urls.map(async (url) => {
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(
-          `Failed to download ${what} (${response.status}): ${url}`,
-        );
-      }
-      await response.body?.pipeTo(new WritableStream());
-    }),
-  );
 }
 
 /**

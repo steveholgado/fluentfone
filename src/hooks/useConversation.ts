@@ -9,7 +9,7 @@ import {
   unlock,
 } from '#/lib/audio';
 import {
-  preload as preloadSpeechToText,
+  load as loadSpeechToText,
   transcribe,
   type TranscribeTimings,
 } from '#/lib/speech-to-text';
@@ -195,7 +195,7 @@ export function useConversation({
       // Settled rather than all succeeded: a failure surfaces where the model
       // is next used, in transcribe() or speak(), each of which tries again.
       setStatus(STAGE_STATUS.loading);
-      await Promise.allSettled([preloadSpeechToText(), getVoice().ready]);
+      await Promise.allSettled([loadSpeechToText(), getVoice().ready]);
       // The call can end during that, and the engine shouldn't then be built
       // for it.
       if (disposedRef.current) return;

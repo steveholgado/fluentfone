@@ -208,9 +208,8 @@ describe('preload', () => {
     await flush();
     const worker = FakeWorker.instances[0];
 
-    // No 'runtime' request any more: Transformers.js downloads its ONNX
-    // Runtime as part of building the pipeline, and the service worker
-    // reports the bytes rather than us fetching them first.
+    // One request for runtime and weights alike: the runtime's URLs are only
+    // known once Transformers.js has loaded, in the worker.
     expect(worker.postedMessages[0]).toEqual({ id: 0, mode: 'preload' });
 
     worker.emit({ id: 0, type: 'done' });
@@ -247,6 +246,61 @@ describe('preload', () => {
 
     await expect(hasStep('speech-to-text', F16_KEY)).resolves.toBe(true);
     await expect(hasStep('speech-to-text', WEBGPU_KEY)).resolves.toBe(false);
+  });
+
+  it('does not count as a built pipeline', async () => {
+    // Only downloaded: with no marker to read, nothing is ready.
+    const { preload, isCached } = await import('#/lib/speech-to-text/index');
+
+    const promise = preload();
+    await flush();
+    FakeWorker.instances[0].emit({ id: 0, type: 'done' });
+    await promise;
+
+    await expect(isCached()).resolves.toBe(false);
+  });
+});
+
+describe('load', () => {
+  it('asks the worker to build the pipeline', async () => {
+    const { load, isCached } = await import('#/lib/speech-to-text/index');
+
+    const promise = load();
+    await flush();
+    const worker = FakeWorker.instances[0];
+
+    expect(worker.postedMessages[0]).toEqual({ id: 0, mode: 'load' });
+
+    worker.emit({ id: 0, type: 'done' });
+    await promise;
+
+    await expect(isCached()).resolves.toBe(true);
+  });
+
+  it('marks no step', async () => {
+    // Building reads whatever the preload put on disk, or downloads it; only
+    // a preload vouches for the files being there.
+    stubCacheStorage();
+    const { load } = await import('#/lib/speech-to-text/index');
+    const { hasStep } = await import('#/lib/cache/markers');
+
+    const promise = load();
+    await flush();
+    FakeWorker.instances[0].emit({ id: 0, type: 'done' });
+    await promise;
+
+    await expect(hasStep('speech-to-text', Q8_KEY)).resolves.toBe(false);
+  });
+
+  it('rejects when the worker reports an error', async () => {
+    const { load, isCached } = await import('#/lib/speech-to-text/index');
+
+    const promise = load();
+    await flush();
+    FakeWorker.instances[0].emit({ id: 0, type: 'error', message: 'no gpu' });
+
+    await expect(promise).rejects.toThrow('no gpu');
+    await expect(isCached()).resolves.toBe(false);
   });
 });
 

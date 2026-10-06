@@ -107,11 +107,10 @@ export function usePreload(voiceId: string) {
       setCached(result);
 
       if (isFullyPreloaded(result)) {
-        // Nothing is warmed up from here. The greeting builds the chat engine
-        // and the voice, and useConversation warms Whisper once the engine is
-        // done — one after the other rather than all at once, which is what
-        // keeps the tab's peak memory down. Running preloadAll as well would
-        // only read the voice and runtimes through this thread a second time.
+        // Nothing is warmed up from here. The greeting builds Whisper and the
+        // voice, then the chat engine — one after the other rather than all at
+        // once, which is what keeps the tab's peak memory down. Running
+        // preloadAll as well would only read the files through a second time.
         setPhase('ready');
       } else {
         setPhase('needed');

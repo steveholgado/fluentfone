@@ -51,6 +51,13 @@ export async function modelDtype() {
 }
 
 /**
+ * Where MODEL's files are fetched from: the Hub, at MODEL_REVISION. The worker
+ * points Transformers.js at the same place, so a file name the library gives
+ * resolves against this to the URL the pipeline asks for when it is built.
+ */
+export const MODEL_BASE = `https://huggingface.co/${MODEL}/resolve/${MODEL_REVISION}/`;
+
+/**
  * Identifies the weights this device loads, for the step marker, e.g.
  * `onnx-community/whisper-small@36050c4…:fp16+q4`. A device that moves to
  * other weights — fp16 on a GPU that had been loading fp32 — misses its old

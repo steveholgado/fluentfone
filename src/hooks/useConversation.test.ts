@@ -4,10 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TRANSCRIPT_LINGER_MS, useConversation } from '#/hooks/useConversation';
 import { AudioRecorder } from '#/lib/audio/recorder';
 import { play, stopPlayback } from '#/lib/audio/player';
-import {
-  preload as preloadSpeechToText,
-  transcribe,
-} from '#/lib/speech-to-text';
+import { load as loadSpeechToText, transcribe } from '#/lib/speech-to-text';
 import { generateMessage } from '#/lib/chat';
 import { openVoice, type Voice } from '#/lib/text-to-speech';
 import { markScenarioUsed, pickScenario } from '#/lib/scenarios';
@@ -28,7 +25,7 @@ vi.mock('#/lib/audio/player', () => ({
   stopPlayback: vi.fn(),
 }));
 vi.mock('#/lib/speech-to-text', () => ({
-  preload: vi.fn(),
+  load: vi.fn(),
   transcribe: vi.fn(),
 }));
 vi.mock('#/lib/chat', () => ({
@@ -121,7 +118,7 @@ beforeEach(() => {
     close,
   });
   speak.mockResolvedValue(new Blob(['voice']));
-  vi.mocked(preloadSpeechToText).mockResolvedValue(undefined);
+  vi.mocked(loadSpeechToText).mockResolvedValue(undefined);
   vi.mocked(play).mockResolvedValue(undefined);
   vi.mocked(pickScenario).mockReturnValue(SCENARIO);
   // Every turn logs its stage timings in dev, which tests run as.
@@ -575,7 +572,7 @@ describe('useConversation', () => {
   describe('warm-up order', () => {
     it('builds Whisper before the chat engine starts loading', async () => {
       const whisper = deferred<void>();
-      vi.mocked(preloadSpeechToText).mockReturnValue(whisper.promise);
+      vi.mocked(loadSpeechToText).mockReturnValue(whisper.promise);
       vi.mocked(generateMessage).mockResolvedValue('¡Hola!');
 
       const { result } = renderHook(() =>
@@ -586,7 +583,7 @@ describe('useConversation', () => {
         preparing = result.current.prepareGreeting();
       });
 
-      expect(preloadSpeechToText).toHaveBeenCalledOnce();
+      expect(loadSpeechToText).toHaveBeenCalledOnce();
       expect(generateMessage).not.toHaveBeenCalled();
       expect(result.current.status).toBe('Warming up…');
 
@@ -650,7 +647,7 @@ describe('useConversation', () => {
 
     it('builds nothing more if the call ends during the warm-up', async () => {
       const whisper = deferred<void>();
-      vi.mocked(preloadSpeechToText).mockReturnValue(whisper.promise);
+      vi.mocked(loadSpeechToText).mockReturnValue(whisper.promise);
 
       const { result, unmount } = renderHook(() =>
         useConversation({ level: LEVEL, language: LANGUAGE, speed: 1 }),
@@ -670,7 +667,7 @@ describe('useConversation', () => {
 
     // transcribe() builds the pipeline itself, and reports its own failure.
     it('leaves the greeting alone when Whisper fails', async () => {
-      vi.mocked(preloadSpeechToText).mockRejectedValue(new Error('no gpu'));
+      vi.mocked(loadSpeechToText).mockRejectedValue(new Error('no gpu'));
       vi.mocked(generateMessage).mockImplementation(streamed('¡Hola!'));
 
       const { result } = renderHook(() =>

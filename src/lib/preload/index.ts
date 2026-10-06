@@ -27,13 +27,13 @@ export type { PreloadLabel, PreloadStatus, PreloadStepId };
  * awaited is what those bytes belong to. Running two steps at once would mix
  * them together.
  *
- * Deliberately stops short of warming up (compiling/initializing) the chat
- * engine — that's a separate, slower step left for generateMessage() to do on
- * demand, e.g. while generating the greeting.
+ * Deliberately stops short of building anything from them — the voice's
+ * session, Whisper's pipeline, the chat engine. Each holds far more while it
+ * builds than it keeps, so the conversation builds them when it starts, one
+ * after another (see prepareGreeting in useConversation). Only the chat
+ * runtime is loaded here, not just fetched.
  *
- * When everything is already cached this doesn't run at all: the greeting
- * builds the chat engine and the voice, and useConversation warms Whisper once
- * the engine is done, so the loads don't overlap.
+ * When everything is already cached this doesn't run at all.
  */
 const START: LoadProgress = { loaded: 0, total: 1, progress: 0 };
 const DONE: LoadProgress = { loaded: 1, total: 1, progress: 1 };

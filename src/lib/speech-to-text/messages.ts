@@ -9,7 +9,10 @@ export type WorkerRequest =
       audio: Float32Array;
       // `onTimings` stays behind: a function can't be structured-cloned.
     } & Pick<TranscribeOptions, 'language' | 'task'>)
-  | { id: number; mode: 'preload' };
+  /** Downloads the runtime and weights, without building the pipeline. */
+  | { id: number; mode: 'preload' }
+  /** Builds the pipeline, so the first transcription doesn't wait for it. */
+  | { id: number; mode: 'load' };
 
 // No progress message: the service worker counts the bytes as they stream
 // past and broadcasts them, so they no longer have to be relayed through here.
