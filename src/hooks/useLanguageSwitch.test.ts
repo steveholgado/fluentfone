@@ -104,7 +104,7 @@ describe('useLanguageSwitch', () => {
       expect(result.current.failed).toBe(false);
     });
 
-    it('reports progress as a 1-based voice of the pack, never going backward', async () => {
+    it('reports one figure for the whole pack, never going backward', async () => {
       let report!: Parameters<typeof preloadVoicePack>[1];
       let finish!: () => void;
       vi.mocked(preloadVoicePack).mockImplementation(
@@ -120,18 +120,18 @@ describe('useLanguageSwitch', () => {
       act(() => {
         confirming = result.current.confirm();
       });
-      act(() => report?.(0, { loaded: 60, total: 100, progress: 0.6 }));
-      act(() => report?.(0, { loaded: 40, total: 100, progress: 0.4 }));
+      act(() => report?.({ loaded: 60, total: 100, progress: 0.6 }));
+      act(() => report?.({ loaded: 40, total: 100, progress: 0.4 }));
 
       expect(result.current.isDownloading).toBe(true);
       expect(result.current.progress).toEqual({
-        index: 1,
-        total: LANGUAGES['es-MX'].voiceIds.length,
+        loaded: 60,
+        total: 100,
         percent: 60,
         isFinishing: false,
       });
 
-      act(() => report?.(0, { loaded: 100, total: 100, progress: 1 }));
+      act(() => report?.({ loaded: 100, total: 100, progress: 1 }));
       expect(result.current.progress?.isFinishing).toBe(true);
 
       await act(async () => {

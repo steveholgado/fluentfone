@@ -267,6 +267,7 @@ describe('usePreload', () => {
       expect(preloadAll).toHaveBeenCalledWith(
         OTHER_VOICE,
         expect.any(Function),
+        expect.any(Function),
       );
     });
   });
@@ -276,11 +277,7 @@ describe('usePreload', () => {
       vi.mocked(checkPreloaded).mockResolvedValue(status(false));
       vi.mocked(isFullyPreloaded).mockReturnValue(false);
       vi.mocked(preloadAll).mockImplementation(async (_voice, onProgress) => {
-        onProgress?.('speech-to-text', {
-          loaded: 500_000,
-          total: 1_000_000,
-          progress: 0.5,
-        });
+        onProgress?.({ loaded: 500_000, total: 1_000_000, progress: 0.5 });
         return undefined;
       });
 
@@ -297,132 +294,97 @@ describe('usePreload', () => {
       expect(result.current.phase).toBe('needed');
     });
 
-    it('gives every step a slot, including ones the check called cached', async () => {
-      // preloadAll runs all five whatever the check found, so a step whose
-      // marker claims it is on disk while the bytes are not still downloads in
-      // full. Dropping its reports for want of a slot is what left the bar
-      // frozen on the previous step's 100% for the length of that download.
-      vi.mocked(checkPreloaded).mockResolvedValue(
-        status(true, { chat: false }),
-      );
-      vi.mocked(isFullyPreloaded).mockReturnValue(false);
-
-      const { result } = renderHook(() => usePreload(VOICE));
-      await waitFor(() => expect(result.current.phase).toBe('needed'));
-
-      let resolvePreloadAll: () => void = () => {};
-      vi.mocked(preloadAll).mockImplementation(async (_voice, onProgress) => {
-        onProgress?.('text-to-speech', { loaded: 1, total: 1, progress: 1 });
-        onProgress?.('speech-to-text', { loaded: 1, total: 1, progress: 1 });
-        onProgress?.('chat', {
-          loaded: 500_000,
-          total: 1_000_000,
-          progress: 0.5,
-        });
-        return new Promise((resolve) => {
-          resolvePreloadAll = () => resolve(undefined);
-        });
-      });
-
-      act(() => {
-        void result.current.preload();
-      });
-
-      await waitFor(() =>
-        expect(result.current.progress).toEqual({
-          index: 5,
-          total: 5,
-          percent: 50,
-          isFinishing: false,
-        }),
-      );
-
-      await act(async () => {
-        resolvePreloadAll();
-      });
-    });
-
-    it('gives a runtime download its own step, so the bar does not stick', async () => {
-      // The runtime and the model it feeds are separate steps precisely so
-      // that each gets a full 0→100 sweep. Reported as one step, the second
-      // download would be clamped behind the first one's peak.
+    /**
+     * Starts a download whose reports the test feeds by hand, held open until
+     * the returned `finish` is called.
+     */
+    async function startDownload() {
       vi.mocked(checkPreloaded).mockResolvedValue(status(false));
       vi.mocked(isFullyPreloaded).mockReturnValue(false);
 
-      const { result } = renderHook(() => usePreload(VOICE));
-      await waitFor(() => expect(result.current.phase).toBe('needed'));
+      const hook = renderHook(() => usePreload(VOICE));
+      await waitFor(() => expect(hook.result.current.phase).toBe('needed'));
 
-      let resolvePreloadAll: () => void = () => {};
-      vi.mocked(preloadAll).mockImplementation(async (_voice, onProgress) => {
-        onProgress?.('text-to-speech-runtime', {
-          loaded: 1,
-          total: 1,
-          progress: 1,
-        });
-        onProgress?.('text-to-speech', {
-          loaded: 250_000,
-          total: 1_000_000,
-          progress: 0.25,
-        });
+      let onProgress: Parameters<typeof preloadAll>[1];
+      let onStepDone: Parameters<typeof preloadAll>[2];
+      let finish: () => void = () => {};
+      vi.mocked(preloadAll).mockImplementation(async (_voice, p, d) => {
+        onProgress = p;
+        onStepDone = d;
         return new Promise((resolve) => {
-          resolvePreloadAll = () => resolve(undefined);
+          finish = () => resolve(undefined);
         });
       });
 
       act(() => {
-        void result.current.preload();
+        void hook.result.current.preload();
+      });
+      await waitFor(() => expect(onProgress).toBeDefined());
+
+      return {
+        result: hook.result,
+        report: (loaded: number, total: number) =>
+          act(() => onProgress?.({ loaded, total, progress: loaded / total })),
+        stepDone: (step: Parameters<NonNullable<typeof onStepDone>>[0]) =>
+          act(() => onStepDone?.(step)),
+        finish: () =>
+          act(async () => {
+            finish();
+          }),
+      };
+    }
+
+    it('reports one figure for the whole download', async () => {
+      const download = await startDownload();
+
+      download.report(250, 1000);
+
+      expect(download.result.current.progress).toEqual({
+        loaded: 250,
+        total: 1000,
+        percent: 25,
+        isFinishing: false,
       });
 
-      // Step 2 of 5, back down at 25% — not pinned at the runtime's 100%.
-      await waitFor(() =>
-        expect(result.current.progress).toEqual({
-          index: 2,
-          total: 5,
-          percent: 25,
-          isFinishing: false,
-        }),
-      );
-
-      await act(async () => {
-        resolvePreloadAll();
-      });
+      await download.finish();
     });
 
-    it('marks progress as finishing once a step hits 100% but preloadAll has not moved past it', async () => {
-      vi.mocked(checkPreloaded).mockResolvedValue(status(false));
-      vi.mocked(isFullyPreloaded).mockReturnValue(false);
+    it('never moves the bar backward', async () => {
+      // A file's size arriving with its headers can raise the total mid-run.
+      const download = await startDownload();
 
-      const { result } = renderHook(() => usePreload(VOICE));
-      await waitFor(() => expect(result.current.phase).toBe('needed'));
+      download.report(500, 1000);
+      download.report(500, 1250);
 
-      let resolvePreloadAll: () => void = () => {};
-      vi.mocked(preloadAll).mockImplementation(async (_voice, onProgress) => {
-        onProgress?.('text-to-speech-runtime', {
-          loaded: 1,
-          total: 1,
-          progress: 1,
-        });
-        return new Promise((resolve) => {
-          resolvePreloadAll = () => resolve(undefined);
-        });
-      });
-
-      act(() => {
-        void result.current.preload();
-      });
-
-      await waitFor(() =>
-        expect(result.current.progress).toEqual({
-          index: 1,
-          total: 5,
-          percent: 100,
-          isFinishing: true,
-        }),
+      expect(download.result.current.progress).toEqual(
+        expect.objectContaining({ percent: 50, total: 1250 }),
       );
 
-      await act(async () => {
-        resolvePreloadAll();
-      });
+      await download.finish();
+    });
+
+    it('marks progress as finishing once every byte is in but the download has not resolved', async () => {
+      const download = await startDownload();
+
+      download.report(1000, 1000);
+
+      expect(download.result.current.progress?.isFinishing).toBe(true);
+
+      await download.finish();
+    });
+
+    it('ticks each step off as it finishes, before the rest are done', async () => {
+      const download = await startDownload();
+
+      download.stepDone('text-to-speech');
+
+      expect(download.result.current.cached).toEqual(
+        status(false, { 'text-to-speech': true }),
+      );
+
+      await download.finish();
+
+      expect(download.result.current.cached).toEqual(status(true));
     });
 
     it('sets an error status and stops preloading on failure', async () => {

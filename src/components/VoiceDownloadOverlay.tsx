@@ -52,7 +52,7 @@ export function VoiceDownloadOverlay({
 
       {isDownloading && progress ? (
         <DownloadProgressBar
-          current={progress.index}
+          loaded={progress.loaded}
           total={progress.total}
           percent={progress.percent}
           isFinishing={progress.isFinishing}

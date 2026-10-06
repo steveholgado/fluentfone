@@ -1,8 +1,12 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
 
 import { LANGUAGES, type LanguageId } from '#/config';
 import { isVoicePackCached, preloadVoicePack } from '#/lib/preload';
-import type { PreloadPhase, PreloadProgress } from '#/hooks/usePreload';
+import {
+  advanceProgress,
+  type PreloadPhase,
+  type PreloadProgress,
+} from '#/hooks/usePreload';
 
 interface LanguageSwitchOptions {
   phase: PreloadPhase;
@@ -29,10 +33,6 @@ export function useLanguageSwitch({
   const [progress, setProgress] = useState<PreloadProgress | null>(null);
   const [failed, setFailed] = useState(false);
 
-  // As in usePreload: never report a lower percent for the voice currently
-  // downloading, so the bar can't jump backward.
-  const maxPercentRef = useRef({ index: 0, percent: 0 });
-
   const request = useCallback(
     async (next: LanguageId) => {
       if (next === language) return;
@@ -57,29 +57,12 @@ export function useLanguageSwitch({
     const { voiceIds } = LANGUAGES[pending];
     setIsDownloading(true);
     setFailed(false);
-    maxPercentRef.current = { index: 0, percent: 0 };
+    setProgress(null);
 
     try {
-      await preloadVoicePack(voiceIds, (position, p) => {
-        const index = position + 1;
-        const rawPercent = Math.round(p.progress * 100);
-
-        if (index !== maxPercentRef.current.index) {
-          maxPercentRef.current = { index, percent: rawPercent };
-        } else {
-          maxPercentRef.current.percent = Math.max(
-            maxPercentRef.current.percent,
-            rawPercent,
-          );
-        }
-
-        setProgress({
-          index,
-          total: voiceIds.length,
-          percent: maxPercentRef.current.percent,
-          isFinishing: maxPercentRef.current.percent >= 100,
-        });
-      });
+      await preloadVoicePack(voiceIds, (p) =>
+        setProgress((previous) => advanceProgress(previous, p)),
+      );
       setLanguage(pending);
       setPending(null);
     } catch (err) {

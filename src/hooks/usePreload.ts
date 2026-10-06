@@ -2,11 +2,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
   checkPreloaded,
-  DOWNLOAD_ORDER,
   isFullyPreloaded,
   preloadAll,
   type PreloadStatus,
 } from '#/lib/preload';
+import type { LoadProgress } from '#/lib/progress';
 import { sweepStaleAssets } from '#/lib/preload/sweep';
 import { checkDeviceSupport, type DeviceSupport } from '#/lib/device';
 import { requestPersistentStorage } from '#/lib/persist';
@@ -20,19 +20,43 @@ import { ensureController } from '#/lib/sw-client';
  */
 export type PreloadPhase = 'checking' | 'unsupported' | 'needed' | 'ready';
 
-/** Progress through the current model download, for the progress bar. */
+/** Progress through the whole download, for the progress bar. */
 export interface PreloadProgress {
-  /** 1-based position of the model currently downloading. */
-  index: number;
+  /** Bytes in so far, across every file downloading. */
+  loaded: number;
+  /** Bytes the download comes to, as best known so far. */
   total: number;
   percent: number;
   /**
-   * True once this model's bytes have fully landed but its preload step
-   * hasn't resolved yet — e.g. compiling/initializing the engine, or writing
-   * the file to disk. That work isn't reflected in `percent`, so the bar
-   * would otherwise just sit at 100% with no explanation.
+   * True once every byte has landed but the download hasn't resolved yet —
+   * the last files still being written to disk, say. That work isn't
+   * reflected in `percent`, so the bar would otherwise just sit at 100% with
+   * no explanation.
    */
   isFinishing: boolean;
+}
+
+/**
+ * Folds the latest report into the bar's state. Reports can arrive out of
+ * order, or dip slightly as chunks land and totals firm up, so the percent and
+ * the byte count only ever move forward — keeps the bar from visibly jumping
+ * backward.
+ */
+export function advanceProgress(
+  previous: PreloadProgress | null,
+  p: LoadProgress,
+): PreloadProgress {
+  const percent = Math.max(
+    previous?.percent ?? 0,
+    Math.round(p.progress * 100),
+  );
+
+  return {
+    loaded: Math.max(previous?.loaded ?? 0, p.loaded),
+    total: p.total,
+    percent,
+    isFinishing: percent >= 100,
+  };
 }
 
 const NOTHING_CACHED: PreloadStatus = {
@@ -147,54 +171,22 @@ export function usePreload(voiceId: string) {
     };
   }, [phase, voiceId]);
 
-  // Progress can be reported out of order or dip slightly as chunks land, so
-  // track the highest percent seen for the model currently downloading and
-  // never report a lower one — keeps the bar from visibly jumping backward.
-  const maxPercentRef = useRef({ index: 0, percent: 0 });
-
   const preload = useCallback(async () => {
     // The UI doesn't offer the button in this phase, but downloading gigabytes
     // onto a device that can't use them is worth refusing at the source too.
     if (phase === 'unsupported') return;
 
     setIsPreloading(true);
-    maxPercentRef.current = { index: 0, percent: 0 };
+    setProgress(null);
 
-    // Every step gets a slot, including ones the check said were already
-    // cached. preloadAll runs all of them regardless of what the check found,
-    // so a step whose marker claims it is on disk while the bytes are not —
-    // a cache write that failed after the marker was written, say — would
-    // otherwise download in full with no slot to report into, leaving the bar
-    // frozen on the previous step. Steps that really are cached cost a slot
-    // the bar passes through in a frame.
     try {
-      await preloadAll(voiceId, (step, p) => {
-        const position = DOWNLOAD_ORDER.indexOf(step);
-        if (position === -1) return;
-        const index = position + 1;
-
-        const rawPercent = Math.round(p.progress * 100);
-
-        if (index !== maxPercentRef.current.index) {
-          maxPercentRef.current = { index, percent: rawPercent };
-        } else {
-          maxPercentRef.current.percent = Math.max(
-            maxPercentRef.current.percent,
-            rawPercent,
-          );
-        }
-
-        setProgress({
-          index,
-          total: DOWNLOAD_ORDER.length,
-          percent: maxPercentRef.current.percent,
-          // All of this step's bytes are in, but preloadAll() hasn't moved
-          // on to the next step yet — it's still inside this one's preload()
-          // call, past the download and into whatever unreported work comes
-          // after (compiling/initializing, writing to disk).
-          isFinishing: maxPercentRef.current.percent >= 100,
-        });
-      });
+      await preloadAll(
+        voiceId,
+        (p) => setProgress((previous) => advanceProgress(previous, p)),
+        // Ticks the checklist as each step lands, rather than all at once at
+        // the end — the small ones finish long before the chat model does.
+        (step) => setCached((previous) => ({ ...previous, [step]: true })),
+      );
       setCached(ALL_CACHED);
       setProgress(null);
     } catch (err) {

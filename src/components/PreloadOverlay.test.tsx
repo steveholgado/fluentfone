@@ -52,6 +52,28 @@ describe('PreloadOverlay', () => {
     );
   });
 
+  it('keeps quoting the whole download while rows tick off mid-download', () => {
+    // What's left shrinks as each step lands; the note stays with the bar.
+    render(
+      <PreloadOverlay
+        {...BASE}
+        cached={status(false, { 'text-to-speech': true })}
+        isPreloading
+        progress={{
+          loaded: 500_000_000,
+          total: 2_000_000_000,
+          percent: 25,
+          isFinishing: false,
+        }}
+      />,
+    );
+
+    expect(screen.getByText(/downloads about/)).toHaveTextContent(
+      'This app downloads about 2.0 GB',
+    );
+    expect(screen.getByText('500 MB of 2.0 GB')).toBeInTheDocument();
+  });
+
   it('still offers the download', () => {
     render(<PreloadOverlay {...BASE} />);
 

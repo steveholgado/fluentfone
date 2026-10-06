@@ -87,7 +87,19 @@ async function report(message: AssetProgressMessage) {
 }
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  // Reset rather than cleared: several tests below leave a step hanging on
+  // purpose, and an implementation kept from one would hang the next.
+  vi.resetAllMocks();
+  vi.mocked(speechToText.preload).mockResolvedValue(undefined);
+  vi.mocked(speechToText.isCached).mockResolvedValue(false);
+  vi.mocked(chat.preload).mockResolvedValue(undefined);
+  vi.mocked(chat.preloadRuntime).mockResolvedValue(undefined);
+  vi.mocked(chat.isCached).mockResolvedValue(false);
+  vi.mocked(chat.isRuntimeCached).mockResolvedValue(false);
+  vi.mocked(textToSpeech.preload).mockResolvedValue(undefined);
+  vi.mocked(textToSpeech.preloadRuntime).mockResolvedValue(undefined);
+  vi.mocked(textToSpeech.isCached).mockResolvedValue(false);
+  vi.mocked(textToSpeech.isRuntimeCached).mockResolvedValue(false);
 });
 
 afterEach(() => {
@@ -99,44 +111,44 @@ afterEach(() => {
 });
 
 describe('preloadAll', () => {
-  it('downloads each runtime immediately before the model that needs it, smallest capability first', async () => {
-    const order: string[] = [];
+  it('starts every step without waiting on the others', async () => {
+    // Nothing here builds anything, so the only thing the steps share is
+    // bandwidth: none of them should be held back behind another.
+    const started: string[] = [];
+    const never = () => new Promise<void>(() => {});
 
     vi.mocked(textToSpeech.preloadRuntime).mockImplementation(async () => {
-      order.push('text-to-speech-runtime');
+      started.push('text-to-speech-runtime');
+      await never();
     });
     vi.mocked(textToSpeech.preload).mockImplementation(async () => {
-      order.push('text-to-speech');
+      started.push('text-to-speech');
+      await never();
     });
     vi.mocked(speechToText.preload).mockImplementation(async () => {
-      order.push('speech-to-text');
+      started.push('speech-to-text');
+      await never();
     });
     vi.mocked(chat.preloadRuntime).mockImplementation(async () => {
-      order.push('chat-runtime');
+      started.push('chat-runtime');
+      await never();
     });
     vi.mocked(chat.preload).mockImplementation(async () => {
-      order.push('chat');
+      started.push('chat');
+      await never();
     });
 
-    await preloadAll('en_US-hfc_female-medium');
+    void preloadAll('en_US-hfc_female-medium');
 
-    // Speech-to-text is one step, not two: its wasm runtime cannot be
-    // downloaded without also building the pipeline.
-    expect(order).toEqual([
-      'text-to-speech-runtime',
-      'text-to-speech',
-      'speech-to-text',
-      'chat-runtime',
-      'chat',
-    ]);
+    await vi.waitFor(() =>
+      expect([...started].sort()).toEqual([...DOWNLOAD_ORDER].sort()),
+    );
     expect(textToSpeech.preload).toHaveBeenCalledWith(
       'en_US-hfc_female-medium',
     );
   });
 
-  it('attributes reported bytes to whichever step is running', async () => {
-    // The worker says only what it is streaming; running one step at a time is
-    // what makes those bytes attributable to a step at all.
+  it('sums reported bytes from every step into one figure', async () => {
     vi.mocked(chat.preload).mockImplementation(async () => {
       await report({
         step: 'chat',
@@ -145,26 +157,11 @@ describe('preloadAll', () => {
         total: 100,
       });
     });
-
-    const onProgress = vi.fn();
-    await preloadAll('voice-id', onProgress);
-
-    // The denominator is the step's business (asset-progress owns the floor);
-    // what matters here is that the bytes were attributed to 'chat' at all.
-    expect(onProgress).toHaveBeenCalledWith(
-      'chat',
-      expect.objectContaining({ loaded: 30 }),
-    );
-  });
-
-  it('ignores bytes belonging to a step that is not running', async () => {
-    // A late report from the previous step would otherwise land on this one's
-    // bar, which only moves forward and so could never recover.
-    vi.mocked(chat.preloadRuntime).mockImplementation(async () => {
+    vi.mocked(speechToText.preload).mockImplementation(async () => {
       await report({
-        step: 'chat',
-        url: 'https://huggingface.co/litert-community/m.litertlm',
-        loaded: 30,
+        step: 'speech-to-text',
+        url: 'https://huggingface.co/onnx-community/whisper/e.onnx',
+        loaded: 20,
         total: 100,
       });
     });
@@ -172,27 +169,97 @@ describe('preloadAll', () => {
     const onProgress = vi.fn();
     await preloadAll('voice-id', onProgress);
 
-    expect(onProgress).not.toHaveBeenCalledWith(
-      'chat-runtime',
-      expect.objectContaining({ loaded: 30 }),
-    );
+    // The denominator is the tracker's business; what matters here is that
+    // both steps' bytes reached the same figure — on top of the three steps
+    // that reported nothing, which count in full once they finish.
+    const finishedSilently =
+      EXPECTED_BYTES['text-to-speech-runtime'] +
+      EXPECTED_BYTES['text-to-speech'] +
+      EXPECTED_BYTES['chat-runtime'];
+    const loaded = onProgress.mock.calls.map(([p]) => p.loaded);
+    expect(loaded).toContain(finishedSilently + 50);
   });
 
-  it('opens every step at zero, so a silent one cannot inherit the last full bar', async () => {
-    // A step that reports no bytes — served from cache, or downloading
-    // somewhere the worker cannot see — otherwise never touches the UI at all,
-    // leaving the previous step's terminal 100% on screen as "Finishing up…"
-    // for as long as it runs.
+  it('counts only what the check finds missing towards the total', async () => {
+    // The same figure the preload screen quoted before the download began.
+    vi.mocked(chat.isCached).mockResolvedValueOnce(true);
+    vi.mocked(chat.isRuntimeCached).mockResolvedValueOnce(true);
+
+    const onProgress = vi.fn();
+    await preloadAll('voice-id', onProgress);
+
+    expect(onProgress.mock.calls[0]?.[0]).toEqual({
+      loaded: 0,
+      total: bytesNeeded(status(false, { chat: true, 'chat-runtime': true })),
+      progress: 0,
+    });
+  });
+
+  it('opens at zero, so the bar shows before any bytes arrive', async () => {
+    // A run served entirely from cache reports no bytes at all.
     const onProgress = vi.fn();
 
     await preloadAll('voice-id', onProgress);
 
-    for (const step of DOWNLOAD_ORDER) {
-      const first = onProgress.mock.calls.find(
-        ([reported]) => reported === step,
-      );
-      expect(first?.[1]).toEqual({ loaded: 0, total: 1, progress: 0 });
-    }
+    expect(onProgress.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({ loaded: 0, progress: 0 }),
+    );
+  });
+
+  it('lands on 100%, however little each step reported', async () => {
+    // "Finishing up…" keys off this: the bytes are in, but the download has
+    // not resolved yet.
+    const onProgress = vi.fn();
+
+    await preloadAll('voice-id', onProgress);
+
+    expect(onProgress).toHaveBeenLastCalledWith(
+      expect.objectContaining({ progress: 1 }),
+    );
+  });
+
+  it('says when each step finishes, as it does', async () => {
+    let finishChat: () => void = () => {};
+    vi.mocked(chat.preload).mockImplementation(
+      () => new Promise<void>((resolve) => (finishChat = resolve)),
+    );
+
+    const onStepDone = vi.fn();
+    const done = preloadAll('voice-id', undefined, onStepDone);
+
+    await vi.waitFor(() => expect(onStepDone).toHaveBeenCalledTimes(4));
+    expect(onStepDone).not.toHaveBeenCalledWith('chat');
+
+    finishChat();
+    await done;
+
+    expect(onStepDone).toHaveBeenLastCalledWith('chat');
+  });
+
+  it('lets the other steps finish before rejecting with a failure', async () => {
+    // Nothing should still be downloading behind a screen that says the
+    // download failed, or a retry would fetch the same files twice.
+    let finishChat: () => void = () => {};
+    vi.mocked(chat.preload).mockImplementation(
+      () => new Promise<void>((resolve) => (finishChat = resolve)),
+    );
+    vi.mocked(speechToText.preload).mockRejectedValueOnce(new Error('offline'));
+
+    const onStepDone = vi.fn();
+    let settled = false;
+    const done = preloadAll('voice-id', undefined, onStepDone).finally(() => {
+      settled = true;
+    });
+    done.catch(() => {});
+
+    await vi.waitFor(() => expect(onStepDone).toHaveBeenCalledTimes(3));
+    expect(settled).toBe(false);
+
+    finishChat();
+
+    await expect(done).rejects.toThrow('offline');
+    expect(onStepDone).toHaveBeenCalledWith('chat');
+    expect(onStepDone).not.toHaveBeenCalledWith('speech-to-text');
   });
 
   it('clears a write failure from an earlier run before the step works', async () => {
@@ -223,29 +290,6 @@ describe('preloadAll', () => {
     await preloadAll('voice-id');
 
     await expect(hasStep('chat', 'model')).resolves.toBe(false);
-  });
-
-  it('lands every step on 100%, however little it reported', async () => {
-    // "Finishing up…" keys off this: the bytes are in, but the step is still
-    // compiling or writing to disk. A step served entirely from cache reports
-    // nothing at all and goes straight here.
-    const onProgress = vi.fn();
-
-    await preloadAll('voice-id', onProgress);
-
-    for (const step of [
-      'text-to-speech-runtime',
-      'text-to-speech',
-      'speech-to-text',
-      'chat-runtime',
-      'chat',
-    ]) {
-      expect(onProgress).toHaveBeenCalledWith(step, {
-        loaded: 1,
-        total: 1,
-        progress: 1,
-      });
-    }
   });
 });
 
@@ -344,40 +388,40 @@ describe('isLabelPreloaded', () => {
 describe('preloadVoicePack', () => {
   const PACK = ['es_MX-ald-medium', 'es_MX-claude-high'];
 
-  it('downloads every voice in the pack, in order, and nothing else', async () => {
-    const order: string[] = [];
-    vi.mocked(textToSpeech.preload).mockImplementation(async (voiceId) => {
-      order.push(voiceId);
-    });
-
+  it('downloads every voice in the pack, and nothing else', async () => {
     await preloadVoicePack(PACK);
 
-    expect(order).toEqual(PACK);
+    expect(
+      vi.mocked(textToSpeech.preload).mock.calls.map(([id]) => id),
+    ).toEqual(PACK);
     expect(textToSpeech.preloadRuntime).not.toHaveBeenCalled();
     expect(speechToText.preload).not.toHaveBeenCalled();
     expect(chat.preloadRuntime).not.toHaveBeenCalled();
     expect(chat.preload).not.toHaveBeenCalled();
   });
 
-  it('runs each voice from zero to 100%, keyed by its place in the pack', async () => {
+  it('runs once from zero to 100% for the whole pack', async () => {
     const onProgress = vi.fn();
 
     await preloadVoicePack(PACK, onProgress);
 
     expect(onProgress.mock.calls).toEqual([
-      [0, { loaded: 0, total: 1, progress: 0 }],
-      [0, { loaded: 1, total: 1, progress: 1 }],
-      [1, { loaded: 0, total: 1, progress: 0 }],
-      [1, { loaded: 1, total: 1, progress: 1 }],
+      [{ loaded: 0, total: voicePackBytes(PACK), progress: 0 }],
+      [
+        {
+          loaded: voicePackBytes(PACK),
+          total: voicePackBytes(PACK),
+          progress: 1,
+        },
+      ],
     ]);
   });
 
-  it('attributes reported voice bytes to the voice downloading', async () => {
+  it('sums the bytes of every voice in the pack', async () => {
     vi.mocked(textToSpeech.preload).mockImplementation(async (voiceId) => {
-      if (voiceId !== PACK[1]) return;
       await report({
         step: 'text-to-speech',
-        url: 'https://huggingface.co/diffusionstudio/piper-voices/v.onnx',
+        url: `https://huggingface.co/diffusionstudio/piper-voices/${voiceId}.onnx`,
         loaded: 30,
         total: 100,
       });
@@ -386,21 +430,42 @@ describe('preloadVoicePack', () => {
     const onProgress = vi.fn();
     await preloadVoicePack(PACK, onProgress);
 
-    expect(onProgress).toHaveBeenCalledWith(
-      1,
-      expect.objectContaining({ loaded: 30 }),
+    const loaded = onProgress.mock.calls.map(([p]) => p.loaded);
+    expect(loaded).toContain(60);
+  });
+
+  it('fills the bar only once every voice is done', async () => {
+    // Both voices are one step; the first to finish must not complete it.
+    let finishSecond: () => void = () => {};
+    vi.mocked(textToSpeech.preload).mockImplementation((voiceId) =>
+      voiceId === PACK[1]
+        ? new Promise<void>((resolve) => (finishSecond = resolve))
+        : Promise.resolve(),
     );
+
+    const onProgress = vi.fn();
+    const done = preloadVoicePack(PACK, onProgress);
+
+    await vi.waitFor(() =>
+      expect(textToSpeech.preload).toHaveBeenCalledTimes(2),
+    );
+    await Promise.resolve();
     expect(onProgress).not.toHaveBeenCalledWith(
-      0,
-      expect.objectContaining({ loaded: 30 }),
+      expect.objectContaining({ progress: 1 }),
+    );
+
+    finishSecond();
+    await done;
+
+    expect(onProgress).toHaveBeenLastCalledWith(
+      expect.objectContaining({ progress: 1 }),
     );
   });
 
-  it('stops at the first voice that fails, and rejects', async () => {
+  it('rejects when a voice fails', async () => {
     vi.mocked(textToSpeech.preload).mockRejectedValueOnce(new Error('offline'));
 
     await expect(preloadVoicePack(PACK)).rejects.toThrow('offline');
-    expect(textToSpeech.preload).toHaveBeenCalledTimes(1);
   });
 });
 

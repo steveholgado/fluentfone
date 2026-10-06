@@ -60,12 +60,20 @@ describe('VoiceDownloadOverlay', () => {
       <VoiceDownloadOverlay
         {...BASE}
         isDownloading
-        progress={{ index: 1, total: 1, percent: 40, isFinishing: false }}
+        progress={{
+          loaded: 40_000_000,
+          total: 100_000_000,
+          percent: 40,
+          isFinishing: false,
+        }}
       />,
     );
 
-    expect(screen.getByText('Downloading 1 of 1')).toBeInTheDocument();
-    expect(screen.getByText('40%')).toBeInTheDocument();
+    expect(screen.getByText('Downloading')).toBeInTheDocument();
+    expect(screen.getByText('40 MB of 100 MB')).toBeInTheDocument();
+    expect(
+      screen.getByRole('progressbar', { name: 'Download progress' }),
+    ).toHaveAttribute('aria-valuenow', '40');
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
   });
 

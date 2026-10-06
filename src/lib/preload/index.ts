@@ -3,8 +3,8 @@ import * as chat from '#/lib/chat';
 import * as textToSpeech from '#/lib/text-to-speech';
 import { clearWriteFailed } from '#/lib/cache/markers';
 import { EXPECTED_BYTES } from '#/lib/cache/rules';
-import type { LoadProgress } from '#/lib/progress';
-import { trackStep } from './track';
+import type { ProgressCallback } from '#/lib/progress';
+import { trackDownload, type StepEstimates } from './track';
 import { DOWNLOAD_ORDER, STEPS_BY_LABEL } from './steps';
 import type { PreloadLabel, PreloadStatus, PreloadStepId } from './steps';
 
@@ -18,82 +18,127 @@ export type { PreloadLabel, PreloadStatus, PreloadStepId };
 /**
  * Downloads everything the conversation needs — the wasm runtimes and the
  * three model files (Piper, Whisper, Gemma) — so the first real conversation
- * turn doesn't pay any download cost. Runs sequentially, since they compete
- * for bandwidth, smallest first, so the progress indicator shows real movement
- * quickly instead of stalling on the (much larger) chat model first.
+ * turn doesn't pay any download cost.
  *
- * Sequential is also what makes progress attributable: the service worker
- * reports bytes for whatever it is streaming, and the step currently being
- * awaited is what those bytes belong to. Running two steps at once would mix
- * them together.
+ * All at once rather than one after another. Nothing here builds anything, so
+ * the only thing the steps share is bandwidth, and running them together
+ * overlaps the gaps a sequence leaves between them — worker start-up,
+ * redirects, the wait for first bytes — and any per-connection limit a CDN
+ * puts on a single stream. Progress stays attributable regardless: the service
+ * worker tags every report with the step its URL belongs to.
  *
  * Deliberately stops short of building anything from them — the voice's
  * session, Whisper's pipeline, the chat engine. Each holds far more while it
  * builds than it keeps, so the conversation builds them when it starts, one
  * after another (see prepareGreeting in useConversation). Only the chat
- * runtime is loaded here, not just fetched.
+ * runtime is loaded here, not just fetched, and at tens of megabytes it can
+ * share the moment with the others.
+ *
+ * `onProgress` hears one figure for the whole download. Its total is what the
+ * check finds missing — the same figure the preload screen quoted — though
+ * every step still runs: one the check calls cached costs next to nothing,
+ * and one whose marker outlived its bytes downloads anyway, its bytes joining
+ * the total as they're seen. `onStepDone` hears each step as it finishes, in
+ * whatever order that turns out to be.
  *
  * When everything is already cached this doesn't run at all.
  */
-const START: LoadProgress = { loaded: 0, total: 1, progress: 0 };
-const DONE: LoadProgress = { loaded: 1, total: 1, progress: 1 };
-
 export async function preloadAll(
   voiceId: string,
-  onProgress?: (step: PreloadStepId, p: LoadProgress) => void,
+  onProgress?: ProgressCallback,
+  onStepDone?: (step: PreloadStepId) => void,
 ): Promise<void> {
-  await runStep(
-    'text-to-speech-runtime',
-    () => textToSpeech.preloadRuntime(),
+  const cached = await checkPreloaded(voiceId);
+
+  await runTogether(
+    [
+      {
+        step: 'text-to-speech-runtime',
+        work: () => textToSpeech.preloadRuntime(),
+      },
+      { step: 'text-to-speech', work: () => textToSpeech.preload(voiceId) },
+      { step: 'speech-to-text', work: () => speechToText.preload() },
+      { step: 'chat-runtime', work: () => chat.preloadRuntime() },
+      { step: 'chat', work: () => chat.preload() },
+    ],
+    Object.fromEntries(
+      DOWNLOAD_ORDER.map((step) => [
+        step,
+        cached[step] ? 0 : EXPECTED_BYTES[step],
+      ]),
+    ),
     onProgress,
+    onStepDone,
   );
-  await runStep(
-    'text-to-speech',
-    () => textToSpeech.preload(voiceId),
-    onProgress,
-  );
-  await runStep('speech-to-text', () => speechToText.preload(), onProgress);
-  await runStep('chat-runtime', () => chat.preloadRuntime(), onProgress);
-  await runStep('chat', () => chat.preload(), onProgress);
+}
+
+interface Job {
+  step: PreloadStepId;
+  work: () => Promise<unknown>;
 }
 
 /**
- * Runs one step with its own progress subscription, bracketed by START and
- * DONE.
+ * Starts every job at once, under one progress subscription that sums them.
  *
- * Both ends are emitted whatever the step itself reported, and the opening
- * START is the load-bearing one: without it a step that reports no bytes never
- * touches the UI at all, so the screen keeps rendering the *previous* step's
- * DONE — a full bar reading "Finishing up…" for however long this step takes.
- * A silent step is not a hypothetical, either: it is what a step served
- * entirely from cache is (the service worker counts only network bytes), and
- * what any step becomes the moment its bytes arrive somewhere the service
- * worker can't see them.
+ * A step is counted complete once every job behind it has resolved — a voice
+ * pack is several jobs of the same step — at which point its share of the bar
+ * is filled whatever its files reported. That covers a step served entirely
+ * from cache (the service worker counts only network bytes) and one that came
+ * in under its estimate; without it the bar would finish short and sit there.
  *
- * The terminal DONE is what the "Finishing up…" state legitimately keys off,
- * while the step does its unreported tail work (compiling, writing to disk).
+ * Settles everything before rejecting with the first failure, rather than
+ * rejecting the moment one fails. The rest are left to finish, so what they
+ * fetched is kept for a retry, and nothing is still downloading behind a
+ * screen that says the download failed — a retry started then would fetch the
+ * same files a second time.
  */
-async function runStep(
-  step: PreloadStepId,
-  work: () => Promise<unknown>,
-  onProgress?: (step: PreloadStepId, p: LoadProgress) => void,
+async function runTogether(
+  jobs: Job[],
+  estimates: StepEstimates,
+  onProgress?: ProgressCallback,
+  onStepDone?: (step: PreloadStepId) => void,
 ): Promise<void> {
-  onProgress?.(step, START);
+  const steps = [...new Set(jobs.map((job) => job.step))];
 
   // Every write this run makes is tested afresh: a failure recorded by an
   // earlier run must not outlive a retry that succeeds, and one this run hits
   // is recorded again. Before the work, so it can't erase this run's own.
-  await clearWriteFailed(step);
+  await Promise.all(steps.map((step) => clearWriteFailed(step)));
 
-  const stop = trackStep(step, (p) => onProgress?.(step, p));
+  const tracker = trackDownload(estimates, onProgress);
+
+  // Opened at zero before any bytes arrive, so the bar shows straight away
+  // rather than waiting on the first report — which, for a run served from
+  // cache, never comes.
+  onProgress?.({
+    loaded: 0,
+    total: Object.values(estimates).reduce((sum, bytes) => sum + bytes, 0),
+    progress: 0,
+  });
+
+  const remaining = new Map(
+    steps.map((step) => [step, jobs.filter((job) => job.step === step).length]),
+  );
 
   try {
-    await work();
-  } finally {
-    stop();
-  }
+    const results = await Promise.allSettled(
+      jobs.map(async ({ step, work }) => {
+        await work();
 
-  onProgress?.(step, DONE);
+        const left = remaining.get(step)! - 1;
+        remaining.set(step, left);
+        if (left === 0) {
+          tracker.complete(step);
+          onStepDone?.(step);
+        }
+      }),
+    );
+
+    const failure = results.find((result) => result.status === 'rejected');
+    if (failure) throw failure.reason;
+  } finally {
+    tracker.stop();
+  }
 }
 
 /**
@@ -157,23 +202,23 @@ export function isLabelPreloaded(
 
 /**
  * Downloads a language's voices, for a switch to it once the app is already
- * set up. One step per voice, in order, each a full 0→100% run of the bar;
- * `onProgress` says which voice by its position in `voiceIds`.
+ * set up. All at once, under one bar, as preloadAll does.
  *
  * Only the voices: the piper runtime they share came with preloadAll. Were
  * it gone since, the voice's worker would fetch it anyway, just unreported.
  */
 export async function preloadVoicePack(
   voiceIds: readonly string[],
-  onProgress?: (index: number, p: LoadProgress) => void,
+  onProgress?: ProgressCallback,
 ): Promise<void> {
-  for (const [index, voiceId] of voiceIds.entries()) {
-    await runStep(
-      'text-to-speech',
-      () => textToSpeech.preload(voiceId),
-      onProgress && ((_step, p) => onProgress(index, p)),
-    );
-  }
+  await runTogether(
+    voiceIds.map((voiceId) => ({
+      step: 'text-to-speech',
+      work: () => textToSpeech.preload(voiceId),
+    })),
+    { 'text-to-speech': voicePackBytes(voiceIds) },
+    onProgress,
+  );
 }
 
 /**

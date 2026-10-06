@@ -12,13 +12,14 @@
 export type PreloadLabel = 'speech-to-text' | 'chat' | 'text-to-speech';
 
 /**
- * A step is one contiguous 0→100% run of the progress bar.
+ * A step is one call that fetches something, with its own size estimate and
+ * its own "done" marker.
  *
  * Two capabilities split their wasm runtime from their weights, because the
- * runtime is fetched by a separate call we control and a single bar spanning
- * both would have to restart its total partway through. Speech-to-text does
- * not: nothing in the Transformers.js API downloads its ONNX Runtime without
- * also building the pipeline, so the two arrive together and share one bar.
+ * runtime is fetched by a separate call we control, and can be missing while
+ * the weights are on disk. Speech-to-text does not: one request to its worker
+ * fetches both its ONNX Runtime and its weights, so they arrive together as
+ * one step.
  */
 export type PreloadStepId =
   | 'text-to-speech-runtime'
@@ -30,7 +31,7 @@ export type PreloadStepId =
 /** Which downloads are already done, keyed by step. */
 export type PreloadStatus = Record<PreloadStepId, boolean>;
 
-/** The order preloadAll downloads in — smallest first. */
+/** Every step, runtimes beside the models they run, smallest first. */
 export const DOWNLOAD_ORDER: PreloadStepId[] = [
   'text-to-speech-runtime',
   'text-to-speech',

@@ -82,7 +82,12 @@ export function PreloadOverlay({
 
       {!!status && <div>{status}</div>}
 
-      {!ready && <DownloadNote bytes={bytesNeeded(cached)} />}
+      {/* Mid-download, the figure the bar is counting towards: what's left
+          shrinks as each row ticks, and the note would drift away from the
+          bar beneath it. */}
+      {!ready && (
+        <DownloadNote bytes={progress?.total ?? bytesNeeded(cached)} />
+      )}
 
       {ready ? (
         <button
@@ -93,7 +98,7 @@ export function PreloadOverlay({
         </button>
       ) : isPreloading && progress ? (
         <DownloadProgressBar
-          current={progress.index}
+          loaded={progress.loaded}
           total={progress.total}
           percent={progress.percent}
           isFinishing={progress.isFinishing}

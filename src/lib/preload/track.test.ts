@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { trackStep } from '#/lib/preload/track';
+import { trackDownload, trackStep } from '#/lib/preload/track';
 import {
   PROGRESS_CHANNEL,
   type AssetProgressMessage,
@@ -198,5 +198,95 @@ describe('trackStep', () => {
     // preloadAll runs steps for their side effects during the silent
     // background warm-up too.
     expect(() => trackStep('chat')()).not.toThrow();
+  });
+});
+
+describe('trackDownload', () => {
+  it('sums every step it is given into one figure', async () => {
+    const onProgress = vi.fn();
+    stop = trackDownload(
+      { chat: 1000, 'speech-to-text': 1000 },
+      onProgress,
+    ).stop;
+
+    await report(
+      { step: 'chat', url: 'a', loaded: 300, total: 1000 },
+      { step: 'speech-to-text', url: 'b', loaded: 200, total: 1000 },
+    );
+
+    expect(onProgress).toHaveBeenLastCalledWith({
+      loaded: 500,
+      total: 2000,
+      progress: 0.25,
+    });
+  });
+
+  it('holds each step to its own estimate, not a pooled one', async () => {
+    // A file that came in larger than its step's estimate raises that step's
+    // share alone; another step's unspent estimate can't absorb it.
+    const onProgress = vi.fn();
+    stop = trackDownload(
+      { chat: 1000, 'speech-to-text': 1000 },
+      onProgress,
+    ).stop;
+
+    await report({ step: 'chat', url: 'a', loaded: 0, total: 1500 });
+
+    expect(onProgress).toHaveBeenLastCalledWith(
+      expect.objectContaining({ total: 2500 }),
+    );
+  });
+
+  it('ignores bytes from steps it was not given', async () => {
+    const onProgress = vi.fn();
+    stop = trackDownload({ chat: 1000 }, onProgress).stop;
+
+    await report({ step: 'chat-runtime', url: 'a', loaded: 10, total: 100 });
+
+    expect(onProgress).not.toHaveBeenCalled();
+  });
+
+  it('counts a zero-estimate step only once its bytes turn up', async () => {
+    // A step the check called cached, whose bytes turned out to be missing.
+    const onProgress = vi.fn();
+    stop = trackDownload({ chat: 0, 'speech-to-text': 1000 }, onProgress).stop;
+
+    await report({ step: 'chat', url: 'a', loaded: 100, total: 1000 });
+
+    expect(onProgress).toHaveBeenLastCalledWith({
+      loaded: 100,
+      total: 2000,
+      progress: 0.05,
+    });
+  });
+
+  it('fills a completed step whatever it reported', async () => {
+    // A step served from cache reports nothing; one that came in under its
+    // estimate reports less than it. Either would leave the bar short.
+    const onProgress = vi.fn();
+    const tracker = trackDownload(
+      { chat: 1000, 'speech-to-text': 1000 },
+      onProgress,
+    );
+    stop = tracker.stop;
+
+    await report({ step: 'chat', url: 'a', loaded: 600, total: 600 });
+    tracker.complete('chat');
+    tracker.complete('speech-to-text');
+
+    expect(onProgress).toHaveBeenLastCalledWith({
+      loaded: 2000,
+      total: 2000,
+      progress: 1,
+    });
+  });
+
+  it('says nothing until something happens', () => {
+    // openVoice tracks its voice on every open, and after a preload nothing
+    // is downloaded at all.
+    const onProgress = vi.fn();
+    stop = trackDownload({ chat: 1000 }, onProgress).stop;
+
+    expect(onProgress).not.toHaveBeenCalled();
   });
 });
