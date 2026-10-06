@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { requestPersistentStorage } from '#/lib/persist';
+import { requestPersistentStorage } from '#/lib/cache/persist';
 
 afterEach(() => {
   vi.unstubAllGlobals();

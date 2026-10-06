@@ -7,7 +7,7 @@ import { play, stopPlayback } from '#/lib/audio/player';
 import { load as loadSpeechToText, transcribe } from '#/lib/speech-to-text';
 import { endConversation, generateMessage } from '#/lib/chat';
 import { openVoice, type Voice } from '#/lib/text-to-speech';
-import { markScenarioUsed, pickScenario } from '#/lib/scenarios';
+import { markScenarioUsed, pickScenario } from '#/prompts/scenarios/usage';
 import {
   buildSystemInstruction,
   finalTurnPrompt,
@@ -32,7 +32,7 @@ vi.mock('#/lib/chat', () => ({
   endConversation: vi.fn(),
   generateMessage: vi.fn(),
 }));
-vi.mock('#/lib/scenarios', () => ({
+vi.mock('#/prompts/scenarios/usage', () => ({
   pickScenario: vi.fn(),
   markScenarioUsed: vi.fn(),
 }));

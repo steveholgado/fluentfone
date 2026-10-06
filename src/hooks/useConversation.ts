@@ -23,7 +23,7 @@ import { openVoice, type SpeakTimings, type Voice } from '#/lib/text-to-speech';
 import { formatProgress } from '#/utils/formatProgress';
 import { formatTurnTimings } from '#/lib/utils/formatTurnTimings';
 import { createSentenceSplitter } from '#/lib/utils/sentenceSplitter';
-import { markScenarioUsed, pickScenario } from '#/lib/scenarios';
+import { markScenarioUsed, pickScenario } from '#/prompts/scenarios/usage';
 import {
   buildSystemInstruction,
   finalTurnPrompt,

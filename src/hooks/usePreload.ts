@@ -9,7 +9,7 @@ import {
 import type { LoadProgress } from '#/lib/progress';
 import { sweepStaleAssets } from '#/lib/preload/sweep';
 import { checkDeviceSupport, type DeviceSupport } from '#/lib/device';
-import { requestPersistentStorage } from '#/lib/persist';
+import { requestPersistentStorage } from '#/lib/cache/persist';
 import { ensureController } from '#/lib/sw-client';
 
 /**

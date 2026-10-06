@@ -12,7 +12,8 @@
  * which just means every pick is from the whole list.
  */
 
-import { SCENARIOS, type CefrLevel, type Scenario } from '#/prompts';
+import type { CefrLevel } from '../levels';
+import { SCENARIOS, type Scenario } from './index';
 
 const STORAGE_KEY = 'scenarios';
 

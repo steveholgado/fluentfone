@@ -5,10 +5,10 @@ import { usePreload } from '#/hooks/usePreload';
 import { checkDeviceSupport, type DeviceSupport } from '#/lib/device';
 import { checkPreloaded, isFullyPreloaded, preloadAll } from '#/lib/preload';
 import type { PreloadStatus } from '#/lib/preload';
-import { requestPersistentStorage } from '#/lib/persist';
+import { requestPersistentStorage } from '#/lib/cache/persist';
 import { sweepStaleAssets } from '#/lib/preload/sweep';
 
-vi.mock('#/lib/persist', () => ({
+vi.mock('#/lib/cache/persist', () => ({
   requestPersistentStorage: vi.fn().mockResolvedValue(false),
 }));
 

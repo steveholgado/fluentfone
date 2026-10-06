@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { markScenarioUsed, pickScenario } from '#/lib/scenarios';
-import { SCENARIOS } from '#/prompts';
+import { SCENARIOS } from './index';
+import { markScenarioUsed, pickScenario } from './usage';
 
 const STORAGE_KEY = 'scenarios';
 const A1_IDS = Object.keys(SCENARIOS.A1);
