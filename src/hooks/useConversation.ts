@@ -14,6 +14,7 @@ import {
   type TranscribeTimings,
 } from '#/lib/speech-to-text';
 import {
+  endConversation,
   generateMessage,
   type ChatMessage,
   type GenerateStage,
@@ -131,7 +132,8 @@ export function useConversation({
   // Ending the call cuts off whatever is in flight, rather than leaving it to
   // play into the next one. A generate can't be aborted, so it runs on in the
   // chat worker, but nothing it produces is spoken: the voice is closed, and
-  // playVoice won't play.
+  // playVoice won't play. The chat worker's conversation goes too, so it isn't
+  // still held while the next call loads its voice.
   useEffect(() => {
     disposedRef.current = false;
     return () => {
@@ -142,6 +144,7 @@ export function useConversation({
       recorderRef.current = null;
       voiceRef.current?.close();
       voiceRef.current = null;
+      void endConversation().catch(() => {});
     };
   }, []);
 

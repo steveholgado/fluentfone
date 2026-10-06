@@ -23,13 +23,7 @@ import type {
   ConversationConfig,
   SamplerType,
 } from '@litert-lm/core';
-import {
-  dispose,
-  extractText,
-  getEngine,
-  preloadModel,
-  preloadRuntime,
-} from './engine';
+import { extractText, getEngine, preloadModel, preloadRuntime } from './engine';
 import { installClassicScriptLoader } from './import-scripts';
 import type { WorkerRequest, WorkerResponse } from './messages';
 import type { ChatMessage, GenerateStage } from './types';
@@ -61,6 +55,9 @@ const TOP_P = 2 satisfies SamplerType;
  * another caller, a turn that failed, different settings — gets a fresh one
  * built from the history instead. So reuse is an optimisation the caller never
  * has to know about.
+ *
+ * Dropped early by an 'end-conversation' request, so that a call that has
+ * ended doesn't go on holding memory until the next one's first generate.
  */
 interface ActiveConversation {
   conversation: Conversation;
@@ -71,6 +68,13 @@ interface ActiveConversation {
 }
 
 let active: ActiveConversation | null = null;
+
+/**
+ * Counts 'end-conversation' requests. A generate can't be aborted, so one in
+ * flight when its conversation is ended runs on; comparing this before and
+ * after is how it knows not to keep what it built.
+ */
+let ended = 0;
 
 function settingsKey(request: GenerateRequest): string {
   return JSON.stringify([
@@ -148,6 +152,7 @@ async function generate(
   onStage: (stage: GenerateStage) => void,
   onChunk: (text: string) => void,
 ): Promise<string> {
+  const endedAtStart = ended;
   const engine = await getEngine(
     request.modelUrl,
     request.maxNumTokens,
@@ -200,6 +205,13 @@ async function generate(
     // Whatever it holds now is unknown, so it isn't kept.
     await deleteConversation(conversation);
     throw err;
+  }
+
+  // Ended while this was generating: the reply still goes back, but nothing
+  // will carry on from it.
+  if (ended !== endedAtStart) {
+    await deleteConversation(conversation);
+    return text;
   }
 
   // Kept for the next turn, which will pass this same history back. An opening
@@ -255,10 +267,9 @@ ctx.onmessage = async (event: MessageEvent<WorkerRequest>) => {
       case 'preload-runtime':
         await preloadRuntime();
         break;
-      case 'dispose':
-        // Before the engines it belongs to.
+      case 'end-conversation':
+        ended++;
         await dropActive();
-        await dispose();
         break;
     }
 

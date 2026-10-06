@@ -88,7 +88,8 @@ async function fetchModel(
 
 // The engine (and its loaded model weights) is expensive to create, so we
 // cache one instance per distinct modelUrl/maxNumTokens combination and
-// reuse it across calls to generateMessage() within the current page load.
+// reuse it across calls to generateMessage() for the rest of the page load.
+// Nothing deletes one: ending a call drops its conversation, not the engine.
 const enginePromises = new Map<string, Promise<Engine>>();
 
 function engineKey(modelUrl: string, maxNumTokens: number): string {
@@ -233,22 +234,4 @@ export async function preloadModel(modelUrl: string): Promise<void> {
   await response.body?.pipeTo(new WritableStream());
 
   await markStep('chat', modelUrl);
-}
-
-/**
- * Releases the cached engine(s) and their underlying model weights/resources.
- * A fresh engine will be lazily created again on the next generateMessage() call.
- */
-export async function dispose(): Promise<void> {
-  const promises = Array.from(enginePromises.values());
-  enginePromises.clear();
-  for (const enginePromise of promises) {
-    const engine = await enginePromise;
-    const maybeDeletable = engine as unknown as {
-      delete?: () => Promise<void> | void;
-    };
-    if (typeof maybeDeletable.delete === 'function') {
-      await maybeDeletable.delete();
-    }
-  }
 }

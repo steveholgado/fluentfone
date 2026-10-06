@@ -379,21 +379,24 @@ describe('isCached', () => {
   });
 });
 
-describe('dispose', () => {
-  it('asks the worker to release its engines and forgets they were live', async () => {
+describe('endConversation', () => {
+  it('asks the worker to drop its conversation, and still counts the engine as live', async () => {
     stubCacheStorage();
-    const { generateMessage, isCached, dispose } =
+    const { generateMessage, isCached, endConversation } =
       await import('#/lib/chat/index');
 
     const generated = generateMessage({ prompt: 'hi' });
     only().emit({ id: 0, type: 'done', text: '' });
     await generated;
 
-    const disposed = dispose();
+    const ended = endConversation();
     only().emit({ id: 1, type: 'done' });
-    await disposed;
+    await ended;
 
-    expect(only().postedMessages[1]).toEqual({ id: 1, mode: 'dispose' });
-    await expect(isCached()).resolves.toBe(false);
+    expect(only().postedMessages[1]).toEqual({
+      id: 1,
+      mode: 'end-conversation',
+    });
+    await expect(isCached()).resolves.toBe(true);
   });
 });

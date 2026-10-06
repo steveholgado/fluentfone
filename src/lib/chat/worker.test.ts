@@ -9,7 +9,6 @@ import type { ChatRequest, WorkerResponse } from '#/lib/chat/messages';
 const sendMessageStreaming = vi.fn();
 const createConversation = vi.fn();
 const engineCreate = vi.fn();
-const engineDelete = vi.fn();
 
 const getOrLoadGlobalLiteRtLm = vi.fn();
 
@@ -100,7 +99,7 @@ beforeEach(async () => {
   engineCreate.mockImplementation(
     async ({ model }: { model: ReadableStream<Uint8Array> }) => {
       await model.pipeTo(new WritableStream());
-      return { createConversation, delete: engineDelete };
+      return { createConversation };
     },
   );
 
@@ -490,16 +489,71 @@ describe('conversation reuse', () => {
     expect(made[0].delete).not.toHaveBeenCalled();
   });
 
-  it('deletes the kept conversation on dispose, before the engines', async () => {
+  it('deletes the kept conversation when it is ended', async () => {
     const made = distinctConversations();
-    const order: string[] = [];
-    engineDelete.mockImplementation(() => order.push('engine'));
 
     await post(generateRequest({ prompt: 'hi' }));
-    made[0].delete.mockImplementation(() => order.push('conversation'));
-    await post({ mode: 'dispose' });
+    await post({ mode: 'end-conversation' });
 
-    expect(order).toEqual(['conversation', 'engine']);
+    expect(made[0].delete).toHaveBeenCalled();
+  });
+
+  it('builds afresh after the conversation is ended, even for the same history', async () => {
+    await post(generateRequest({ prompt: 'hi' }));
+    await post({ mode: 'end-conversation' });
+    await post(
+      generateRequest({
+        prompt: 'next',
+        history: [
+          { role: 'user', content: 'hi' },
+          { role: 'model', content: 'a reply' },
+        ],
+      }),
+    );
+
+    expect(createConversation).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not keep a conversation ended while it was generating', async () => {
+    const made = distinctConversations();
+    let finish: (() => void) | undefined;
+    sendMessageStreaming.mockImplementationOnce(
+      () =>
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue('a reply');
+            finish = () => controller.close();
+          },
+        }),
+    );
+
+    const generating = post(generateRequest({ prompt: 'hi' }));
+    await vi.waitFor(() => expect(finish).toBeDefined());
+    await post({ mode: 'end-conversation' });
+    finish!();
+    await generating;
+
+    expect(made[0].delete).toHaveBeenCalled();
+    expect(replies()).toContainEqual({ id: 0, type: 'done', text: 'a reply' });
+
+    await post(
+      generateRequest({
+        prompt: 'next',
+        history: [
+          { role: 'user', content: 'hi' },
+          { role: 'model', content: 'a reply' },
+        ],
+      }),
+    );
+    expect(made).toHaveLength(2);
+  });
+
+  it('keeps the engine when the conversation is ended', async () => {
+    await post(generateRequest({ prompt: 'hi' }));
+    await post({ mode: 'end-conversation' });
+    await post(generateRequest({ prompt: 'again' }));
+
+    expect(engineCreate).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -534,7 +588,7 @@ describe('stage reporting', () => {
     engineCreate.mockImplementation(
       async ({ model }: { model: ReadableStream<Uint8Array> }) => {
         finishReading = model.pipeTo(new WritableStream());
-        return { createConversation, delete: engineDelete };
+        return { createConversation };
       },
     );
 
@@ -552,7 +606,7 @@ describe('stage reporting', () => {
     let handed: unknown;
     engineCreate.mockImplementation(async ({ model }: { model: unknown }) => {
       handed = model;
-      return { createConversation, delete: engineDelete };
+      return { createConversation };
     });
 
     await post(generateRequest({ prompt: 'hi' }));
@@ -723,22 +777,5 @@ describe('preload-runtime', () => {
       { id: 0, type: 'error', message: 'wasm unavailable' },
       { id: 1, type: 'error', message: 'wasm unavailable' },
     ]);
-  });
-});
-
-describe('dispose', () => {
-  it('deletes every cached engine', async () => {
-    await post(generateRequest({ prompt: 'hi' }));
-    await post({ mode: 'dispose' });
-
-    expect(engineDelete).toHaveBeenCalled();
-  });
-
-  it('leaves the next generate to build a fresh engine', async () => {
-    await post(generateRequest({ prompt: 'hi' }));
-    await post({ mode: 'dispose' });
-    await post(generateRequest({ prompt: 'again' }));
-
-    expect(engineCreate).toHaveBeenCalledTimes(2);
   });
 });

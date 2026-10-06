@@ -5,7 +5,7 @@ import { TRANSCRIPT_LINGER_MS, useConversation } from '#/hooks/useConversation';
 import { AudioRecorder } from '#/lib/audio/recorder';
 import { play, stopPlayback } from '#/lib/audio/player';
 import { load as loadSpeechToText, transcribe } from '#/lib/speech-to-text';
-import { generateMessage } from '#/lib/chat';
+import { endConversation, generateMessage } from '#/lib/chat';
 import { openVoice, type Voice } from '#/lib/text-to-speech';
 import { markScenarioUsed, pickScenario } from '#/lib/scenarios';
 import {
@@ -29,6 +29,7 @@ vi.mock('#/lib/speech-to-text', () => ({
   transcribe: vi.fn(),
 }));
 vi.mock('#/lib/chat', () => ({
+  endConversation: vi.fn(),
   generateMessage: vi.fn(),
 }));
 vi.mock('#/lib/scenarios', () => ({
@@ -119,6 +120,7 @@ beforeEach(() => {
   });
   speak.mockResolvedValue(new Blob(['voice']));
   vi.mocked(loadSpeechToText).mockResolvedValue(undefined);
+  vi.mocked(endConversation).mockResolvedValue(undefined);
   vi.mocked(play).mockResolvedValue(undefined);
   vi.mocked(pickScenario).mockReturnValue(SCENARIO);
   // Every turn logs its stage timings in dev, which tests run as.
@@ -226,6 +228,26 @@ describe('useConversation', () => {
 
       expect(stopPlayback).toHaveBeenCalledTimes(1);
       expect(stop).toHaveBeenCalledTimes(1);
+    });
+
+    it("ends the chat worker's conversation", () => {
+      const { unmount } = renderHook(() =>
+        useConversation({ level: LEVEL, language: LANGUAGE, speed: 1 }),
+      );
+      unmount();
+
+      expect(endConversation).toHaveBeenCalledTimes(1);
+    });
+
+    it("doesn't throw when ending the conversation fails", async () => {
+      vi.mocked(endConversation).mockRejectedValueOnce(new Error('gone'));
+
+      const { unmount } = renderHook(() =>
+        useConversation({ level: LEVEL, language: LANGUAGE, speed: 1 }),
+      );
+
+      expect(() => unmount()).not.toThrow();
+      await Promise.resolve();
     });
 
     it('leaves a recorder that has already stopped alone', async () => {

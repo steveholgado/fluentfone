@@ -159,15 +159,15 @@ export async function isCached(
 }
 
 /**
- * Releases the cached engine(s) and their underlying model weights/resources.
- * A fresh engine will be lazily created again on the next generateMessage()
- * call.
+ * Frees the conversation the worker kept from the last generate, for when a
+ * call ends. The next generate builds a fresh one regardless — a new call's
+ * system instruction never matches the old — but until then the old one would
+ * sit in memory while the next call loads its voice.
  *
- * The worker itself is left running. Terminating it would reclaim the wasm heap
- * more thoroughly than deleting the engines does, but it would also throw away
- * a loaded runtime that `preloadRuntime()` is not asked to redo.
+ * The engine stays: it's the same model whatever the call, and compiling it
+ * again would cost minutes. A generate still in flight finishes, and its
+ * reply comes back, but its conversation isn't kept either.
  */
-export async function dispose(): Promise<void> {
-  await send({ mode: 'dispose' });
-  liveEngineKeys.clear();
+export async function endConversation(): Promise<void> {
+  await send({ mode: 'end-conversation' });
 }

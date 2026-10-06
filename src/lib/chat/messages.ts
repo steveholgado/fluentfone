@@ -33,7 +33,7 @@ export type ChatRequest =
     }
   | { mode: 'preload'; modelUrl: string }
   | { mode: 'preload-runtime' }
-  | { mode: 'dispose' };
+  | { mode: 'end-conversation' };
 
 export type WorkerRequest = ChatRequest & { id: number };
 
