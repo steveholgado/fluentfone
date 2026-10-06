@@ -20,6 +20,7 @@ import type { Scenario } from './scenarios';
 export { LANGUAGE_SPECS, renderLanguageBlock } from './languages';
 export { LEVELS, renderLevelBlock, type CefrLevel } from './levels';
 export { SCENARIOS, type Scenario } from './scenarios';
+export { markScenarioUsed, pickScenario } from './scenarios/usage';
 
 export function buildSystemInstruction(
   level: CefrLevel,

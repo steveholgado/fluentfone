@@ -23,11 +23,12 @@ import { openVoice, type SpeakTimings, type Voice } from '#/lib/text-to-speech';
 import { formatProgress } from '#/utils/formatProgress';
 import { formatTurnTimings } from '#/lib/utils/formatTurnTimings';
 import { createSentenceSplitter } from '#/lib/utils/sentenceSplitter';
-import { markScenarioUsed, pickScenario } from '#/prompts/scenarios/usage';
 import {
   buildSystemInstruction,
   finalTurnPrompt,
   greetingTrigger,
+  markScenarioUsed,
+  pickScenario,
   type CefrLevel,
 } from '#/prompts';
 import { LANGUAGES, MAX_USER_TURNS, voiceFor, type LanguageId } from '#/config';

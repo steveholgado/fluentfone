@@ -7,11 +7,12 @@ import { play, stopPlayback } from '#/lib/audio/player';
 import { load as loadSpeechToText, transcribe } from '#/lib/speech-to-text';
 import { endConversation, generateMessage } from '#/lib/chat';
 import { openVoice, type Voice } from '#/lib/text-to-speech';
-import { markScenarioUsed, pickScenario } from '#/prompts/scenarios/usage';
 import {
   buildSystemInstruction,
   finalTurnPrompt,
   greetingTrigger,
+  markScenarioUsed,
+  pickScenario,
   type CefrLevel,
   type Scenario,
 } from '#/prompts';
