@@ -124,9 +124,9 @@ export function getEngine(
         },
       };
       // Engine.create() loads the wasm runtime (already on disk if preload
-      // ran), sets up the WebGPU device, reads the model in and compiles it.
-      // Minutes of work on a cold start, none of it reported by the SDK, so
-      // all of it is one stage: 'loading', or 'downloading' above.
+      // ran), sets up the WebGPU device, reads the model in and compiles it,
+      // none of it reported by the SDK, so all of it is one stage: 'loading',
+      // or 'downloading' above.
       return LiteRTEngine.create(settings);
     })();
     enginePromises.set(key, promise);
