@@ -31,8 +31,8 @@ export const DEFAULT_LEVEL: CefrLevel = 'B1';
 
 /** How fast the partner speaks, relative to the voice's natural pace. */
 export const SPEEDS = [
-  { value: 0.5, label: 'Slow' },
-  { value: 0.75, label: 'Relaxed' },
+  { value: 0.6, label: 'Slow' },
+  { value: 0.8, label: 'Relaxed' },
   { value: 1, label: 'Natural' },
 ] as const;
 
@@ -40,8 +40,8 @@ export type Speed = (typeof SPEEDS)[number]['value'];
 
 /** Where each level starts: slower for beginners, who are still tuning in. */
 export const DEFAULT_SPEED: Record<CefrLevel, Speed> = {
-  A1: 0.5,
-  A2: 0.75,
+  A1: 0.6,
+  A2: 0.8,
   B1: 1,
   B2: 1,
 };
