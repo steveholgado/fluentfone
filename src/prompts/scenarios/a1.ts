@@ -1,46 +1,37 @@
 /** Present tense only, everyday words, and questions with short answers. */
 export const A1_SCENARIOS = {
-  'a1-picnic': 'I want to invite you to a picnic in the park next week.',
+  'a1-picnic': 'Shall we have a picnic in the park next week?',
   'a1-birthday-present':
-    'my sister has a birthday next week and I want you to help me choose a present: a book or a plant.',
-  'a1-market-fruit': "I'm at the market and want to know what fruit you like.",
-  'a1-new-flat':
-    'I have a new flat with two bedrooms and a small kitchen, and want to know about your home.',
-  'a1-rainy-day':
-    "it is raining a lot today, I'm at home with nothing to do, and I want to know if you are at home too.",
+    "Which is better for my sister's birthday: a book or a plant?",
+  'a1-market-fruit': "I'm at the market. What fruit do you like?",
+  'a1-new-flat': 'I have a new house. How many bedrooms do you have?',
+  'a1-rainy-day': 'It rains a lot today. Are you at home?',
   'a1-cafe-order':
-    "I'm in a café and I want you to help me choose: a coffee or a hot chocolate.",
-  'a1-dinner-idea':
-    'I want to cook dinner for my family tonight and I want you to help me choose: pasta or soup.',
-  'a1-cat-name':
-    'I have a new cat and I want you to help me choose a name: Luna or Coco.',
+    "I'm in a café. Which is better: a coffee or a hot chocolate?",
+  'a1-dinner-idea': 'Which is better for dinner tonight: pasta or soup?',
+  'a1-cat-name': 'I have a new cat. Which name do you like: Luna or Coco?',
   'a1-football-tv':
-    'there is a football match on TV tonight and I want to watch it with you.',
+    "There's football on TV tonight. Do you want to watch with me?",
   'a1-shirt-colour':
-    'I want a new shirt for a party and I want you to help me choose: red or blue.',
-  'a1-weekend': 'I want to know what you do at the weekend.',
+    'I want a new shirt. Which colour do you like: red or blue?',
+  'a1-weekend': 'What do you do at the weekend?',
   'a1-cousin-visit':
-    'my cousin is in town this week and I want to show her the city: the museum or the park.',
-  'a1-breakfast':
-    "I'm having breakfast and want to know what you have for breakfast.",
-  'a1-new-song':
-    "I'm listening to a song I love and want to know what music you like.",
-  'a1-beach-trip': 'I want to go to the beach with you next week.',
+    'My cousin is here this week. Where do we go: the museum or the park?',
+  'a1-breakfast': 'What do you have for breakfast?',
+  'a1-new-song': 'I love music. What music do you like?',
+  'a1-beach-trip': 'Shall we go to the beach next week?',
   'a1-bus-or-walk':
-    'I want to go to the town centre and I want you to help me choose: the bus or walking.',
-  'a1-dog-park':
-    "I'm in the park with my dog and want to know if you have a pet.",
+    'I want to go to the centre. Which is better: the bus or walking?',
+  'a1-dog-park': "I'm in the park with my dog. Do you have a pet?",
   'a1-new-restaurant':
-    'I want to take you to dinner next week and I want you to choose: an Italian or a Chinese restaurant.',
+    "Let's have dinner next week. Which food do you like: Italian or Chinese?",
   'a1-family-lunch':
-    'my family is having lunch at my house next week and I want to invite you.',
+    'My family comes for lunch next week. Do you want to come too?',
   'a1-cinema':
-    'I want to go to the cinema tonight and I want you to help me choose: a comedy or an action film.',
-  'a1-cake': "I'm making a cake and want to know your favourite cake.",
-  'a1-library': "I'm at the library and want to know if you like reading.",
-  'a1-swimming': 'I go swimming every Tuesday and want you to come too.',
-  'a1-supermarket':
-    "I'm at the supermarket and want to know if you need milk or bread.",
-  'a1-cold-day':
-    'it is very cold today and I want to know if you like winter or summer.',
+    'I want to go to the cinema tonight. Which do you like: a comedy or an action film?',
+  'a1-cake': 'I love cake. What is your favourite cake?',
+  'a1-library': "I'm at the library. Do you like reading?",
+  'a1-swimming': 'I go swimming every Tuesday. Do you want to come too?',
+  'a1-supermarket': "I'm at the supermarket. Do you need milk or bread?",
+  'a1-cold-day': "It's very cold today. Do you like winter or summer?",
 };

@@ -8,7 +8,7 @@
  * for the opening message, and never part of the history.
  *
  * Nothing in the instruction should vary between calls for the same level and
- * language, for the same reason. What varies — why the friend is calling —
+ * language, for the same reason. What varies — what the friend opens with —
  * goes in the trigger.
  */
 
@@ -26,7 +26,8 @@ export function buildSystemInstruction(
   level: CefrLevel,
   language: LanguageId,
 ): string {
-  return `You are a friendly, patient native speaker from ${LANGUAGE_SPECS[language].country} chatting on the phone with a friend who is learning Spanish.
+  const { name, country } = LANGUAGE_SPECS[language];
+  return `You are a friendly, patient native speaker from ${country} chatting on the phone with a friend who is learning ${name}.
 
 ${renderLanguageBlock(language)}
 
@@ -45,20 +46,29 @@ Each reply:
 }
 
 /**
- * Sent in the student's place for the opening message, with the reason for
- * this call. Bracketed so it reads as a direction rather than something the
- * student said — in English, it would otherwise fall under the rule for a
+ * Sent in the student's place for the opening message, with the line this
+ * call opens on. Bracketed so it reads as a direction rather than something
+ * the student said — in English, it would otherwise fall under the rule for a
  * student answering in English.
  *
- * The reason is quoted in the caller's own voice, and who "I" and "you" are
- * is spelled out as well: told about "your sister", the model took her for
- * the friend's and asked them about her.
+ * The language to say it in is named rather than referred to: everything the
+ * model has read by then is in English, so "the language of the call" could
+ * be taken for English.
+ *
+ * The hello is kept to a word or two and the line already ends in its
+ * question, so the opening is no more than the student can take in on one
+ * listen. The line is quoted in the caller's own voice, and who "I" and "you"
+ * are is spelled out as well: told about "your sister", the model took her
+ * for the friend's and asked them about her.
  *
  * It can differ from call to call because it's not part of the system
  * instruction: the worker doesn't match a conversation on it.
  */
-export function greetingTrigger(scenario: Scenario): string {
-  return `[The conversation is starting. Greet your friend in one short sentence. Then tell your friend, in your own words, why you're calling: "I'm calling because ${scenario.reason}" In that, "I" and "my" mean you, and "you" means your friend. Then ask your friend one question about it.]`;
+export function greetingTrigger(
+  scenario: Scenario,
+  language: LanguageId,
+): string {
+  return `[The conversation is starting. Say hello to your friend in one or two words, then say this in ${LANGUAGE_SPECS[language].name}: "${scenario.line}" In that, "I" and "my" mean you, and "you" means your friend.]`;
 }
 
 /**

@@ -34,16 +34,18 @@ describe('renderLevelBlock', () => {
 });
 
 describe('renderLanguageBlock', () => {
-  it.each(ALL_LANGUAGES)("speaks %s's Spanish, using tú", (language) => {
-    const block = renderLanguageBlock(language);
+  it.each(ALL_LANGUAGES)(
+    "speaks %s's language, without naming the friend",
+    (language) => {
+      const { name, country } = LANGUAGE_SPECS[language];
+      const block = renderLanguageBlock(language);
 
-    expect(block).toContain(
-      `Spanish as spoken in ${LANGUAGE_SPECS[language].country}`,
-    );
-    expect(block).toContain(
-      'Address your friend as tú, without a name or nickname.',
-    );
-  });
+      expect(block).toContain(`${name} as spoken in ${country}`);
+      expect(block).toContain(
+        'Address your friend without a name or nickname.',
+      );
+    },
+  );
 
   it('includes extra rules only for languages that have them', () => {
     expect(renderLanguageBlock('es-MX')).toContain('never vosotros');
@@ -80,14 +82,19 @@ describe('buildSystemInstruction', () => {
 });
 
 describe('greetingTrigger', () => {
-  it('gives the reason for the call, bracketed as a direction', () => {
-    const trigger = greetingTrigger({
-      id: 'test',
-      reason: 'I have a new cat.',
-    });
+  it('quotes the opening line, bracketed as a direction', () => {
+    const trigger = greetingTrigger(
+      {
+        id: 'test',
+        line: 'I have a new cat. Which name do you like: Luna or Coco?',
+      },
+      'es-ES',
+    );
 
     expect(trigger).toMatch(/^\[.*\]$/);
-    expect(trigger).toContain('"I\'m calling because I have a new cat."');
+    expect(trigger).toContain(
+      'say this in Spanish: "I have a new cat. Which name do you like: Luna or Coco?"',
+    );
   });
 });
 
@@ -114,11 +121,15 @@ describe('SCENARIOS', () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  // Each one finishes "I'm calling because …" in the trigger, which carries
-  // on after it.
-  it.each(ALL_LEVELS)('has reasons that end a sentence, for %s', (level) => {
-    for (const reason of Object.values(SCENARIOS[level])) {
-      expect(reason).toMatch(/^(I\b|[a-z]).*\.$/);
-    }
-  });
+  // Each one is said as it stands, straight after hello, and is the only
+  // question in the opening.
+  it.each(ALL_LEVELS)(
+    'has lines that start a sentence and end in a question, for %s',
+    (level) => {
+      for (const line of Object.values(SCENARIOS[level])) {
+        expect(line).toMatch(/^[A-Z].*\?$/);
+        expect(line.match(/\?/g)).toHaveLength(1);
+      }
+    },
+  );
 });

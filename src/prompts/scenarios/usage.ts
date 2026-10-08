@@ -49,9 +49,10 @@ export function pickScenario(
   level: CefrLevel,
   random: () => number = Math.random,
 ): Scenario {
-  const all = Object.entries(SCENARIOS[level]).map(
-    ([id, reason]): Scenario => ({ id, reason }),
-  );
+  const all = Object.entries(SCENARIOS[level]).map(([id, line]): Scenario => ({
+    id,
+    line,
+  }));
   const heardIds = load()[level] ?? [];
   const heard = new Set(heardIds);
   const unheard = all.filter((scenario) => !heard.has(scenario.id));

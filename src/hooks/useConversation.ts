@@ -212,7 +212,7 @@ export function useConversation({
       const scenario = pickScenario(level);
       const opening = await generateMessage({
         systemInstruction,
-        trigger: greetingTrigger(scenario),
+        trigger: greetingTrigger(scenario, language),
         onStage: (stage) => setStatus(STAGE_STATUS[stage]),
       });
       const speed = speedRef.current;
@@ -232,7 +232,14 @@ export function useConversation({
     } finally {
       preparingGreetingRef.current = false;
     }
-  }, [getVoice, level, matchGreetingSpeed, report, systemInstruction]);
+  }, [
+    getVoice,
+    language,
+    level,
+    matchGreetingSpeed,
+    report,
+    systemInstruction,
+  ]);
 
   useEffect(() => {
     speedRef.current = speed;

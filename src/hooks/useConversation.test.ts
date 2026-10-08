@@ -58,7 +58,7 @@ const GREETING_AUDIO = new Blob(['greeting']);
 
 const SCENARIO: Scenario = {
   id: 'test-picnic',
-  reason: 'I want to invite you to a picnic.',
+  line: 'Shall we have a picnic?',
 };
 
 function mockRecorderImpl(overrides?: {
@@ -474,7 +474,7 @@ describe('useConversation', () => {
       expect(pickScenario).toHaveBeenCalledWith(LEVEL);
       expect(generateMessage).toHaveBeenCalledWith({
         systemInstruction: buildSystemInstruction(LEVEL, LANGUAGE),
-        trigger: greetingTrigger(SCENARIO),
+        trigger: greetingTrigger(SCENARIO, LANGUAGE),
         onStage: expect.any(Function),
       });
       expect(openVoice).toHaveBeenCalledWith(

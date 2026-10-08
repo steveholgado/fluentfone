@@ -25,9 +25,9 @@ afterEach(() => {
 
 describe('pickScenario', () => {
   it('picks from the level it was given', () => {
-    const { id, reason } = pickScenario('B2');
+    const { id, line } = pickScenario('B2');
 
-    expect(SCENARIOS.B2[id]).toBe(reason);
+    expect(SCENARIOS.B2[id]).toBe(line);
   });
 
   it('only picks scenarios not yet heard', () => {

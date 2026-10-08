@@ -1,13 +1,21 @@
 /**
- * Why the friend is calling: one is picked for each call and given to the
- * model with the greeting trigger, so every conversation opens on something
- * different.
+ * What the friend opens the call with: one is picked for each call and given
+ * to the model with the greeting trigger, so every conversation opens on
+ * something different.
  *
- * Each level's list maps an id to the reason for the call.
+ * Each level's list maps an id to the opening line.
  *
  * Writing one:
- * - The reason is in the caller's own words, completing "I'm calling
- *   because …", in English, and ends with a full stop.
+ * - The line is what the caller says straight after hello, in their own
+ *   voice, in English — the model says it in the language being learned, so
+ *   one list serves every language. Any context comes first, then one
+ *   question, and it ends with that question.
+ * - Don't say why the friend is calling. Given "I'm calling because …", the
+ *   model opened nearly every call with "te llamo porque".
+ * - The question carries what the caller wants, in the level's question
+ *   style. Put the context in front only when the question needs it: "Luna or
+ *   Coco?" means nothing without the new cat. At A1, keep to one short
+ *   sentence of it at most.
  * - "I" and "my" are the caller; "you" and "your" are the friend, and only
  *   ever the friend. Written the other way round ("your sister" for the
  *   caller's sister), the model got who was who wrong, and "they" for the
@@ -15,11 +23,10 @@
  * - Bring other people in as relatives, colleagues, or neighbours, never as
  *   "a friend": they could be taken for the friend being called.
  * - Keep to what the level allows in ./levels.ts — its grammar, vocabulary,
- *   and question style.
- * - End with what the caller wants from the friend, in the level's question
- *   style: "I want to know …", "I want you to help me choose: X or Y",
- *   "I want your advice …". Needing something isn't enough — told "I need a
- *   name for my cat", the model asked the friend what colour the cat was.
+ *   sentence length, and question style. That goes for the English too, since
+ *   the model follows it closely: at A1, "watch with me", not "watch it with
+ *   me", which would bring in a direct object pronoun, and no "I'm cooking"
+ *   or "I'm listening", which come out as estar + gerund.
  * - Only time words that are true whatever the day: tomorrow, tonight, last
  *   night, the other day, next week, at the weekend. "It's Friday" is wrong
  *   six days in seven, and "on Sunday" said on a Sunday sounds like today.
@@ -42,7 +49,7 @@ import { B2_SCENARIOS } from './b2';
 /** One scenario, as it's picked for a call. */
 export interface Scenario {
   id: string;
-  reason: string;
+  line: string;
 }
 
 export const SCENARIOS: Record<CefrLevel, Record<string, string>> = {
