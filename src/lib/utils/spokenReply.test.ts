@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { Voice } from '#/lib/text-to-speech';
 import { createSpokenReply } from '#/lib/utils/spokenReply';
@@ -23,6 +23,10 @@ function mockVoice() {
 async function textOf(clip: Blob) {
   return clip.text();
 }
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe('createSpokenReply', () => {
   it('speaks each sentence as soon as it is complete', () => {
@@ -125,10 +129,6 @@ describe('createSpokenReply', () => {
 
   it('reports the first sentence and its first clip, once each', async () => {
     const voice = mockVoice();
-    voice.speak.mockImplementation(async (text, opts) => {
-      opts?.onTimings?.({ startup: 1, synthesis: 2 });
-      return new Blob([text]);
-    });
     const onFirstSentence = vi.fn();
     const onFirstClip = vi.fn();
     const reply = createSpokenReply({
@@ -145,6 +145,79 @@ describe('createSpokenReply', () => {
 
     expect(onFirstSentence).toHaveBeenCalledTimes(1);
     expect(onFirstClip).toHaveBeenCalledTimes(1);
-    expect(onFirstClip).toHaveBeenCalledWith({ startup: 1, synthesis: 2 });
+  });
+
+  describe('gaps', () => {
+    /** A clock that only moves when told to. */
+    function stopClock() {
+      let now = 0;
+      vi.spyOn(performance, 'now').mockImplementation(() => now);
+      return (ms: number) => (now += ms);
+    }
+
+    it('counts none when every clip is ready in time', async () => {
+      stopClock();
+      const reply = createSpokenReply({
+        voice: mockVoice(),
+        speed: 1,
+        play: async () => {},
+      });
+
+      reply.push('Uno. Dos. Tres.');
+      const { gaps } = await reply.end();
+
+      expect(gaps).toEqual({ count: 0, totalMs: 0 });
+    });
+
+    it('counts a wait for the next clip to be synthesised', async () => {
+      const advance = stopClock();
+      const second = deferred<Blob>();
+      const voice = mockVoice();
+      voice.speak
+        .mockResolvedValueOnce(new Blob(['uno']))
+        .mockReturnValueOnce(second.promise);
+      const play = vi.fn(async (_clip: Blob) => {});
+      const reply = createSpokenReply({ voice, speed: 1, play });
+
+      reply.push('Uno. Dos.');
+      const ended = reply.end();
+      await vi.waitFor(() => expect(play).toHaveBeenCalledTimes(1));
+      advance(300);
+      second.resolve(new Blob(['dos']));
+
+      expect((await ended).gaps).toEqual({ count: 1, totalMs: 300 });
+    });
+
+    it('counts a wait for the next sentence to be generated', async () => {
+      const advance = stopClock();
+      const play = vi.fn(async (_clip: Blob) => {});
+      const reply = createSpokenReply({ voice: mockVoice(), speed: 1, play });
+
+      reply.push('Uno. ');
+      await vi.waitFor(() => expect(play).toHaveBeenCalledTimes(1));
+      advance(500);
+      reply.push('Dos.');
+
+      expect((await reply.end()).gaps).toEqual({ count: 1, totalMs: 500 });
+    });
+
+    it('does not count the wait for the first clip', async () => {
+      const advance = stopClock();
+      const first = deferred<Blob>();
+      const voice = mockVoice();
+      voice.speak.mockReturnValueOnce(first.promise);
+      const reply = createSpokenReply({
+        voice,
+        speed: 1,
+        play: async () => {},
+      });
+
+      reply.push('Uno. Dos.');
+      const ended = reply.end();
+      advance(800);
+      first.resolve(new Blob(['uno']));
+
+      expect((await ended).gaps).toEqual({ count: 0, totalMs: 0 });
+    });
   });
 });

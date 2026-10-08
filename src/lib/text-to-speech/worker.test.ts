@@ -160,18 +160,6 @@ describe('worker onmessage', () => {
     ]);
   });
 
-  it('reports how long synthesis took', async () => {
-    const now = vi
-      .spyOn(performance, 'now')
-      .mockReturnValueOnce(200)
-      .mockReturnValueOnce(1700);
-
-    await post({ id: 0, mode: 'speak', voiceId: 'voice-a', text: 'hello' });
-
-    expect(postedMessages[0]).toMatchObject({ synthesisMs: 1500 });
-    now.mockRestore();
-  });
-
   it('passes lengthScale through to synthesis', async () => {
     await post({
       id: 0,

@@ -1,4 +1,4 @@
-import type { SpeakTimings, Voice } from '#/lib/text-to-speech';
+import type { Voice } from '#/lib/text-to-speech';
 import { createSentenceSplitter } from '#/lib/utils/sentenceSplitter';
 
 /**
@@ -15,10 +15,11 @@ export interface SpokenReply {
   push(chunk: string): void;
   /**
    * Flushes the last sentence, and resolves once every sentence has played
-   * with what was spoken: the sentences, and the clips played for them.
-   * Rejects with the first failure, to synthesis or playback.
+   * with what was spoken: the sentences, the clips played for them, and the
+   * gaps between them. Rejects with the first failure, to synthesis or
+   * playback.
    */
-  end(): Promise<{ sentences: string[]; clips: Blob[] }>;
+  end(): Promise<{ sentences: string[]; clips: Blob[]; gaps: ReplyGaps }>;
   /**
    * Resolves once whatever has already gone to be spoken has finished,
    * failures included. For when generation fails partway: what has started
@@ -27,6 +28,19 @@ export interface SpokenReply {
   settle(): Promise<void>;
 }
 
+/**
+ * Silences partway through the reply, where one sentence had finished playing
+ * and the next wasn't ready: still being generated, or still being
+ * synthesised. The wait before the first sentence isn't one of them.
+ */
+export interface ReplyGaps {
+  count: number;
+  totalMs: number;
+}
+
+// Anything shorter is the hand-off from one clip to the next, not a wait.
+const MIN_GAP_MS = 10;
+
 export interface SpokenReplyOptions {
   voice: Pick<Voice, 'speak'>;
   /** The whole reply is at one speed. */
@@ -34,11 +48,8 @@ export interface SpokenReplyOptions {
   play: (clip: Blob) => Promise<void>;
   /** When the first sentence is complete, and goes to be spoken. */
   onFirstSentence?: () => void;
-  /**
-   * When the first sentence's audio is back, just before it plays, with how
-   * its synthesis divided up.
-   */
-  onFirstClip?: (timings: SpeakTimings | undefined) => void;
+  /** When the first sentence's audio is back, just before it plays. */
+  onFirstClip?: () => void;
 }
 
 export function createSpokenReply({
@@ -50,25 +61,31 @@ export function createSpokenReply({
 }: SpokenReplyOptions): SpokenReply {
   const sentences: string[] = [];
   const clips: Blob[] = [];
+  const gaps: ReplyGaps = { count: 0, totalMs: 0 };
+  let lastPlayEnded: number | undefined;
   let playback = Promise.resolve();
 
   const splitter = createSentenceSplitter((sentence) => {
     const isFirst = sentences.push(sentence) === 1;
     if (isFirst) onFirstSentence?.();
 
-    let timings: SpeakTimings | undefined;
-    const audio = voice.speak(sentence, {
-      speed,
-      onTimings: (t) => (timings = t),
-    });
+    const audio = voice.speak(sentence, { speed });
     // Its failure surfaces through `playback`, which awaits it in turn.
     audio.catch(() => {});
 
     playback = playback.then(async () => {
       const clip = await audio;
-      if (isFirst) onFirstClip?.(timings);
+      if (isFirst) onFirstClip?.();
       clips.push(clip);
+      if (lastPlayEnded !== undefined) {
+        const gap = performance.now() - lastPlayEnded;
+        if (gap >= MIN_GAP_MS) {
+          gaps.count += 1;
+          gaps.totalMs += gap;
+        }
+      }
       await play(clip);
+      lastPlayEnded = performance.now();
     });
     // Awaited by end() or settle(); until then a failure would otherwise be
     // reported as unhandled.
@@ -83,7 +100,7 @@ export function createSpokenReply({
     async end() {
       splitter.end();
       await playback;
-      return { sentences, clips };
+      return { sentences, clips, gaps };
     },
 
     settle() {

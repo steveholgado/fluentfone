@@ -8,21 +8,17 @@ import {
   tapStream,
   unlock,
 } from '#/lib/audio';
-import {
-  load as loadSpeechToText,
-  transcribe,
-  type TranscribeTimings,
-} from '#/lib/speech-to-text';
+import { load as loadSpeechToText, transcribe } from '#/lib/speech-to-text';
 import {
   endConversation,
   generateMessage,
   type ChatMessage,
   type GenerateStage,
 } from '#/lib/chat';
-import { openVoice, type SpeakTimings, type Voice } from '#/lib/text-to-speech';
+import { openVoice, type Voice } from '#/lib/text-to-speech';
 import { formatProgress } from '#/utils/formatProgress';
-import { formatTurnTimings } from '#/lib/utils/formatTurnTimings';
 import { createSpokenReply } from '#/lib/utils/spokenReply';
+import { createTurnTimer } from '#/lib/utils/turnTimer';
 import {
   buildSystemInstruction,
   finalTurnPrompt,
@@ -105,6 +101,8 @@ export function useConversation({
   // Set once the conversation has unmounted, i.e. the call has ended.
   const disposedRef = useRef(false);
   const recorderRef = useRef<AudioRecorder | null>(null);
+  // When the recording under way started, for the turn's timings.
+  const recordingStartedRef = useRef(0);
   const historyRef = useRef<ChatMessage[]>([]);
   const preparingGreetingRef = useRef(false);
   const greetingRef = useRef<{
@@ -284,6 +282,7 @@ export function useConversation({
         return;
       }
       recorderRef.current = recorder;
+      recordingStartedRef.current = performance.now();
       tapStream(recorder.stream);
       setIsRecording(true);
     } catch (err) {
@@ -304,17 +303,14 @@ export function useConversation({
     releaseTap();
     setBusy(true);
     try {
-      const start = performance.now();
+      const timer = createTurnTimer(recordingStartedRef.current);
       const audioBlob = await recorder.stop();
-      const stopped = performance.now();
 
       setStatus('Transcribing…');
-      let sttTimings: TranscribeTimings | undefined;
       const text = await transcribe(audioBlob, {
         language: LANGUAGES[language].transcription,
-        onTimings: (t) => (sttTimings = t),
       });
-      const transcribed = performance.now();
+      timer.mark('transcribed');
       historyRef.current.push({ role: 'user', content: text });
       // At or past the limit rather than exactly on it: a final turn that
       // failed leaves its words in the history, and the retry is the final
@@ -326,18 +322,13 @@ export function useConversation({
       // Spoken as it's generated, all at the speed it started at: a change
       // that lands partway through applies from the next reply.
       setStatus(STAGE_STATUS.generating);
-      let generating: number | undefined;
-      let firstSentence: number | undefined;
-      let synthesised: number | undefined;
-      let ttsTimings: SpeakTimings | undefined;
       const spokenReply = createSpokenReply({
         voice: getVoice(),
         speed: speedRef.current,
         play: playVoice,
-        onFirstSentence: () => (firstSentence = performance.now()),
-        onFirstClip: (timings) => {
-          synthesised = performance.now();
-          ttsTimings = timings;
+        onFirstSentence: () => timer.mark('firstSentenceGenerated'),
+        onFirstClip: () => {
+          timer.mark('firstClipSynthesised');
           setStatus('Speaking…');
         },
       });
@@ -351,7 +342,7 @@ export function useConversation({
           systemInstruction,
           history: historyRef.current.slice(0, -1),
           onStage: (stage) => {
-            if (stage === 'generating') generating = performance.now();
+            if (stage === 'generating') timer.mark('chatReady');
             setStatus(STAGE_STATUS[stage]);
           },
           onChunk: (chunk) => spokenReply.push(chunk),
@@ -361,10 +352,9 @@ export function useConversation({
         await spokenReply.settle();
         throw err;
       }
-      const generated = performance.now();
       historyRef.current.push({ role: 'model', content: reply });
 
-      const { sentences: spoken, clips } = await spokenReply.end();
+      const { sentences: spoken, clips, gaps } = await spokenReply.end();
       lastLineRef.current = { sentences: spoken, clips };
       setCanRepeat(true);
       setStatus('');
@@ -374,28 +364,7 @@ export function useConversation({
         setHasEnded(true);
       }
 
-      if (
-        import.meta.env.DEV &&
-        firstSentence !== undefined &&
-        synthesised !== undefined
-      ) {
-        const timings = formatTurnTimings(
-          {
-            start,
-            stopped,
-            transcribed,
-            generating,
-            firstSentence,
-            generated,
-            synthesised,
-            stt: sttTimings,
-            tts: ttsTimings,
-          },
-          reply.length,
-          spoken.length,
-        );
-        console.info(`[turn] ${timings}`);
-      }
+      timer.log({ chars: reply.length, sentences: spoken.length, gaps });
     } catch (err) {
       report(err);
     } finally {

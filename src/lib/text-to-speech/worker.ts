@@ -65,15 +65,13 @@ ctx.onmessage = async (event: MessageEvent<WorkerRequest>) => {
       return;
     }
 
-    const { wav, synthesisMs } = await inTurn(async () => {
-      const synthesisStart = performance.now();
+    const wav = await inTurn(async () => {
       const samples = await synthesize(
         loaded,
         request.text,
         request.lengthScale,
       );
-      const wav = toWav(samples, loaded.config.audio.sample_rate);
-      return { wav, synthesisMs: performance.now() - synthesisStart };
+      return toWav(samples, loaded.config.audio.sample_rate);
     });
 
     // Transfer the bytes rather than copying them.
@@ -83,7 +81,6 @@ ctx.onmessage = async (event: MessageEvent<WorkerRequest>) => {
         type: 'done',
         buffer: wav,
         mimeType: 'audio/wav',
-        synthesisMs,
       } satisfies WorkerResponse,
       [wav],
     );

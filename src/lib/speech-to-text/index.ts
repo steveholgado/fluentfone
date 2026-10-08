@@ -9,11 +9,7 @@ import { SAMPLE_RATE, modelKey } from './constants';
 import type { SttRequest, WorkerRequest, WorkerResponse } from './messages';
 import type { TranscribeOptions } from './types';
 
-export type {
-  TranscribeDevice,
-  TranscribeOptions,
-  TranscribeTimings,
-} from './types';
+export type { TranscribeOptions } from './types';
 
 type DoneResponse = Extract<WorkerResponse, { type: 'done' }>;
 
@@ -79,13 +75,11 @@ export async function transcribe(
   audio: File | Blob | ArrayBuffer | Float32Array,
   options: TranscribeOptions = {},
 ): Promise<string> {
-  const { language, task = 'transcribe', onTimings } = options;
+  const { language, task = 'transcribe' } = options;
 
   // Audio decoding relies on AudioContext/OfflineAudioContext, which are
   // Window-only APIs (not exposed in workers), so it has to happen here.
-  const decodeStart = performance.now();
   const audioData = await toMonoPcm(audio, SAMPLE_RATE);
-  const decode = performance.now() - decodeStart;
 
   const response = await send({
     mode: 'transcribe',
@@ -94,12 +88,6 @@ export async function transcribe(
     task,
   });
   pipelineReady = true;
-
-  onTimings?.({
-    decode,
-    inference: response.inferenceMs ?? 0,
-    device: response.device ?? 'wasm',
-  });
 
   return response.text ?? '';
 }

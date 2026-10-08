@@ -22,8 +22,7 @@ import { loadWeightsExternally } from './external-weights';
 // instance side closely enough for postMessage's transfer-list overload.
 const ctx = self as unknown as Worker;
 
-// ORT's name for the backend: what the pipeline is built on, and what each
-// transcription reports it ran on.
+// ORT's name for the backend the pipeline is built on.
 const device = HAS_WEBGPU ? 'webgpu' : 'wasm';
 
 type Transformers = typeof import('@huggingface/transformers');
@@ -145,25 +144,17 @@ ctx.onmessage = async (event: MessageEvent<WorkerRequest>) => {
 
     const { audio, language, task = 'transcribe' } = request;
 
-    const inferenceStart = performance.now();
     const result = await transcriber(audio, {
       language,
       task,
       chunk_length_s: 30,
       stride_length_s: 5,
     });
-    const inferenceMs = performance.now() - inferenceStart;
 
     const output = Array.isArray(result) ? result[0] : result;
     const text = (output as { text?: string })?.text?.trim() ?? '';
 
-    ctx.postMessage({
-      id,
-      type: 'done',
-      text,
-      inferenceMs,
-      device,
-    } satisfies WorkerResponse);
+    ctx.postMessage({ id, type: 'done', text } satisfies WorkerResponse);
   } catch (err) {
     ctx.postMessage({
       id,

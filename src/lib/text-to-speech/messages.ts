@@ -18,7 +18,5 @@ export type WorkerResponse =
       type: 'done';
       buffer?: ArrayBuffer;
       mimeType?: string;
-      /** Speak requests only: how long synthesis took, in ms. */
-      synthesisMs?: number;
     }
   | { id: number; type: 'error'; message: string };

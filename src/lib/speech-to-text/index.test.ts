@@ -122,36 +122,6 @@ describe('transcribe', () => {
     );
   });
 
-  it('reports decode time alongside the worker’s inference time and device', async () => {
-    const now = vi
-      .spyOn(performance, 'now')
-      .mockReturnValueOnce(1000)
-      .mockReturnValueOnce(1040);
-    const onTimings = vi.fn();
-    const { transcribe } = await import('#/lib/speech-to-text/index');
-
-    const promise = transcribe(new Blob(['audio']), { onTimings });
-    await flush();
-    const worker = FakeWorker.instances[0];
-    worker.emit({
-      id: 0,
-      type: 'done',
-      text: 'hola',
-      inferenceMs: 3300,
-      device: 'webgpu',
-    });
-    await promise;
-
-    expect(onTimings).toHaveBeenCalledWith({
-      decode: 40,
-      inference: 3300,
-      device: 'webgpu',
-    });
-    // A function can't be structured-cloned; posting one would throw.
-    expect(worker.postedMessages[0]).not.toHaveProperty('onTimings');
-    now.mockRestore();
-  });
-
   it('rejects when the worker reports an error', async () => {
     const { transcribe } = await import('#/lib/speech-to-text/index');
 

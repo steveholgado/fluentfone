@@ -175,38 +175,6 @@ describe('openVoice', () => {
     });
   });
 
-  it('reports startup as the round trip less the worker’s synthesis time', async () => {
-    const voice = openVoice(VOICES.en_US[0]);
-    const now = vi
-      .spyOn(performance, 'now')
-      .mockReturnValueOnce(1000)
-      .mockReturnValueOnce(2600);
-    const onTimings = vi.fn();
-
-    const promise = voice.speak('hello', { onTimings });
-    FakeWorker.instances[0].emit({
-      id: 1,
-      type: 'done',
-      ...AUDIO,
-      synthesisMs: 1500,
-    });
-    await promise;
-
-    expect(onTimings).toHaveBeenCalledWith({ startup: 100, synthesis: 1500 });
-    now.mockRestore();
-  });
-
-  it('keeps the timings callback out of the worker request', () => {
-    // A function can't be structured-cloned; posting one would throw.
-    const voice = openVoice(VOICES.en_US[0]);
-
-    void voice.speak('hello', { onTimings: vi.fn() });
-
-    expect(FakeWorker.instances[0].postedMessages[1]).not.toHaveProperty(
-      'onTimings',
-    );
-  });
-
   it('rejects a line the worker reports an error for, and keeps the worker', async () => {
     const voice = openVoice(VOICES.en_US[0]);
     const worker = FakeWorker.instances[0];

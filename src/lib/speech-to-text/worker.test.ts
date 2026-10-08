@@ -74,13 +74,7 @@ describe('worker onmessage', () => {
     });
 
     expect(postedMessages).toEqual([
-      {
-        id: 7,
-        type: 'done',
-        text: 'hello world',
-        inferenceMs: expect.any(Number),
-        device: 'wasm',
-      },
+      { id: 7, type: 'done', text: 'hello world' },
     ]);
     expect(transcriberFn).toHaveBeenCalledWith(
       expect.any(Float32Array),
@@ -108,9 +102,7 @@ describe('worker onmessage', () => {
 
     await post({ id: 2, mode: 'transcribe', audio: new Float32Array([0.1]) });
 
-    expect(postedMessages).toEqual([
-      expect.objectContaining({ id: 2, type: 'done', text: 'first' }),
-    ]);
+    expect(postedMessages).toEqual([{ id: 2, type: 'done', text: 'first' }]);
   });
 
   it('returns an empty string when the result has no text', async () => {
@@ -118,32 +110,25 @@ describe('worker onmessage', () => {
 
     await post({ id: 3, mode: 'transcribe', audio: new Float32Array([0.1]) });
 
-    expect(postedMessages).toEqual([
-      expect.objectContaining({ id: 3, type: 'done', text: '' }),
-    ]);
+    expect(postedMessages).toEqual([{ id: 3, type: 'done', text: '' }]);
   });
 
-  it('reports how long the pipeline call took', async () => {
-    // The first transcribe builds the pipeline; only the call itself is timed.
-    const now = vi
-      .spyOn(performance, 'now')
-      .mockReturnValueOnce(100)
-      .mockReturnValueOnce(3400);
+  it('builds the pipeline on the wasm backend without WebGPU', async () => {
+    await post({ id: 8, mode: 'load' });
 
-    await post({ id: 8, mode: 'transcribe', audio: new Float32Array([0.1]) });
-
-    expect(postedMessages[0]).toMatchObject({ inferenceMs: 3300 });
-    now.mockRestore();
+    expect(pipelineFactory.mock.calls[0][2]).toMatchObject({ device: 'wasm' });
   });
 
-  it('reports webgpu as the device when the pipeline was built on it', async () => {
+  it('builds the pipeline on WebGPU when it is available', async () => {
     vi.resetModules();
     vi.stubGlobal('navigator', { gpu: {} });
     await import('#/lib/speech-to-text/worker');
 
-    await post({ id: 9, mode: 'transcribe', audio: new Float32Array([0.1]) });
+    await post({ id: 9, mode: 'load' });
 
-    expect(postedMessages[0]).toMatchObject({ device: 'webgpu' });
+    expect(pipelineFactory.mock.calls[0][2]).toMatchObject({
+      device: 'webgpu',
+    });
   });
 
   it('builds the pipeline once across multiple messages', async () => {

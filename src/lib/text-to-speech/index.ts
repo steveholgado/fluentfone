@@ -23,7 +23,7 @@ import type { TtsRequest, WorkerRequest, WorkerResponse } from './messages';
 import type { SpeakOptions } from './types';
 
 export { VOICES } from './constants';
-export type { SpeakOptions, SpeakTimings } from './types';
+export type { SpeakOptions } from './types';
 
 type DoneResponse = Extract<WorkerResponse, { type: 'done' }>;
 
@@ -130,10 +130,9 @@ export function openVoice(
       return ready;
     },
 
-    async speak(text, { speed = 1, onTimings } = {}) {
+    async speak(text, { speed = 1 } = {}) {
       if (closed) throw new Error('This voice has been closed.');
 
-      const start = performance.now();
       const result = await send(worker ?? spawn(), {
         mode: 'speak',
         voiceId,
@@ -144,15 +143,6 @@ export function openVoice(
       if (!result.buffer || !result.mimeType) {
         throw new Error('Worker returned no audio data.');
       }
-
-      // Startup is what's left of the round trip once synthesis is taken out:
-      // waiting on a session still loading, and the messaging either side.
-      // Near zero once the voice is warm.
-      const synthesis = result.synthesisMs ?? 0;
-      onTimings?.({
-        startup: performance.now() - start - synthesis,
-        synthesis,
-      });
 
       return new Blob([result.buffer], { type: result.mimeType });
     },

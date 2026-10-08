@@ -544,7 +544,6 @@ describe('useConversation', () => {
       );
       expect(transcribe).toHaveBeenCalledWith(AUDIO_BLOB, {
         language: 'spanish',
-        onTimings: expect.any(Function),
       });
       const instructions = vi
         .mocked(generateMessage)
@@ -842,7 +841,6 @@ describe('useConversation', () => {
       expect(result.current.isRecording).toBe(false);
       expect(transcribe).toHaveBeenCalledWith(AUDIO_BLOB, {
         language: 'spanish',
-        onTimings: expect.any(Function),
       });
       expect(generateMessage).toHaveBeenCalledWith({
         prompt: 'Hola, ¿cómo estás?',
@@ -851,10 +849,7 @@ describe('useConversation', () => {
         onStage: expect.any(Function),
         onChunk: expect.any(Function),
       });
-      expect(speak).toHaveBeenCalledWith('¡Muy bien, gracias!', {
-        speed: 1,
-        onTimings: expect.any(Function),
-      });
+      expect(speak).toHaveBeenCalledWith('¡Muy bien, gracias!', { speed: 1 });
       expect(play).toHaveBeenCalledWith(GREETING_AUDIO);
       expect(result.current.status).toBe('');
     });
@@ -897,15 +892,8 @@ describe('useConversation', () => {
 
     it('logs stage timings once the reply has been spoken, in dev', async () => {
       mockRecorderImpl();
-      vi.mocked(transcribe).mockImplementation(async (_audio, options) => {
-        options?.onTimings?.({ decode: 40, inference: 3300, device: 'webgpu' });
-        return 'Hola';
-      });
+      vi.mocked(transcribe).mockResolvedValue('Hola');
       vi.mocked(generateMessage).mockImplementation(streamed('¡Hola!'));
-      speak.mockImplementation(async (_text, opts) => {
-        opts?.onTimings?.({ startup: 900, synthesis: 1500 });
-        return GREETING_AUDIO;
-      });
 
       const { result } = renderHook(() =>
         useConversation({ level: LEVEL, language: LANGUAGE, speed: 1 }),
@@ -920,12 +908,18 @@ describe('useConversation', () => {
       });
 
       expect(play).toHaveBeenCalled();
-      expect(console.info).toHaveBeenCalledTimes(1);
-      expect(console.info).toHaveBeenCalledWith(
-        expect.stringMatching(
-          /^\[turn\] stop \d+ · stt \d+ \(decode 40, whisper 3300 on webgpu\) · gen \d+ \(setup \d+, whole reply \d+\) · tts \d+ \(startup 900, synthesis 1500\) · first audio \d+ms · reply 6 chars in 1 sentence$/,
-        ),
-      );
+      expect(console.info).toHaveBeenCalledWith('[turn]', {
+        timeToFirstAudioMs: expect.any(Number),
+        transcribeMs: expect.any(Number),
+        chatSetupMs: expect.any(Number),
+        generateFirstSentenceMs: expect.any(Number),
+        synthesiseFirstSentenceMs: expect.any(Number),
+        replyGaps: 0,
+        replyGapsMs: 0,
+        recordingMs: expect.any(Number),
+        replyChars: 6,
+        replySentences: 1,
+      });
     });
 
     it('does not log stage timings in production', async () => {
