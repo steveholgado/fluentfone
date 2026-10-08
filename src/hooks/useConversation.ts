@@ -165,6 +165,13 @@ export function useConversation({
     [],
   );
 
+  // In dev only, once each line has been spoken. A copy, since the console
+  // would otherwise show the history as it is when expanded, not as it was.
+  const logHistory = useCallback(() => {
+    if (!import.meta.env.DEV) return;
+    console.info('[history]', [...historyRef.current]);
+  }, []);
+
   // Both playback sites go through here so the flag clears even when playback
   // rejects — the callers turn that into a status message and carry on.
   const playVoice = useCallback(async (audio: Blob) => {
@@ -265,12 +272,13 @@ export function useConversation({
       lastLineRef.current = { sentences: [greeting.text], clips: [audio] };
       setCanRepeat(true);
       setStatus('');
+      logHistory();
     } catch (err) {
       report(err);
     } finally {
       setBusy(false);
     }
-  }, [level, playVoice, report, setBusy]);
+  }, [level, logHistory, playVoice, report, setBusy]);
 
   const startRecording = useCallback(async () => {
     setBusy(true);
@@ -372,12 +380,21 @@ export function useConversation({
       }
 
       timer.log({ chars: reply.length, sentences: spoken.length, gaps });
+      logHistory();
     } catch (err) {
       report(err);
     } finally {
       setBusy(false);
     }
-  }, [getVoice, language, playVoice, report, setBusy, systemInstruction]);
+  }, [
+    getVoice,
+    language,
+    logHistory,
+    playVoice,
+    report,
+    setBusy,
+    systemInstruction,
+  ]);
 
   const toggleRecording = useCallback(() => {
     unlock();
