@@ -2,6 +2,8 @@ import { Waveform } from '#/components/Waveform';
 
 interface ConversationScreenProps {
   isRecording: boolean;
+  /** Something is in flight, e.g. a turn being answered. */
+  isBusy: boolean;
   isAudioLive: boolean;
   hasGreeted: boolean;
   isGreetingReady: boolean;
@@ -23,10 +25,11 @@ const REPEAT_BUTTON_CLASS =
   'cursor-pointer rounded-lg border border-gray-300 px-4 py-1.5 text-base text-gray-200 hover:bg-white/10';
 
 const CALL_BUTTON_CLASS =
-  'min-w-48 cursor-pointer rounded-lg bg-gray-200 px-8 py-3 text-xl text-black hover:bg-gray-300';
+  'min-w-48 cursor-pointer rounded-lg bg-gray-200 px-8 py-3 text-xl text-black hover:bg-gray-300 disabled:bg-gray-500';
 
 export function ConversationScreen({
   isRecording,
+  isBusy,
   isAudioLive,
   hasGreeted,
   isGreetingReady,
@@ -58,7 +61,7 @@ export function ConversationScreen({
           </div>
           <button
             onClick={onAnswer}
-            className="min-w-48 cursor-pointer rounded-lg bg-gray-200 px-8 py-3 text-xl text-black hover:bg-gray-300 disabled:bg-gray-500"
+            className={CALL_BUTTON_CLASS}
             disabled={!isGreetingReady}
           >
             Answer
@@ -104,7 +107,11 @@ export function ConversationScreen({
               Call again
             </button>
           ) : (
-            <button onClick={onToggleRecording} className={CALL_BUTTON_CLASS}>
+            <button
+              onClick={onToggleRecording}
+              className={CALL_BUTTON_CLASS}
+              disabled={isBusy}
+            >
               {isRecording ? 'Stop' : 'Start'}
             </button>
           )}

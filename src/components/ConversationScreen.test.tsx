@@ -10,6 +10,7 @@ afterEach(cleanup);
 
 const BASE = {
   isRecording: false,
+  isBusy: false,
   isAudioLive: false,
   hasGreeted: false,
   isGreetingReady: false,
@@ -66,6 +67,18 @@ describe('ConversationScreen', () => {
 
     expect(screen.getByText('Speaking…')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Start' })).toBeInTheDocument();
+  });
+
+  it('disables the record button while a turn is in flight', () => {
+    const { rerender } = render(
+      <ConversationScreen {...BASE} hasGreeted isBusy status="Generating…" />,
+    );
+
+    expect(screen.getByRole('button', { name: 'Start' })).toBeDisabled();
+
+    rerender(<ConversationScreen {...BASE} hasGreeted />);
+
+    expect(screen.getByRole('button', { name: 'Start' })).toBeEnabled();
   });
 
   it('gives the status line over to the waveform while audio is live', () => {

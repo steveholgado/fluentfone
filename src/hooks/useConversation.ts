@@ -94,7 +94,14 @@ export function useConversation({
   const [transcript, setTranscript] = useState<string | null>(null);
   const transcriptTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
+  // While a turn, the greeting or a repeat is in flight, and nothing else can
+  // start. Mirrored in state for the record button.
   const busyRef = useRef(false);
+  const [isBusy, setIsBusy] = useState(false);
+  const setBusy = useCallback((busy: boolean) => {
+    busyRef.current = busy;
+    setIsBusy(busy);
+  }, []);
   // Set once the conversation has unmounted, i.e. the call has ended.
   const disposedRef = useRef(false);
   const recorderRef = useRef<AudioRecorder | null>(null);
@@ -241,7 +248,7 @@ export function useConversation({
     if (busyRef.current) return;
     const greeting = greetingRef.current;
     if (!greeting) return;
-    busyRef.current = true;
+    setBusy(true);
     markScenarioUsed(level, greeting.scenarioId);
     try {
       historyRef.current.push({ role: 'model', content: greeting.text });
@@ -256,12 +263,12 @@ export function useConversation({
     } catch (err) {
       report(err);
     } finally {
-      busyRef.current = false;
+      setBusy(false);
     }
-  }, [level, playVoice, report]);
+  }, [level, playVoice, report, setBusy]);
 
   const startRecording = useCallback(async () => {
-    busyRef.current = true;
+    setBusy(true);
     // Only the line just spoken can be repeated; once the user starts their
     // turn, it's gone until the next reply has been heard in full. So is its
     // text, even if it was still lingering.
@@ -282,9 +289,9 @@ export function useConversation({
     } catch (err) {
       report(err, 'Could not access microphone');
     } finally {
-      busyRef.current = false;
+      setBusy(false);
     }
-  }, [hideTranscript, report]);
+  }, [hideTranscript, report, setBusy]);
 
   const stopRecordingAndRespond = useCallback(async () => {
     const recorder = recorderRef.current;
@@ -295,7 +302,7 @@ export function useConversation({
     setIsRecording(false);
     // Before stop(), which ends the tracks the tap is reading from.
     releaseTap();
-    busyRef.current = true;
+    setBusy(true);
     try {
       const start = performance.now();
       const audioBlob = await recorder.stop();
@@ -420,9 +427,9 @@ export function useConversation({
     } catch (err) {
       report(err);
     } finally {
-      busyRef.current = false;
+      setBusy(false);
     }
-  }, [getVoice, language, playVoice, report, systemInstruction]);
+  }, [getVoice, language, playVoice, report, setBusy, systemInstruction]);
 
   const toggleRecording = useCallback(() => {
     unlock();
@@ -443,7 +450,7 @@ export function useConversation({
       if (busyRef.current) return;
       const line = lastLineRef.current;
       if (!line) return;
-      busyRef.current = true;
+      setBusy(true);
       if (withText) setTranscript(line.sentences.join(' '));
       try {
         setStatus('Speaking…');
@@ -460,14 +467,15 @@ export function useConversation({
         // Straight away, so the error shows in its place.
         hideTranscript();
       } finally {
-        busyRef.current = false;
+        setBusy(false);
       }
     },
-    [hideTranscript, playVoice, report],
+    [hideTranscript, playVoice, report, setBusy],
   );
 
   return {
     isRecording,
+    isBusy,
     isAudioLive: isRecording || isSpeaking,
     hasGreeted,
     isGreetingReady,

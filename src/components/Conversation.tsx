@@ -28,6 +28,7 @@ export function Conversation({
 }: ConversationProps) {
   const {
     isRecording,
+    isBusy,
     isAudioLive,
     hasGreeted,
     isGreetingReady,
@@ -48,6 +49,7 @@ export function Conversation({
   return (
     <ConversationScreen
       isRecording={isRecording}
+      isBusy={isBusy}
       isAudioLive={isAudioLive}
       hasGreeted={hasGreeted}
       isGreetingReady={isGreetingReady}

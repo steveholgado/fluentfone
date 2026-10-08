@@ -859,6 +859,42 @@ describe('useConversation', () => {
       expect(result.current.status).toBe('');
     });
 
+    it('is busy from the stop until the reply has been spoken', async () => {
+      mockRecorderImpl();
+      const transcribing = deferred<string>();
+      vi.mocked(transcribe).mockReturnValue(transcribing.promise);
+      vi.mocked(generateMessage).mockImplementation(streamed('¡Hola!'));
+      const playing = deferred<void>();
+      vi.mocked(play).mockReturnValue(playing.promise);
+
+      const { result } = renderHook(() =>
+        useConversation({ level: LEVEL, language: LANGUAGE, speed: 1 }),
+      );
+
+      await act(async () => {
+        result.current.toggleRecording();
+      });
+      await waitFor(() => expect(result.current.isRecording).toBe(true));
+      expect(result.current.isBusy).toBe(false);
+
+      await act(async () => {
+        result.current.toggleRecording();
+      });
+      expect(result.current.status).toBe('Transcribing…');
+      expect(result.current.isBusy).toBe(true);
+
+      await act(async () => {
+        transcribing.resolve('Hola');
+      });
+      await waitFor(() => expect(play).toHaveBeenCalled());
+      expect(result.current.isBusy).toBe(true);
+
+      await act(async () => {
+        playing.resolve();
+      });
+      expect(result.current.isBusy).toBe(false);
+    });
+
     it('logs stage timings once the reply has been spoken, in dev', async () => {
       mockRecorderImpl();
       vi.mocked(transcribe).mockImplementation(async (_audio, options) => {
