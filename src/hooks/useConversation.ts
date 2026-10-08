@@ -22,7 +22,7 @@ import {
 import { openVoice, type SpeakTimings, type Voice } from '#/lib/text-to-speech';
 import { formatProgress } from '#/utils/formatProgress';
 import { formatTurnTimings } from '#/lib/utils/formatTurnTimings';
-import { createSentenceSplitter } from '#/lib/utils/sentenceSplitter';
+import { createSpokenReply } from '#/lib/utils/spokenReply';
 import {
   buildSystemInstruction,
   finalTurnPrompt,
@@ -323,50 +323,23 @@ export function useConversation({
         historyRef.current.filter((turn) => turn.role === 'user').length >=
         MAX_USER_TURNS;
 
-      // The reply is spoken a sentence at a time as it's generated: each
-      // sentence goes to the voice the moment it's complete, and plays once
-      // its audio is back and the one before has finished. So the first
-      // sentence plays while the rest is still being generated and
-      // synthesised, rather than after all of it.
-      //
-      // The whole reply is at one speed: a change that lands partway through
-      // applies from the next one.
+      // Spoken as it's generated, all at the speed it started at: a change
+      // that lands partway through applies from the next reply.
       setStatus(STAGE_STATUS.generating);
-      const voice = getVoice();
-      const replySpeed = speedRef.current;
       let generating: number | undefined;
       let firstSentence: number | undefined;
       let synthesised: number | undefined;
       let ttsTimings: SpeakTimings | undefined;
-      const spoken: string[] = [];
-      const clips: Blob[] = [];
-      let playback = Promise.resolve();
-
-      const sentences = createSentenceSplitter((sentence) => {
-        const isFirst = spoken.push(sentence) === 1;
-        if (isFirst) firstSentence = performance.now();
-
-        let timings: SpeakTimings | undefined;
-        const audio = voice.speak(sentence, {
-          speed: replySpeed,
-          onTimings: (t) => (timings = t),
-        });
-        // Its failure surfaces through `playback`, which awaits it in turn.
-        audio.catch(() => {});
-
-        playback = playback.then(async () => {
-          const clip = await audio;
-          if (isFirst) {
-            synthesised = performance.now();
-            ttsTimings = timings;
-            setStatus('Speaking…');
-          }
-          clips.push(clip);
-          await playVoice(clip);
-        });
-        // Awaited below, once generation is over; until then a failure would
-        // otherwise be reported as unhandled.
-        playback.catch(() => {});
+      const spokenReply = createSpokenReply({
+        voice: getVoice(),
+        speed: speedRef.current,
+        play: playVoice,
+        onFirstSentence: () => (firstSentence = performance.now()),
+        onFirstClip: (timings) => {
+          synthesised = performance.now();
+          ttsTimings = timings;
+          setStatus('Speaking…');
+        },
       });
 
       let reply: string;
@@ -381,18 +354,17 @@ export function useConversation({
             if (stage === 'generating') generating = performance.now();
             setStatus(STAGE_STATUS[stage]);
           },
-          onChunk: (chunk) => sentences.push(chunk),
+          onChunk: (chunk) => spokenReply.push(chunk),
         });
       } catch (err) {
         // Whatever has started speaking finishes before the failure shows.
-        await playback.catch(() => {});
+        await spokenReply.settle();
         throw err;
       }
       const generated = performance.now();
-      sentences.end();
       historyRef.current.push({ role: 'model', content: reply });
 
-      await playback;
+      const { sentences: spoken, clips } = await spokenReply.end();
       lastLineRef.current = { sentences: spoken, clips };
       setCanRepeat(true);
       setStatus('');
