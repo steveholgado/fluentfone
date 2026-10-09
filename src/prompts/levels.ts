@@ -26,7 +26,7 @@ export const LEVELS = {
       'Only the most common everyday words: names, age, family, house, food and drink, colours, numbers, days of the week, weather, places in town.',
     length: 'Maximum 8 words per sentence.',
     questionStyle:
-      'Ask simple questions that can be answered with one or two words, with sí or no, or by choosing between two options.',
+      'Ask a simple question about what your friend just said. It can be answered in a few words, with sí or no, or by choosing between two options.',
     avoid:
       'Do not use the subjunctive. Do not use direct object pronouns (lo, la, los, las).',
   },
