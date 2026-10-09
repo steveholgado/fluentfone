@@ -57,9 +57,8 @@ export interface GenerateMessageOptions {
   /** Max context window tokens for the engine. Defaults to DEFAULT_MAX_TOKENS. */
   maxNumTokens?: number;
   /**
-   * Sampling parameters controlling randomness. Defaults to a general-purpose
-   * chat preset (temperature 0.8, topK 40, topP 0.95) rather than greedy
-   * decoding.
+   * Sampling parameters controlling randomness. Any left out default to
+   * DEFAULT_SAMPLER_PARAMS rather than greedy decoding.
    */
   samplerParams?: SamplerParams;
   /**

@@ -49,7 +49,8 @@ export const MAX_TOP_K = 64;
 export const DEFAULT_SAMPLER_PARAMS: Required<
   Omit<SamplerParams, 'randomSeed'>
 > = {
-  temperature: 0.8,
-  topK: 40,
+  // Lower than a general chat preset: 0.8/40
+  temperature: 0.6,
+  topK: 20,
   topP: 0.95,
 };
