@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 import { cn } from '#/utils/cn';
 
@@ -10,9 +10,9 @@ interface OverlayProps {
 export function Overlay({ visible, children }: OverlayProps) {
   const [shouldRender, setShouldRender] = useState(visible);
 
-  useEffect(() => {
-    if (visible) setShouldRender(true);
-  }, [visible]);
+  // Set during render rather than in an effect, so it shows on the same render
+  // that `visible` turns true instead of one after.
+  if (visible && !shouldRender) setShouldRender(true);
 
   if (!shouldRender) return null;
 
