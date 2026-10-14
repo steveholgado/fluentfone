@@ -101,6 +101,7 @@ export function installClassicScriptLoader(): void {
       // import() would scope it to a module, either of which leaves the
       // library throwing "ModuleFactory not set.". None of the four wasm
       // builds is strict-mode, so `var` does reach the global object.
+      // eslint-disable-next-line no-eval
       (0, eval)(request.responseText);
     }
   };

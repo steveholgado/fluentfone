@@ -68,6 +68,8 @@ export function SettingsMenu({
               Language
             </h2>
             <div
+              // A div, as a fieldset brings default styling to undo.
+              // eslint-disable-next-line jsx-a11y/prefer-tag-over-role
               role="group"
               aria-labelledby={languageHeadingId}
               className="flex flex-col gap-2"
@@ -91,6 +93,7 @@ export function SettingsMenu({
               Level
             </h2>
             <div
+              // eslint-disable-next-line jsx-a11y/prefer-tag-over-role
               role="group"
               aria-labelledby={levelHeadingId}
               className="flex flex-col gap-2"
@@ -117,6 +120,7 @@ export function SettingsMenu({
               Speed
             </h2>
             <div
+              // eslint-disable-next-line jsx-a11y/prefer-tag-over-role
               role="group"
               aria-labelledby={speedHeadingId}
               className="flex flex-col gap-2"

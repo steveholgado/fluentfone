@@ -145,6 +145,7 @@ export function usePreload(voiceId: string) {
       cancelled = true;
     };
     // Mount only: a voice chosen later is checked by the effect below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Keeps `cached` describing the voice that would be downloaded, so the

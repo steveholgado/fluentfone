@@ -20,6 +20,9 @@ export function DownloadProgressBar({
 }: DownloadProgressBarProps) {
   return (
     <div
+      // A styled div, since <progress> can't be styled consistently across
+      // browsers.
+      // eslint-disable-next-line jsx-a11y/prefer-tag-over-role
       role="progressbar"
       aria-valuemin={0}
       aria-valuemax={100}

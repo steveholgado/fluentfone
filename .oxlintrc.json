@@ -1,0 +1,23 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": [
+    "typescript",
+    "react",
+    "jsx-a11y",
+    "vitest",
+    "import",
+    "unicorn",
+    "oxc"
+  ],
+  "env": { "browser": true, "es2022": true },
+  "categories": { "correctness": "error" },
+  "rules": {
+    // Mocks are typed by vi.mocked() or inference where it matters, and tsc
+    // checks the rest.
+    "vitest/require-mock-type-parameters": "off"
+  },
+  "ignorePatterns": ["dist", "src/routeTree.gen.ts", "public/vendor"],
+  "overrides": [
+    { "files": ["*.config.ts", "vite-plugin-*.ts"], "env": { "node": true } }
+  ]
+}
