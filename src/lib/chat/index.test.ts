@@ -1,9 +1,8 @@
+import { version as LITERT_VERSION } from '@litert-lm/core/package.json';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { version as LITERT_VERSION } from '@litert-lm/core/package.json';
-
-import { stubCacheStorage } from '#/test-utils';
 import type { WorkerRequest, WorkerResponse } from '#/lib/chat/messages';
+import { stubCacheStorage } from '#/test-utils';
 
 // What the engine does with a request is worker.test.ts' business. This file
 // covers the main thread's half: resolving defaults before anything is posted,

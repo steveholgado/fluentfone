@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
 import type { InferenceSession } from 'onnxruntime-web/webgpu';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   loadWeightsExternally,

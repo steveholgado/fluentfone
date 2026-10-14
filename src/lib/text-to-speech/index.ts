@@ -18,6 +18,7 @@ import { hasAsset, hasStep, markStep } from '#/lib/cache/markers';
 import { pullThrough } from '#/lib/cache/pull-through';
 import { trackStep } from '#/lib/preload/track';
 import type { ProgressCallback } from '#/lib/progress';
+
 import { RUNTIME_KEY, WASM_FILES, voiceUrls } from './constants';
 import type { TtsRequest, WorkerRequest, WorkerResponse } from './messages';
 import type { SpeakOptions } from './types';

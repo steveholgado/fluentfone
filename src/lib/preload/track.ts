@@ -15,6 +15,7 @@ import {
 } from '#/lib/cache/channel';
 import { EXPECTED_BYTES } from '#/lib/cache/rules';
 import type { LoadProgress, ProgressCallback } from '#/lib/progress';
+
 import type { PreloadStepId } from './steps';
 
 /** What each step is expected to fetch; the steps left out go uncounted. */

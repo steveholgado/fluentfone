@@ -6,8 +6,9 @@
  * import anything heavier than a type.
  */
 
-import { MODELS_CACHE } from './names';
 import type { PreloadStepId } from '#/lib/preload/steps';
+
+import { MODELS_CACHE } from './names';
 
 /**
  * Whether the bytes for `url` are in the models cache.

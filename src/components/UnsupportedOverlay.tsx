@@ -1,5 +1,5 @@
-import type { RequirementResult } from '#/lib/device';
 import { Overlay } from '#/components/Overlay';
+import type { RequirementResult } from '#/lib/device';
 
 interface UnsupportedOverlayProps {
   visible: boolean;

@@ -1,6 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  PROGRESS_CHANNEL,
+  type AssetProgressMessage,
+} from '#/lib/cache/channel';
+import { hasStep, markStep, markWriteFailed } from '#/lib/cache/markers';
+import { MODELS_CACHE } from '#/lib/cache/names';
+import { EXPECTED_BYTES } from '#/lib/cache/rules';
+import * as chat from '#/lib/chat';
+import {
   bytesNeeded,
   checkPreloaded,
   isFullyPreloaded,
@@ -10,16 +18,8 @@ import {
   preloadVoicePack,
   voicePackBytes,
 } from '#/lib/preload';
-import { EXPECTED_BYTES } from '#/lib/cache/rules';
 import type { PreloadStatus } from '#/lib/preload';
 import { DOWNLOAD_ORDER } from '#/lib/preload/steps';
-import {
-  PROGRESS_CHANNEL,
-  type AssetProgressMessage,
-} from '#/lib/cache/channel';
-import { hasStep, markStep, markWriteFailed } from '#/lib/cache/markers';
-import { MODELS_CACHE } from '#/lib/cache/names';
-import * as chat from '#/lib/chat';
 import * as speechToText from '#/lib/speech-to-text';
 import * as textToSpeech from '#/lib/text-to-speech';
 import { stubCacheStorage } from '#/test-utils';

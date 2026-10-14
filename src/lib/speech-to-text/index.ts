@@ -5,6 +5,7 @@
 
 import { toMonoPcm } from '#/lib/audio';
 import { hasStep, markStep } from '#/lib/cache/markers';
+
 import { SAMPLE_RATE, modelKey } from './constants';
 import type { SttRequest, WorkerRequest, WorkerResponse } from './messages';
 import type { TranscribeOptions } from './types';

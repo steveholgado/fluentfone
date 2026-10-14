@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { LANGUAGES, MAX_USER_TURNS, voiceFor, type LanguageId } from '#/config';
 import {
   AudioRecorder,
   play,
@@ -8,15 +9,14 @@ import {
   tapStream,
   unlock,
 } from '#/lib/audio';
-import { load as loadSpeechToText, transcribe } from '#/lib/speech-to-text';
 import {
   endConversation,
   generateMessage,
   type ChatMessage,
   type GenerateStage,
 } from '#/lib/chat';
+import { load as loadSpeechToText, transcribe } from '#/lib/speech-to-text';
 import { openVoice, type Voice } from '#/lib/text-to-speech';
-import { formatProgress } from '#/utils/formatProgress';
 import { createSpokenReply } from '#/lib/utils/spokenReply';
 import { createTurnTimer } from '#/lib/utils/turnTimer';
 import {
@@ -27,7 +27,7 @@ import {
   pickScenario,
   type CefrLevel,
 } from '#/prompts';
-import { LANGUAGES, MAX_USER_TURNS, voiceFor, type LanguageId } from '#/config';
+import { formatProgress } from '#/utils/formatProgress';
 
 // 'loading' is the everyday one: preload put the model on disk, and this is
 // the wait while several gigabytes are read back off it and compiled. It is

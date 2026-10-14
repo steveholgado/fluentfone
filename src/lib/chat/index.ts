@@ -19,7 +19,9 @@
 // cached. Not in ./constants.ts either, which `sw.ts` can reach through
 // `lib/cache/rules.ts` and which must therefore stay free of this package.
 import { version as LITERT_VERSION } from '@litert-lm/core/package.json';
+
 import { hasStep, markStep } from '#/lib/cache/markers';
+
 import { send } from './client';
 import {
   DEFAULT_CHAT_MODEL,

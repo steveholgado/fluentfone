@@ -1,11 +1,12 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MAX_USER_TURNS, voiceFor, type LanguageId } from '#/config';
 import { TRANSCRIPT_LINGER_MS, useConversation } from '#/hooks/useConversation';
-import { AudioRecorder } from '#/lib/audio/recorder';
 import { play, stopPlayback } from '#/lib/audio/player';
-import { load as loadSpeechToText, transcribe } from '#/lib/speech-to-text';
+import { AudioRecorder } from '#/lib/audio/recorder';
 import { endConversation, generateMessage } from '#/lib/chat';
+import { load as loadSpeechToText, transcribe } from '#/lib/speech-to-text';
 import { openVoice, type Voice } from '#/lib/text-to-speech';
 import {
   buildSystemInstruction,
@@ -16,7 +17,6 @@ import {
   type CefrLevel,
   type Scenario,
 } from '#/prompts';
-import { MAX_USER_TURNS, voiceFor, type LanguageId } from '#/config';
 
 vi.mock('#/lib/audio/recorder', () => ({
   AudioRecorder: vi.fn(),

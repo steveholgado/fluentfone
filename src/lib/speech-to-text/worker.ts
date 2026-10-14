@@ -6,9 +6,10 @@
  */
 
 import type { AutomaticSpeechRecognitionPipeline } from '@huggingface/transformers';
-import type { WorkerRequest, WorkerResponse } from './messages';
+
 import { pullThrough } from '#/lib/cache/pull-through';
 import { HAS_WEBGPU } from '#/lib/device';
+
 import {
   EXTERNAL_WEIGHTS,
   MODEL,
@@ -17,6 +18,7 @@ import {
   modelDtype,
 } from './constants';
 import { loadWeightsExternally } from './external-weights';
+import type { WorkerRequest, WorkerResponse } from './messages';
 
 // DOM lib doesn't type worker-global `self`; the shape matches Worker's
 // instance side closely enough for postMessage's transfer-list overload.

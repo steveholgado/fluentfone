@@ -1,6 +1,6 @@
+import { version as LITERT_VERSION } from '@litert-lm/core/package.json';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { version as LITERT_VERSION } from '@litert-lm/core/package.json';
 import { MODELS_CACHE } from '#/lib/cache/names';
 import { CHAT_MODELS, DEFAULT_CHAT_MODEL } from '#/lib/chat/constants';
 import { ORT_VERSION } from '#/lib/ort';

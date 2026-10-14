@@ -1,10 +1,10 @@
 import { useState } from 'react';
 
-import { LANGUAGES, type LanguageId } from '#/config';
-import { voicePackBytes } from '#/lib/preload';
-import type { PreloadProgress } from '#/hooks/usePreload';
 import { DownloadProgressBar } from '#/components/DownloadProgressBar';
 import { Overlay } from '#/components/Overlay';
+import { LANGUAGES, type LanguageId } from '#/config';
+import type { PreloadProgress } from '#/hooks/usePreload';
+import { voicePackBytes } from '#/lib/preload';
 import { formatBytes } from '#/utils/formatBytes';
 
 interface VoiceDownloadOverlayProps {

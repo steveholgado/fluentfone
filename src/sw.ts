@@ -29,7 +29,6 @@
  *    `self as unknown as Worker` cast the two Web Workers already use.
  */
 
-import { BUILD_ID, PRECACHE_URLS } from './sw-precache';
 // The leaves rather than a barrel: `lib/cache` deliberately has none, so that
 // what the service worker bundle pulls in is visible here at the call site.
 import {
@@ -37,14 +36,16 @@ import {
   PROGRESS_CHANNEL,
   TAKE_OVER,
   type AssetProgressMessage,
-} from './lib/cache/channel';
+} from '#/lib/cache/channel';
+import { markWriteFailed } from '#/lib/cache/markers';
 import {
   MODELS_CACHE,
   SHELL_CACHE_PREFIX,
   shellCacheName,
-} from './lib/cache/names';
-import { markWriteFailed } from './lib/cache/markers';
-import { ruleFor, type AssetRule } from './lib/cache/rules';
+} from '#/lib/cache/names';
+import { ruleFor, type AssetRule } from '#/lib/cache/rules';
+
+import { BUILD_ID, PRECACHE_URLS } from './sw-precache';
 
 interface SwExtendableEvent {
   waitUntil(promise: Promise<unknown>): void;

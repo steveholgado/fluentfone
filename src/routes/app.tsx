@@ -7,10 +7,10 @@ import { PreloadOverlay } from '#/components/PreloadOverlay';
 import { SettingsMenu } from '#/components/SettingsMenu';
 import { UnsupportedOverlay } from '#/components/UnsupportedOverlay';
 import { VoiceDownloadOverlay } from '#/components/VoiceDownloadOverlay';
+import { voiceFor } from '#/config';
 import { useLanguageSwitch } from '#/hooks/useLanguageSwitch';
 import { usePreload } from '#/hooks/usePreload';
 import { useSettings } from '#/hooks/useSettings';
-import { voiceFor } from '#/config';
 
 export const Route = createFileRoute('/app')({ ssr: false, component: App });
 

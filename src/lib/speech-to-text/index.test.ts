@@ -2,11 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import * as audio from '#/lib/audio';
 import { MODEL_REVISION } from '#/lib/speech-to-text/constants';
-import { stubCacheStorage } from '#/test-utils';
 import type {
   WorkerRequest,
   WorkerResponse,
 } from '#/lib/speech-to-text/messages';
+import { stubCacheStorage } from '#/test-utils';
 
 // The barrel, because that is what index.ts imports. Only toMonoPcm is stubbed
 // — nothing else in `#/lib/audio` is reachable from speech-to-text.

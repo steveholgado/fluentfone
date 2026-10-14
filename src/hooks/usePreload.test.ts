@@ -2,10 +2,10 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { usePreload } from '#/hooks/usePreload';
+import { requestPersistentStorage } from '#/lib/cache/persist';
 import { checkDeviceSupport, type DeviceSupport } from '#/lib/device';
 import { checkPreloaded, isFullyPreloaded, preloadAll } from '#/lib/preload';
 import type { PreloadStatus } from '#/lib/preload';
-import { requestPersistentStorage } from '#/lib/cache/persist';
 import { sweepStaleAssets } from '#/lib/preload/sweep';
 
 vi.mock('#/lib/cache/persist', () => ({

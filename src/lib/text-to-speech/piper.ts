@@ -7,8 +7,9 @@
  * the app carries one runtime rather than one per library.
  */
 
-import * as ort from 'onnxruntime-web/wasm';
 import createPiperPhonemize from '@diffusionstudio/piper-wasm/build/piper_phonemize.js';
+import * as ort from 'onnxruntime-web/wasm';
+
 import { ONNX_WASM_BASE, PIPER_WASM_BASE, voiceUrls } from './constants';
 
 // Our copy rather than ORT's default of a sibling of its own bundle, which the

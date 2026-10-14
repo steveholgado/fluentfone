@@ -1,10 +1,9 @@
+import { version as LITERT_VERSION } from '@litert-lm/core/package.json';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { version as LITERT_VERSION } from '@litert-lm/core/package.json';
-
-import { stubCacheStorage } from '#/test-utils';
 import { DEFAULT_CHAT_MODEL } from '#/lib/chat/constants';
 import type { ChatRequest, WorkerResponse } from '#/lib/chat/messages';
+import { stubCacheStorage } from '#/test-utils';
 
 const sendMessageStreaming = vi.fn();
 const createConversation = vi.fn();

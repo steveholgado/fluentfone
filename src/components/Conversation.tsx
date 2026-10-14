@@ -1,8 +1,8 @@
 import { useEffect } from 'react';
 
 import { ConversationScreen } from '#/components/ConversationScreen';
-import { useConversation } from '#/hooks/useConversation';
 import type { LanguageId } from '#/config';
+import { useConversation } from '#/hooks/useConversation';
 import type { PreloadPhase } from '#/hooks/usePreload';
 import type { CefrLevel } from '#/prompts';
 

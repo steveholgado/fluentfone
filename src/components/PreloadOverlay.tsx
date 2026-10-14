@@ -1,3 +1,6 @@
+import { DownloadProgressBar } from '#/components/DownloadProgressBar';
+import { Overlay } from '#/components/Overlay';
+import type { PreloadProgress } from '#/hooks/usePreload';
 import {
   bytesNeeded,
   isFullyPreloaded,
@@ -5,9 +8,6 @@ import {
   type PreloadLabel,
   type PreloadStatus,
 } from '#/lib/preload';
-import type { PreloadProgress } from '#/hooks/usePreload';
-import { DownloadProgressBar } from '#/components/DownloadProgressBar';
-import { Overlay } from '#/components/Overlay';
 import { formatBytes } from '#/utils/formatBytes';
 
 const LABELS: Record<PreloadLabel, string> = {

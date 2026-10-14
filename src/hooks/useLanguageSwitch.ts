@@ -1,12 +1,12 @@
 import { useCallback, useState } from 'react';
 
 import { LANGUAGES, type LanguageId } from '#/config';
-import { isVoicePackCached, preloadVoicePack } from '#/lib/preload';
 import {
   advanceProgress,
   type PreloadPhase,
   type PreloadProgress,
 } from '#/hooks/usePreload';
+import { isVoicePackCached, preloadVoicePack } from '#/lib/preload';
 
 interface LanguageSwitchOptions {
   phase: PreloadPhase;

@@ -1,7 +1,6 @@
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { useSettings } from '#/hooks/useSettings';
 import {
   DEFAULT_LANGUAGE,
   DEFAULT_LEVEL,
@@ -9,6 +8,7 @@ import {
   SPEEDS,
   type Speed,
 } from '#/config';
+import { useSettings } from '#/hooks/useSettings';
 
 const STORAGE_KEY = 'settings';
 

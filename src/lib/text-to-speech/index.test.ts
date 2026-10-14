@@ -1,9 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type {
-  WorkerRequest,
-  WorkerResponse,
-} from '#/lib/text-to-speech/messages';
+import {
+  PROGRESS_CHANNEL,
+  type AssetProgressMessage,
+} from '#/lib/cache/channel';
+import { hasStep, markStep } from '#/lib/cache/markers';
+import { MODELS_CACHE } from '#/lib/cache/names';
+import {
+  RUNTIME_KEY,
+  voiceUrls,
+  WASM_FILES,
+} from '#/lib/text-to-speech/constants';
 import {
   isCached,
   isRuntimeCached,
@@ -12,17 +19,10 @@ import {
   preloadRuntime,
   VOICES,
 } from '#/lib/text-to-speech/index';
-import {
-  RUNTIME_KEY,
-  voiceUrls,
-  WASM_FILES,
-} from '#/lib/text-to-speech/constants';
-import { hasStep, markStep } from '#/lib/cache/markers';
-import { MODELS_CACHE } from '#/lib/cache/names';
-import {
-  PROGRESS_CHANNEL,
-  type AssetProgressMessage,
-} from '#/lib/cache/channel';
+import type {
+  WorkerRequest,
+  WorkerResponse,
+} from '#/lib/text-to-speech/messages';
 import { stubCacheStorage } from '#/test-utils';
 
 /** Stands in for the service worker. Delivery is asynchronous. */

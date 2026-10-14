@@ -18,6 +18,7 @@
  */
 
 import { version as LITERT_VERSION } from '@litert-lm/core/package.json';
+
 import { MODELS_CACHE } from '#/lib/cache/names';
 import { ruleFor } from '#/lib/cache/rules';
 import { DEFAULT_CHAT_MODEL } from '#/lib/chat/constants';
@@ -32,6 +33,7 @@ import {
   VOICE_REPO,
   VOICE_REVISION,
 } from '#/lib/text-to-speech/constants';
+
 import type { PreloadStepId } from './steps';
 
 /** The version in a `/<pkg>@<version>/` path segment, if there is one. */

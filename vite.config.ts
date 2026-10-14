@@ -1,14 +1,12 @@
-import { defineConfig } from 'vite';
-
-import { tanstackStart } from '@tanstack/react-start/plugin/vite';
-
-import viteReact, { reactCompilerPreset } from '@vitejs/plugin-react';
 import babel from '@rolldown/plugin-babel';
 import tailwindcss from '@tailwindcss/vite';
+import { tanstackStart } from '@tanstack/react-start/plugin/vite';
+import viteReact, { reactCompilerPreset } from '@vitejs/plugin-react';
+import { defineConfig } from 'vite';
 
-import { vendorWasmAssets } from './vite-plugin-vendor-wasm-assets.ts';
 import { dropBundledOnnxWasm } from './vite-plugin-drop-bundled-onnx-wasm.ts';
 import { serviceWorker } from './vite-plugin-service-worker.ts';
+import { vendorWasmAssets } from './vite-plugin-vendor-wasm-assets.ts';
 
 const config = defineConfig({
   resolve: { tsconfigPaths: true },

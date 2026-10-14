@@ -13,6 +13,7 @@
  */
 
 import type { LanguageId } from '#/config';
+
 import { LANGUAGE_SPECS, renderLanguageBlock } from './languages';
 import { renderLevelBlock, type CefrLevel } from './levels';
 import type { Scenario } from './scenarios';

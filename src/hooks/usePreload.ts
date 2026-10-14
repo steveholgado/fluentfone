@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { requestPersistentStorage } from '#/lib/cache/persist';
+import { checkDeviceSupport, type DeviceSupport } from '#/lib/device';
 import {
   checkPreloaded,
   isFullyPreloaded,
   preloadAll,
   type PreloadStatus,
 } from '#/lib/preload';
-import type { LoadProgress } from '#/lib/progress';
 import { sweepStaleAssets } from '#/lib/preload/sweep';
-import { checkDeviceSupport, type DeviceSupport } from '#/lib/device';
-import { requestPersistentStorage } from '#/lib/cache/persist';
+import type { LoadProgress } from '#/lib/progress';
 import { ensureController } from '#/lib/sw-client';
 
 /**
