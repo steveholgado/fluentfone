@@ -27,7 +27,7 @@ export const CHAT_MODELS = {
   e4b: 'https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/2eee7ac325f20eb8c9ac1d0e972f7c84663062da/gemma-4-E4B-it-web.litertlm',
 };
 
-export const DEFAULT_CHAT_MODEL = CHAT_MODELS.e2b;
+export const DEFAULT_CHAT_MODEL = CHAT_MODELS.e4b;
 
 /** Context window the engine is created with, and keyed by. */
 export const DEFAULT_MAX_TOKENS = 4096;
