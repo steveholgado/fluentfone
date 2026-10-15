@@ -30,7 +30,7 @@ export function Overlay({ visible, children }: OverlayProps) {
 
       <div
         className={cn(
-          'absolute right-4 bottom-4 left-4 flex flex-col gap-4 rounded-4xl bg-white p-8 text-black',
+          'absolute right-4 bottom-4 left-4 mx-auto flex max-w-md flex-col gap-4 rounded-4xl bg-white p-8 text-black',
           visible ? 'animate-scale-in' : 'animate-scale-out',
         )}
       >

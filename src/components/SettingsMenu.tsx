@@ -55,12 +55,14 @@ export function SettingsMenu({
       </button>
 
       {/* The UA stylesheet centres a popover in the viewport; this puts it
-          under the button instead. */}
+          under the button instead. The button sits in the call card's corner,
+          below the h-14 header, and the card is inset by sm:px-4 from sm up,
+          so these offsets follow that layout. */}
       <div
         ref={panelRef}
         id={panelId}
         popover="auto"
-        className="inset-auto top-16 right-4 m-0 w-72 rounded-lg bg-gray-100 p-8 text-black"
+        className="inset-auto top-30 right-4 m-0 w-72 rounded-lg bg-gray-100 p-8 text-black sm:right-8"
       >
         <div className="flex flex-col gap-8">
           <section className="flex flex-col gap-2">

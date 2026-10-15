@@ -44,79 +44,88 @@ export function ConversationScreen({
   onShowText,
   onCallAgain,
 }: ConversationScreenProps) {
-  return (
-    <div className="flex h-full w-full flex-col items-center justify-between px-8 py-16 sm:py-32">
-      <div className="flex flex-col items-center gap-4">
-        <div className="mb-4 h-40 w-40 rounded-full bg-gray-300" />
-        <div className="text-2xl">Example Name</div>
-      </div>
-      {minimal ? null : !hasGreeted ? (
-        <>
-          <div className="animate-pulse text-center text-2xl">
-            {/* Before the call connects there's the engine to compile and the
-                greeting to generate, neither of which reports progress.
-                `status` says which of those is happening; 'Connecting' covers
-                the gap before the first stage is reported. */}
-            {isGreetingReady ? 'Incoming call' : status || 'Connecting'}
-          </div>
-          <button
-            onClick={onAnswer}
-            className={CALL_BUTTON_CLASS}
-            disabled={!isGreetingReady}
-          >
-            Answer
-          </button>
-        </>
+  // Once the call is answered, the text outlasts the audio by a moment, so
+  // it's checked first: the repeat buttons only come back once it has gone.
+  const stage = minimal ? null : !hasGreeted ? (
+    <div className="animate-pulse text-center text-2xl">
+      {/* Before the call connects there's the engine to compile and the
+          greeting to generate, neither of which reports progress. `status`
+          says which of those is happening; 'Connecting' covers the gap before
+          the first stage is reported. */}
+      {isGreetingReady ? 'Incoming call' : status || 'Connecting'}
+    </div>
+  ) : transcript !== null || isAudioLive ? (
+    <>
+      {transcript !== null ? (
+        // Scrolls rather than grows, so a long reply can't push the Start
+        // button around.
+        <p className="max-h-full max-w-prose overflow-y-auto text-center text-xl">
+          {transcript}
+        </p>
       ) : (
-        <>
-          {/* The text outlasts the audio by a moment, so it's checked first:
-              the repeat buttons only come back once it has gone. */}
-          {transcript !== null || isAudioLive ? (
-            <>
-              {transcript !== null ? (
-                // Scrolls rather than grows, so a long reply can't push the
-                // Start button around.
-                <p className="max-h-48 max-w-prose overflow-y-auto text-center text-xl">
-                  {transcript}
-                </p>
-              ) : (
-                <Waveform />
-              )}
-              {/* The waveform has taken the status line's place, so the cue it
-                  was carrying needs somewhere else to live. sr-only is out of
-                  flow, so it costs the layout nothing. */}
-              <span className="sr-only">{status}</span>
-            </>
-          ) : canRepeat && !status ? (
-            <div className="flex flex-col gap-3">
-              {hasEnded && (
-                <div className="mb-3 text-center text-2xl">Call ended</div>
-              )}
-              <button onClick={onRepeat} className={REPEAT_BUTTON_CLASS}>
-                Repeat
-              </button>
-              <button onClick={onShowText} className={REPEAT_BUTTON_CLASS}>
-                Read along
-              </button>
-            </div>
-          ) : (
-            <div className="text-center text-2xl">{status}</div>
-          )}
-          {hasEnded ? (
-            <button onClick={onCallAgain} className={CALL_BUTTON_CLASS}>
-              Call again
-            </button>
-          ) : (
-            <button
-              onClick={onToggleRecording}
-              className={CALL_BUTTON_CLASS}
-              disabled={isBusy}
-            >
-              {isRecording ? 'Stop' : 'Start'}
-            </button>
-          )}
-        </>
+        <Waveform />
       )}
+      {/* The waveform has taken the status line's place, so the cue it was
+          carrying needs somewhere else to live. sr-only is out of flow, so it
+          costs the layout nothing. */}
+      <span className="sr-only">{status}</span>
+    </>
+  ) : canRepeat && !status ? (
+    <div className="flex flex-col gap-3">
+      {hasEnded && <div className="mb-3 text-center text-2xl">Call ended</div>}
+      <button onClick={onRepeat} className={REPEAT_BUTTON_CLASS}>
+        Repeat
+      </button>
+      <button onClick={onShowText} className={REPEAT_BUTTON_CLASS}>
+        Read along
+      </button>
+    </div>
+  ) : (
+    <div className="text-center text-2xl">{status}</div>
+  );
+
+  const action = minimal ? null : !hasGreeted ? (
+    <button
+      onClick={onAnswer}
+      className={CALL_BUTTON_CLASS}
+      disabled={!isGreetingReady}
+    >
+      Answer
+    </button>
+  ) : hasEnded ? (
+    <button onClick={onCallAgain} className={CALL_BUTTON_CLASS}>
+      Call again
+    </button>
+  ) : (
+    <button
+      onClick={onToggleRecording}
+      className={CALL_BUTTON_CLASS}
+      disabled={isBusy}
+    >
+      {isRecording ? 'Stop' : 'Start'}
+    </button>
+  );
+
+  return (
+    <div className="flex h-full w-full items-center justify-center">
+      {/* Three rows that are always there, whatever's in them. Each has a
+          fixed size, and the stage in the middle centres its content, so
+          swapping the status for the waveform (or anything else) grows or
+          shrinks around a fixed line instead of moving its neighbours. The
+          stage is sized for its tallest content, the repeat buttons under
+          'Call ended'; a transcript scrolls within it. */}
+      <div className="grid w-full max-w-md grid-rows-[auto_clamp(9rem,28cqh,13rem)_auto] justify-items-center gap-8 px-8 py-[clamp(2rem,8cqh,6rem)]">
+        <div className="flex flex-col items-center gap-4">
+          <div className="mb-4 size-[clamp(6rem,18cqh,10rem)] rounded-full bg-gray-300" />
+          <div className="text-2xl">Example Name</div>
+        </div>
+        <div className="flex min-h-0 w-full items-center justify-center">
+          {stage}
+        </div>
+        {/* Holds the button's height while there's no button, so the
+            stage doesn't shift when one arrives. */}
+        <div className="h-13">{action}</div>
+      </div>
     </div>
   );
 }

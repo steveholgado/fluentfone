@@ -3,6 +3,7 @@ import { useState } from 'react';
 
 import { CheckScreen } from '#/components/CheckScreen';
 import { Conversation } from '#/components/Conversation';
+import { Header } from '#/components/Header';
 import { PreloadOverlay } from '#/components/PreloadOverlay';
 import { SettingsMenu } from '#/components/SettingsMenu';
 import { UnsupportedOverlay } from '#/components/UnsupportedOverlay';
@@ -32,27 +33,33 @@ function App() {
   const [callId, setCallId] = useState(0);
 
   return (
-    <main className="min-h-screen sm:flex sm:items-center sm:justify-center sm:p-8">
-      {/* Nothing to set until there's going to be a call. Nor while a
-          language waits on its voices: the switch saves the settings as they
-          were when it was asked for, so a change made meanwhile would be
-          lost. */}
-      {phase !== 'checking' &&
-        phase !== 'unsupported' &&
-        languageSwitch.pending === null && (
-          <div className="fixed top-4 right-4 z-10">
-            <SettingsMenu
-              language={language}
-              level={level}
-              speed={speed}
-              onLanguageChange={(next) => void languageSwitch.request(next)}
-              onLevelChange={setLevel}
-              onSpeedChange={setSpeed}
-            />
-          </div>
-        )}
+    <main className="flex h-dvh flex-col bg-neutral-900 text-white sm:px-4 sm:pb-4">
+      <Header />
 
-      <div className="relative h-screen w-full overflow-hidden bg-neutral-800 text-white sm:aspect-9/18 sm:h-auto sm:w-100 sm:rounded-[48px]">
+      {/* A size container, so the screens inside can scale with the card's
+          height rather than the window's, which also counts the header. On
+          mobile the card is a sheet under the header, flush with the sides
+          and bottom; from sm up it's inset and rounded all round. */}
+      <div className="@container-size relative min-h-0 flex-1 overflow-hidden rounded-t-3xl bg-neutral-800 sm:rounded-3xl">
+        {/* Nothing to set until there's going to be a call. Nor while a
+            language waits on its voices: the switch saves the settings as they
+            were when it was asked for, so a change made meanwhile would be
+            lost. */}
+        {phase !== 'checking' &&
+          phase !== 'unsupported' &&
+          languageSwitch.pending === null && (
+            <div className="absolute top-4 right-4 z-10">
+              <SettingsMenu
+                language={language}
+                level={level}
+                speed={speed}
+                onLanguageChange={(next) => void languageSwitch.request(next)}
+                onLevelChange={setLevel}
+                onSpeedChange={setSpeed}
+              />
+            </div>
+          )}
+
         {phase === 'checking' && <CheckScreen />}
 
         {/* Keyed by language and level: a new one of either is a new call, so
