@@ -202,8 +202,8 @@ async function takeOver(event: SwMessageEvent): Promise<void> {
 
 async function activate(): Promise<void> {
   await purgeOldShells();
-  // Dedicated workers are clients too, so this picks up the speech-to-text and
-  // text-to-speech workers along with the page.
+  // The app's web workers don't exist yet when this runs on a first install:
+  // they're started later, by a page this has already claimed.
   await sw.clients.claim();
 }
 

@@ -75,9 +75,8 @@ export function useLanguageSwitch({
   }, [pending, isDownloading, setLanguage]);
 
   /**
-   * Keeps the current language. Refused mid-download: stopping the voice's
-   * worker part way could leave a partial file that would pass for the
-   * voice next time.
+   * Keeps the current language. Refused mid-download: the download can't be
+   * stopped, and would still switch the language when it finished.
    */
   const cancel = useCallback(() => {
     if (isDownloading) return;
